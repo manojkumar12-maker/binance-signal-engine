@@ -11,28 +11,31 @@ class SignalGenerator {
   generateSignal(analysis) {
     if (!analysis || !analysis.type) return null;
 
-    const { type, score, priceChange, volumeSpike, momentum, factors, signals, atr, ticker, metadata } = analysis;
+    const { type, score, priceChange, volumeSpike, momentum, factors, signals, atr, entryPrice, symbol, metadata } = analysis;
+    
+    const signalEntry = entryPrice || (signals?.entry);
+    const signalSL = signals?.sl;
     
     const signal = {
       id: ++this.signalId,
-      symbol: ticker.symbol,
+      symbol: symbol || 'UNKNOWN',
       type,
       tier: type,
       timestamp: Date.now(),
-      entryPrice: signals.entry,
+      entryPrice: signalEntry,
       atr,
       targets: {
-        tp1: signals.tp1,
-        tp2: signals.tp2,
-        tp3: signals.tp3,
-        tp4: signals.tp4,
-        tp5: signals.tp5
+        tp1: signals?.tp1,
+        tp2: signals?.tp2,
+        tp3: signals?.tp3,
+        tp4: signals?.tp4,
+        tp5: signals?.tp5
       },
-      stopLoss: signals.sl,
+      stopLoss: signalSL,
       riskReward: {
-        tp1: ((signals.tp1 - signals.entry) / (signals.entry - signals.sl)).toFixed(2),
-        tp2: ((signals.tp2 - signals.entry) / (signals.entry - signals.sl)).toFixed(2),
-        tp3: ((signals.tp3 - signals.entry) / (signals.entry - signals.sl)).toFixed(2)
+        tp1: signalSL ? ((signals.tp1 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
+        tp2: signalSL ? ((signals.tp2 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
+        tp3: signalSL ? ((signals.tp3 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0'
       },
       metrics: {
         priceChange: priceChange.toFixed(2),

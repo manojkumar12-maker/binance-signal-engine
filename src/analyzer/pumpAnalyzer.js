@@ -246,6 +246,7 @@ class PumpAnalyzer {
     });
 
     return {
+      symbol,
       priceChange,
       localChange,
       volumeSpike,
