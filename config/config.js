@@ -11,23 +11,23 @@ export const config = {
   },
   signalTiers: {
     EARLY: {
-      scoreThreshold: 50,
-      priceChangeThreshold: 1.5,
-      volumeSpikeThreshold: 1.5,
-      momentumThreshold: 0.2
+      scoreThreshold: 25,
+      priceChangeThreshold: 0.8,
+      volumeSpikeThreshold: 1.2,
+      momentumThreshold: 0.03
     },
     CONFIRMED: {
-      scoreThreshold: 65,
-      priceChangeThreshold: 2.5,
-      volumeSpikeThreshold: 2.0,
-      momentumThreshold: 0.3
+      scoreThreshold: 40,
+      priceChangeThreshold: 1.5,
+      volumeSpikeThreshold: 1.5,
+      momentumThreshold: 0.05
     },
     SNIPER: {
-      scoreThreshold: 75,
-      priceChangeThreshold: 3.0,
-      volumeSpikeThreshold: 3.0,
-      momentumThreshold: 0.4,
-      requiresImbalance: true
+      scoreThreshold: 50,
+      priceChangeThreshold: 2.5,
+      volumeSpikeThreshold: 2.0,
+      momentumThreshold: 0.1,
+      requiresImbalance: false
     }
   },
   riskManagement: {

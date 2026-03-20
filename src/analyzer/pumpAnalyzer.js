@@ -11,6 +11,8 @@ class PumpAnalyzer {
     this.lowPrices = new Map();
     this.lastSignalTime = new Map();
     this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, lastReset: Date.now() };
+    this.volumeRateHistory = new Map();
+    this.quoteVolumeHistory = new Map();
   }
 
   isStablecoin(symbol) {
@@ -99,6 +101,7 @@ class PumpAnalyzer {
 
   updateHistory(symbol, ticker) {
     const { price, quoteVolume, high, low } = ticker;
+    const now = Date.now();
 
     if (!this.priceHistory.has(symbol)) {
       this.priceHistory.set(symbol, []);
@@ -106,6 +109,8 @@ class PumpAnalyzer {
       this.candleHistory.set(symbol, []);
       this.highPrices.set(symbol, []);
       this.lowPrices.set(symbol, []);
+      this.volumeRateHistory.set(symbol, []);
+      this.quoteVolumeHistory.set(symbol, []);
     }
 
     const prices = this.priceHistory.get(symbol);
@@ -113,14 +118,27 @@ class PumpAnalyzer {
     const candles = this.candleHistory.get(symbol);
     const highs = this.highPrices.get(symbol);
     const lows = this.lowPrices.get(symbol);
+    const volumeRates = this.volumeRateHistory.get(symbol);
+    const quoteVolHistory = this.quoteVolumeHistory.get(symbol);
 
-    prices.push({ price, timestamp: Date.now() });
-    volumes.push({ volume: quoteVolume, timestamp: Date.now() });
+    prices.push({ price, timestamp: now });
     highs.push(high || price);
     lows.push(low || price);
 
-    if (candles.length === 0 || Date.now() - candles[candles.length - 1].timestamp > 60000) {
-      candles.push({ high: high || price, low: low || price, close: price, open: price, timestamp: Date.now() });
+    const prevQuoteVol = quoteVolHistory.length > 0 ? quoteVolHistory[quoteVolHistory.length - 1].volume : quoteVolume;
+    const prevTimestamp = quoteVolHistory.length > 0 ? quoteVolHistory[quoteVolHistory.length - 1].timestamp : now;
+    const timeDelta = Math.max((now - prevTimestamp) / 1000, 1);
+    const volumeRate = Math.abs(quoteVolume - prevQuoteVol) / timeDelta;
+
+    quoteVolHistory.push({ volume: quoteVolume, timestamp: now });
+    volumeRates.push({ rate: volumeRate, timestamp: now });
+
+    const estimatedBaseVolume = quoteVolume / 86400;
+    const volumeSpikeRatio = estimatedBaseVolume > 0 ? volumeRate / estimatedBaseVolume : 1;
+    volumes.push({ volume: quoteVolume, volumeRate, volumeSpikeRatio, timestamp: now });
+
+    if (candles.length === 0 || now - candles[candles.length - 1].timestamp > 60000) {
+      candles.push({ high: high || price, low: low || price, close: price, open: price, timestamp: now });
     } else {
       const last = candles[candles.length - 1];
       last.high = Math.max(last.high, high || price);
@@ -133,6 +151,8 @@ class PumpAnalyzer {
     if (candles.length > 100) candles.shift();
     if (highs.length > 100) highs.shift();
     if (lows.length > 100) lows.shift();
+    if (volumeRates.length > 100) volumeRates.shift();
+    if (quoteVolHistory.length > 100) quoteVolHistory.shift();
   }
 
   checkCooldown(symbol) {
@@ -165,8 +185,9 @@ class PumpAnalyzer {
     const prices = this.priceHistory.get(symbol);
     const volumes = this.volumeHistory.get(symbol);
     const candles = this.candleHistory.get(symbol);
+    const volumeRates = this.volumeRateHistory.get(symbol);
 
-    if (!prices || prices.length < 10) {
+    if (!prices || prices.length < 5) {
       return { priceChange: 0, volumeSpike: 0, momentum: 0, acceleration: 0, strength: 0 };
     }
 
@@ -176,9 +197,16 @@ class PumpAnalyzer {
     const localChange = ((currentPrice - recentPrices[0].price) / recentPrices[0].price) * 100;
     const priceChange = Math.abs(priceChangePercent || localChange || 0);
     
-    const avgVolume = volumes.slice(-10).reduce((sum, v) => sum + v.volume, 0) / 10;
-    const currentVolume = volumes[volumes.length - 1].volume;
-    const volumeSpike = avgVolume > 0 ? currentVolume / avgVolume : 0;
+    const currentVolumeData = volumes.length > 0 ? volumes[volumes.length - 1] : { volumeSpikeRatio: 1 };
+    const volumeSpikeRatio = currentVolumeData.volumeSpikeRatio || 1;
+    
+    let avgVolumeRate = 1;
+    if (volumeRates && volumeRates.length >= 5) {
+      const recentRates = volumeRates.slice(-10).map(v => v.rate);
+      avgVolumeRate = recentRates.reduce((a, b) => a + b, 0) / recentRates.length;
+    }
+    const currentVolumeRate = volumeRates && volumeRates.length > 0 ? volumeRates[volumeRates.length - 1].rate : 1;
+    const volumeSpike = avgVolumeRate > 0 ? currentVolumeRate / avgVolumeRate : volumeSpikeRatio;
 
     const momentum = this.calculateMomentum(recentPrices);
     const acceleration = this.calculateAcceleration(recentPrices);
@@ -195,7 +223,7 @@ class PumpAnalyzer {
 
     const score = this.calculateScore({
       ema50, currentPrice, liquiditySweep, sweptReclaimed, volumeSpike,
-      momentum, acceleration, strongCandle, rsi, volumeTrend
+      momentum, acceleration, strongCandle, rsi, volumeTrend, priceChange
     });
 
     return {
@@ -217,7 +245,7 @@ class PumpAnalyzer {
       strongCandle,
       factors: this.getFactors({
         ema50, currentPrice, breakOfStructure, liquiditySweep, sweptReclaimed,
-        volumeSpike, momentum, acceleration, strongCandle, volumeTrend
+        volumeSpike, momentum, acceleration, strongCandle, volumeTrend, priceChange
       })
     };
   }
@@ -227,33 +255,37 @@ class PumpAnalyzer {
     const filters = config?.aiFilters || {};
     let score = 0;
 
+    if (metrics.priceChange >= 0.5) score += Math.min(metrics.priceChange * 4, 35);
+    
     if (metrics.ema50 !== null && metrics.currentPrice > metrics.ema50) {
-      score += weights.htfTrendWeight || 15;
+      score += weights.htfTrendWeight || 10;
     }
-    if (metrics.breakOfStructure) score += weights.bosWeight || 20;
+    if (metrics.breakOfStructure) score += weights.bosWeight || 12;
     if (metrics.liquiditySweep) {
-      if (metrics.sweptReclaimed) score += (weights.liquiditySweepWeight || 20) + 10;
+      if (metrics.sweptReclaimed) score += (weights.liquiditySweepWeight || 12) + 5;
       else score += 5;
     }
-    if (metrics.volumeSpike >= 1.5) score += weights.volumeSpikeWeight || 15;
-    if (metrics.momentum > 0.2) score += weights.momentumWeight || 10;
-    if (metrics.acceleration > 0.05) score += weights.accelerationWeight || 10;
-    if (metrics.strongCandle) score += weights.candleStrengthWeight || 10;
-    if (metrics.volumeTrend) score += 10;
+    if (metrics.volumeSpike >= 1.2) score += Math.min((metrics.volumeSpike - 1) * 25, weights.volumeSpikeWeight || 18);
+    if (metrics.momentum > 0.03) score += Math.min(metrics.momentum * 60, weights.momentumWeight || 12);
+    if (metrics.acceleration > 0.005) score += Math.min(metrics.acceleration * 120, weights.accelerationWeight || 12);
+    if (metrics.strongCandle) score += weights.candleStrengthWeight || 6;
+    if (metrics.volumeTrend) score += 4;
 
-    if (metrics.rsi > (filters.maxRSI || 85)) return 0;
+    if (metrics.rsi > (filters.maxRSI || 85)) return Math.max(0, score - 15);
+    if (metrics.rsi > 75) score -= 3;
 
-    return Math.min(score, 100);
+    return Math.min(Math.max(score, 0), 100);
   }
 
   getFactors(metrics) {
     const factors = [];
+    if (metrics.priceChange >= 1) factors.push(`+${metrics.priceChange.toFixed(2)}%`);
     if (metrics.ema50 !== null && metrics.currentPrice > metrics.ema50) factors.push('HTF Uptrend');
     if (metrics.breakOfStructure) factors.push('BOS');
     if (metrics.liquiditySweep) factors.push(metrics.sweptReclaimed ? 'Liq Sweep + Reclaim' : 'Liq Sweep');
-    if (metrics.volumeSpike >= 1.5) factors.push(`Vol: ${metrics.volumeSpike.toFixed(1)}x`);
-    if (metrics.momentum > 0.2) factors.push(`Momentum: ${metrics.momentum.toFixed(3)}`);
-    if (metrics.acceleration > 0.05) factors.push(`Accel: ${metrics.acceleration.toFixed(3)}`);
+    if (metrics.volumeSpike >= 1.2) factors.push(`Vol: ${metrics.volumeSpike.toFixed(1)}x`);
+    if (metrics.momentum > 0.05) factors.push(`Mom: ${metrics.momentum.toFixed(3)}`);
+    if (metrics.acceleration > 0.01) factors.push(`Acc: ${metrics.acceleration.toFixed(3)}`);
     if (metrics.strongCandle) factors.push('Strong Candle');
     if (metrics.volumeTrend) factors.push('Vol Trend Up');
     return factors;
@@ -390,6 +422,8 @@ class PumpAnalyzer {
     this.candleHistory.delete(symbol);
     this.highPrices.delete(symbol);
     this.lowPrices.delete(symbol);
+    this.volumeRateHistory.delete(symbol);
+    this.quoteVolumeHistory.delete(symbol);
   }
 }
 
