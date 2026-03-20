@@ -67,10 +67,13 @@ class SignalGenerator {
   }
 
   formatSignal(signal) {
-    const { targets, stopLoss, metrics, riskReward, factors } = signal;
+    const { targets, stopLoss, metrics, riskReward } = signal;
     
     const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : '🟡';
     const tierLabel = signal.tier === 'SNIPER' ? 'HIGH ACCURACY' : signal.tier === 'CONFIRMED' ? 'CONFIRMED ENTRY' : 'EARLY WATCH';
+    
+    const factors = signal.confluenceReasons || signal.factors || [];
+    const factorsList = Array.isArray(factors) ? factors.map(f => `   • ${f}`).join('\n') : `   • ${factors}`;
     
     return `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -83,22 +86,23 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
 📏 ATR: ${signal.atr.toFixed(6)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 TAKE PROFIT LEVELS:
-   TP1: ${targets.tp1.toFixed(6)} | R/R: ${riskReward.tp1}
-   TP2: ${targets.tp2.toFixed(6)} | R/R: ${riskReward.tp2}
-   TP3: ${targets.tp3.toFixed(6)} | R/R: ${riskReward.tp3}
+   TP1: ${targets.tp1.toFixed(6)} | R/R: ${riskReward?.tp1 || 'N/A'}
+   TP2: ${targets.tp2.toFixed(6)} | R/R: ${riskReward?.tp2 || 'N/A'}
+   TP3: ${targets.tp3.toFixed(6)} | R/R: ${riskReward?.tp3 || 'N/A'}
    TP4: ${targets.tp4.toFixed(6)}
    TP5: ${targets.tp5.toFixed(6)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🛑 STOP LOSS: ${stopLoss.toFixed(6)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📈 METRICS:
-   Price Change: ${metrics.priceChange}%
-   Volume Spike: ${metrics.volumeSpike}x
-   Momentum: ${metrics.momentum}
-   Score: ${metrics.score}
+   Confidence: ${signal.confidence || 0}
+   Price Change: ${metrics?.priceChange || 0}%
+   Volume Spike: ${metrics?.volumeSpike || 0}x
+   Momentum: ${metrics?.momentum || 0}
+   Score: ${metrics?.score || 0}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 FACTORS:
-${factors.map(f => `   • ${f}`).join('\n')}
+📋 CONF LUENCE (${signal.confluence || 0}):
+${factorsList}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
   }
