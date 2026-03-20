@@ -176,7 +176,7 @@ class PumpAnalyzer {
     const orderbookData = orderBookAnalyzer.getAnalysis(symbol);
     const analysis = this.calculateMetrics(symbol, priceChangePercent, orderbookData);
     
-    const tier = this.determineTier(analysis);
+    const tier = this.determineTier(symbol, analysis);
     
     if (tier) {
       this.lastSignalTime.set(symbol, Date.now());
@@ -206,18 +206,20 @@ class PumpAnalyzer {
     const currentPrice = prices[prices.length - 1].price;
     const recentPrices = prices.slice(-10);
     
-    const localChange = ((currentPrice - recentPrices[0].price) / recentPrices[0].price) * 100;
+    const localChange = ((currentPrice - recentPrices[recentPrices.length - 3].price) / recentPrices[recentPrices.length - 3].price) * 100;
     const priceChange = Math.abs(priceChangePercent || localChange || 0);
     
-    const currentVolumeData = volumes.length > 0 ? volumes[volumes.length - 1] : { volumeSpikeRatio: 1 };
+    const currentVolumeData = volumes.length > 1 ? volumes[volumes.length - 2] : { volumeSpikeRatio: 1 };
     const volumeSpikeRatio = currentVolumeData.volumeSpikeRatio || 1;
     
     let avgVolumeRate = 1;
     if (volumeRates && volumeRates.length >= 5) {
-      const recentRates = volumeRates.slice(-10).map(v => v.rate);
-      avgVolumeRate = recentRates.reduce((a, b) => a + b, 0) / recentRates.length;
+      const recentRates = volumeRates.slice(-10, -1).map(v => v.rate);
+      if (recentRates.length > 0) {
+        avgVolumeRate = recentRates.reduce((a, b) => a + b, 0) / recentRates.length;
+      }
     }
-    const currentVolumeRate = volumeRates && volumeRates.length > 0 ? volumeRates[volumeRates.length - 1].rate : 1;
+    const currentVolumeRate = volumeRates && volumeRates.length > 1 ? volumeRates[volumeRates.length - 2].rate : 1;
     const volumeSpike = avgVolumeRate > 0 ? currentVolumeRate / avgVolumeRate : volumeSpikeRatio;
 
     const momentum = this.calculateMomentum(recentPrices);
@@ -298,8 +300,8 @@ class PumpAnalyzer {
     if (metrics.spoofingRisk > 30) score -= 20;
     else if (metrics.spoofingRisk > 15) score -= 10;
 
-    if (metrics.rsi > (filters.maxRSI || 85)) return Math.max(0, score - 15);
-    if (metrics.rsi > 75) score -= 3;
+    if (metrics.rsi > 90) return Math.max(0, score - 10);
+    if (metrics.rsi > 85) score -= 2;
 
     return Math.min(Math.max(score, 0), 100);
   }
@@ -320,12 +322,16 @@ class PumpAnalyzer {
     return factors;
   }
 
-  determineTier(analysis) {
+  determineTier(symbol, analysis) {
     if (analysis.score === 0) return null;
 
     const tiers = config?.signalTiers || {};
     const tunedParams = autoTuner.getParams();
     const { score, priceChange, volumeSpike, momentum, imbalance, spoofingRisk } = analysis;
+
+    if (score >= 40) {
+      console.log(`🔍 DEBUG [${symbol}]: Score=${score.toFixed(1)}, PriceChg=${priceChange.toFixed(2)}%, Vol=${volumeSpike.toFixed(2)}x, Mom=${momentum.toFixed(3)}, RSI=${analysis.rsi?.toFixed(1)}`);
+    }
 
     if (spoofingRisk > 40) return null;
 
