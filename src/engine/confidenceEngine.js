@@ -53,9 +53,9 @@ export function calculateConfidence(data) {
 }
 
 export function classifyByConfidence(confidence) {
-  if (confidence >= 80) return { tier: 'SNIPER', action: 'TRADE' };
-  if (confidence >= 65) return { tier: 'CONFIRMED', action: 'WATCH' };
-  if (confidence >= 50) return { tier: 'EARLY', action: 'IGNORE' };
+  if (confidence >= 70) return { tier: 'SNIPER', action: 'TRADE' };
+  if (confidence >= 55) return { tier: 'CONFIRMED', action: 'WATCH' };
+  if (confidence >= 40) return { tier: 'EARLY', action: 'IGNORE' };
   return { tier: null, action: 'REJECT' };
 }
 
