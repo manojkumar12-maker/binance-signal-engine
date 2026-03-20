@@ -1,49 +1,39 @@
-# 🚀 Deploy to Railway
+# 🚀 Deploy to Render (Free Tier)
 
 ## Quick Deploy
 
-1. Go to [railway.app](https://railway.app)
-2. Login with GitHub
-3. Click **New Project** → **Deploy from GitHub repo**
-4. Select `manojkumar12-maker/binance-signal-engine`
-5. Railway auto-detects Node.js
+1. Go to [render.com](https://render.com)
+2. Click **"New +"** → **"Web Service"**
+3. Connect your GitHub: `manojkumar12-maker/binance-signal-engine`
+4. Configure:
+   - **Name:** `binance-signals`
+   - **Region:** Choose closest
+   - **Branch:** `main`
+   - **Root Directory:** (leave empty)
+   - **Runtime:** `Node"`
+   - **Build Command:** `npm install`
+   - **Start Command:** `node src/index.js`
+   - **Plan:** `Free`
 
-## Manual Setup
-
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login
-railway login
-
-# Deploy
-cd binance-signal-engine
-railway init
-railway up
-```
-
-## Environment Variables
-
-Optional - add in Railway dashboard:
-- `PORT` (default: 3000)
+5. Click **"Create Web Service"**
 
 ## API Endpoints
 
-After deployment:
-- `https://your-app.railway.app/api/signals` - Get all signals
-- `https://your-app.railway.app/api/health` - Health check
-
-## WebSocket
-
-Connect to:
-- `wss://your-app.railway.app` (if configured)
+After deploy:
+- `https://binance-signals.onrender.com/api/signals`
+- `https://binance-signals.onrender.com/api/health`
 
 ## Update Frontend
 
-Edit `frontend/index.html` line ~170:
+Edit `frontend/index.html`:
 ```javascript
-const wsUrl = 'wss://your-railway-app.railway.app';
+const wsUrl = 'wss://binance-signals.onrender.com';
 ```
 
-Then push changes to deploy automatically.
+Or change the WebSocket URL to your deployed backend.
+
+## Notes
+
+- Free tier sleeps after 15 min of inactivity
+- First deploy takes ~2-3 minutes
+- Subsequent deploys are faster
