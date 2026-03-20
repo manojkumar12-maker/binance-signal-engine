@@ -4,9 +4,6 @@ node_modules/
 *.log
 .DS_Store
 
-# Data (signals stored here)
-data/
-
 # IDE
 .vscode/
 .idea/
