@@ -8,6 +8,7 @@ class SignalEngine {
   constructor() {
     this.stats = {
       signalsGenerated: 0,
+      signalsByTier: { EARLY: 0, CONFIRMED: 0, SNIPER: 0 },
       symbolsMonitored: 0,
       startedAt: null
     };
@@ -16,15 +17,15 @@ class SignalEngine {
   async start() {
     console.log(`
 ╔══════════════════════════════════════════════════════╗
-║       🚀 BINANCE FUTURES PUMP SIGNAL ENGINE 🚀       ║
+║     🚀 BINANCE FUTURES SIGNAL ENGINE v2.0 🚀        ║
 ╠══════════════════════════════════════════════════════╣
-║  Monitoring all Binance USDT Perpetual Futures        ║
-║  Real-time pump detection with TP1-TP5 signals        ║
+║  🔴 SNIPER  - High accuracy, rare signals            ║
+║  🟢 CONFIRMED - Main entry signals                   ║
+║  🟡 EARLY   - Watchlist, 10-30/hour                  ║
 ╚══════════════════════════════════════════════════════╝
     `);
 
     this.stats.startedAt = Date.now();
-
     await apiServer.start();
 
     wsManager.onTicker((ticker) => {
@@ -32,7 +33,6 @@ class SignalEngine {
     });
 
     await wsManager.initialize();
-    
     this.stats.symbolsMonitored = wsManager.symbols.length;
 
     setInterval(() => {
@@ -45,22 +45,28 @@ class SignalEngine {
   processTicker(ticker) {
     const analysis = pumpAnalyzer.analyze(ticker);
     
-    if (analysis && analysis.strength >= 40) {
+    if (analysis && analysis.type) {
       const existingSignal = signalGenerator.getActiveSignal(ticker.symbol);
       
-      if (!existingSignal) {
+      if (!existingSignal || existingSignal.tier !== analysis.type) {
         const signal = signalGenerator.generateSignal(analysis);
         
         if (signal) {
           this.stats.signalsGenerated++;
-          console.log(signalGenerator.formatSignal(signal));
-          notifier.sendSignal(signal);
-          apiServer.addSignal(signal);
+          this.stats.signalsByTier[signal.tier]++;
+          
+          if (signal.tier !== 'EARLY') {
+            console.log(signalGenerator.formatSignal(signal));
+            notifier.sendSignal(signal);
+            apiServer.addSignal(signal);
+          } else {
+            console.log(`🟡 EARLY: ${signal.symbol} (Score: ${signal.metrics.score})`);
+          }
         }
       } else {
         const updatedSignal = signalGenerator.updateSignal(ticker.symbol, ticker.price);
-        if (updatedSignal) {
-          notifier.sendUpdate(updatedSignal);
+        if (updatedSignal && updatedSignal.status !== 'ACTIVE' && updatedSignal.status !== 'WATCHLIST') {
+          console.log(`\n📊 ${ticker.symbol}: ${updatedSignal.status} at ${updatedSignal.closedPrice?.toFixed(6)}\n`);
         }
       }
     }
@@ -69,25 +75,30 @@ class SignalEngine {
   showStats() {
     const uptime = Date.now() - this.stats.startedAt;
     const activeSignals = signalGenerator.getActiveSignals();
+    const pumpStats = pumpAnalyzer.getStats();
     
     console.clear();
     console.log(`
 ╔══════════════════════════════════════════════════════╗
-║       🚀 BINANCE FUTURES PUMP SIGNAL ENGINE 🚀       ║
+║     🚀 BINANCE FUTURES SIGNAL ENGINE v2.0 🚀        ║
 ╠══════════════════════════════════════════════════════╣
 ║  📊 STATISTICS                                        ║
 ║  ───────────────────────────────────────────          ║
 ║  Uptime: ${this.formatUptime(uptime)}
-║  Symbols Monitored: ${this.stats.symbolsMonitored}
-║  Signals Generated: ${this.stats.signalsGenerated}
-║  Active Signals: ${activeSignals.length}
+║  Symbols: ${this.stats.symbolsMonitored}
+║  Total Signals: ${this.stats.signalsGenerated}
+║  🔴 SNIPER: ${this.stats.signalsByTier.SNIPER}
+║  🟢 CONFIRMED: ${this.stats.signalsByTier.CONFIRMED}
+║  🟡 EARLY: ${this.stats.signalsByTier.EARLY}
+║  Active: ${activeSignals.length}
 ╚══════════════════════════════════════════════════════╝
     `);
 
     if (activeSignals.length > 0) {
       console.log('📈 ACTIVE SIGNALS:\n');
-      activeSignals.forEach(signal => {
-        console.log(`  ${signal.symbol} - Entry: ${signal.entryPrice.toFixed(6)} - Status: ${signal.status}`);
+      activeSignals.forEach(s => {
+        const tierEmoji = s.tier === 'SNIPER' ? '🔴' : s.tier === 'CONFIRMED' ? '🟢' : '🟡';
+        console.log(`  ${tierEmoji} ${s.symbol} | Entry: ${s.entryPrice.toFixed(6)} | PnL: ${s.update?.unrealizedPnL || 0}%`);
       });
       console.log('');
     }
@@ -97,7 +108,7 @@ class SignalEngine {
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
-    return `${hours}h ${minutes % 60}m ${seconds % 60}s`.padEnd(20, ' ');
+    return `${hours}h ${minutes % 60}m`.padEnd(20, ' ');
   }
 
   stop() {

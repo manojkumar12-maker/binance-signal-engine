@@ -6,17 +6,29 @@ export const config = {
   },
   signals: {
     minVolume: 1000000,
-    minPriceChange: 0.5,
-    pumpThreshold: 0.5,
-    earlyPumpThreshold: 0.2,
-    timeframes: ['1m', '5m', '15m'],
-    volumeSpikeMultiplier: 1.5,
-    priceAccelerationThreshold: 0.1,
-    scoreThreshold: 30,
-    volumeSpikeThreshold: 1.0,
-    minScoreForEntry: 30,
     cooldownMinutes: 2,
     minHistoryForAnalysis: 10
+  },
+  signalTiers: {
+    EARLY: {
+      scoreThreshold: 50,
+      priceChangeThreshold: 1.5,
+      volumeSpikeThreshold: 1.5,
+      momentumThreshold: 0.2
+    },
+    CONFIRMED: {
+      scoreThreshold: 65,
+      priceChangeThreshold: 2.5,
+      volumeSpikeThreshold: 2.0,
+      momentumThreshold: 0.3
+    },
+    SNIPER: {
+      scoreThreshold: 75,
+      priceChangeThreshold: 3.0,
+      volumeSpikeThreshold: 3.0,
+      momentumThreshold: 0.4,
+      requiresImbalance: true
+    }
   },
   riskManagement: {
     defaultRiskPercent: 1,
@@ -46,10 +58,10 @@ export const config = {
     minPositionSize: 0.001
   },
   aiFilters: {
-    maxUpperWickRatio: 1.5,
-    filterInsideRange: true,
-    minVolumeSpikeForQuality: 2,
-    maxRSI: 80,
+    maxUpperWickRatio: 2.0,
+    filterInsideRange: false,
+    minVolumeSpikeForQuality: 1.5,
+    maxRSI: 85,
     minRSI: 30
   },
   smartScoring: {
@@ -63,51 +75,29 @@ export const config = {
     mtfAlignmentBonus: 10
   },
   preFilters: {
-    minVolume24h: 1000000,
+    minVolume24h: 500000,
     minTickers: 50,
     excludeStablecoins: true,
-    maxSpreadPercent: 0.2,
-    minLiquidityPercent: 0.1
+    maxSpreadPercent: 0.3
   },
-  entryFilters: {
-    microPullbackRequired: true,
-    pullbackMaxPercent: 0.5,
-    atrPullbackMultiplier: 0.3
-  },
-  volatilityFilters: {
-    minATRPercent: 0.5,
-    atrMALength: 20,
-    requireVolatilityExpansion: true
-  },
-  regimeDetection: {
-    trendThreshold: 0.3,
-    rangeThreshold: 0.15,
-    lookbackPeriod: 50
+  autoRelax: {
+    enabled: true,
+    noSignalsMinutes: 10,
+    reduceScoreBy: 5,
+    reduceVolumeBy: 0.3,
+    minScore: 40,
+    minVolume: 1.0
   },
   notifications: {
-    discord: {
-      enabled: false,
-      webhookUrl: ''
-    },
-    telegram: {
-      enabled: false,
-      botToken: '',
-      chatId: ''
-    },
+    discord: { enabled: false, webhookUrl: '' },
+    telegram: { enabled: false, botToken: '', chatId: '' },
     console: true
   },
   feedbackLoop: {
     enabled: true,
-    winRateThresholdLow: 0.45,
+    winRateThresholdLow: 0.40,
     winRateThresholdHigh: 0.65,
     sampleSize: 20,
-    adjustmentStep: 5,
-    minSampleForAdjustment: 10
-  },
-  performanceTracking: {
-    trackConditionStats: true,
-    trackRegimeStats: true,
-    trackRecentTrades: true,
-    maxRecentTrades: 20
+    adjustmentStep: 5
   }
 };

@@ -7,26 +7,19 @@ class PumpAnalyzer {
     this.priceHistory = new Map();
     this.volumeHistory = new Map();
     this.candleHistory = new Map();
-    this.pumpCandidates = new Map();
     this.highPrices = new Map();
     this.lowPrices = new Map();
-    this.htfPrices = new Map();
     this.lastSignalTime = new Map();
-    this.marketRegime = new Map();
-    this.conditionStats = {
-      bos: { wins: 0, losses: 0 },
-      sweep: { wins: 0, losses: 0 },
-      volume: { wins: 0, losses: 0 },
-      mtf: { wins: 0, losses: 0 }
-    };
+    this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, lastReset: Date.now() };
   }
 
   isStablecoin(symbol) {
-    return STABLECOINS.some(s => symbol.endsWith(s));
+    const stablePairs = ['BUSDUSDT', 'USDCUSDT', 'TUSDUSDT', 'FDUSDUSDT', 'DAIUSDT'];
+    return stablePairs.some(s => symbol === s);
   }
 
   calculateSpread(ticker) {
-    if (!ticker.bid || !ticker.ask) return 0;
+    if (!ticker.bid || !ticker.ask || ticker.bid === 0 || ticker.ask === 0) return 0;
     return (ticker.ask - ticker.bid) / ticker.ask;
   }
 
@@ -46,213 +39,61 @@ class PumpAnalyzer {
 
     const trueRanges = [];
     for (let i = 1; i < candles.length; i++) {
-      const high = candles[i].high;
-      const low = candles[i].low;
-      const prevClose = candles[i - 1].close;
-      const tr = Math.max(
-        high - low,
-        Math.abs(high - prevClose),
-        Math.abs(low - prevClose)
-      );
-      trueRanges.push(tr);
-    }
-
-    if (trueRanges.length < period) return null;
-    return trueRanges.slice(-period).reduce((a, b) => a + b, 0) / period;
-  }
-
-  calculateATRMA(symbol, period = 14, maPeriod = 20) {
-    const candles = this.candleHistory.get(symbol);
-    if (!candles || candles.length < period + maPeriod) return null;
-
-    const atrs = [];
-    for (let i = period; i < candles.length; i++) {
       const tr = Math.max(
         candles[i].high - candles[i].low,
         Math.abs(candles[i].high - candles[i - 1].close),
         Math.abs(candles[i].low - candles[i - 1].close)
       );
-      atrs.push(tr);
+      trueRanges.push(tr);
     }
-
-    if (atrs.length < maPeriod) return null;
-    return atrs.slice(-maPeriod).reduce((a, b) => a + b, 0) / maPeriod;
+    return trueRanges.slice(-period).reduce((a, b) => a + b, 0) / period;
   }
 
   checkBreakOfStructure(symbol) {
     const prices = this.priceHistory.get(symbol);
     if (!prices || prices.length < 20) return false;
-    
     const recent = prices.slice(-20);
     const highs = recent.map(p => p.price);
     const maxIdx = highs.indexOf(Math.max(...highs));
     const recentHigh = prices[prices.length - 1].price;
-    
     return maxIdx >= prices.length - 5 && recentHigh > Math.max(...highs.slice(0, -5));
   }
 
   checkLiquiditySweep(symbol, currentPrice) {
     const highs = this.highPrices.get(symbol);
     if (!highs || highs.length < 5) return { detected: false, reclaimed: false };
-    
     const recentHighs = highs.slice(-5);
-    const sweepTolerance = currentPrice * 0.002;
     const prevHigh = recentHighs[recentHighs.length - 2] || currentPrice;
-    
+    const sweepTolerance = currentPrice * 0.002;
     const swept = recentHighs.some(h => h > currentPrice && (h - currentPrice) < sweepTolerance);
-    const reclaimed = swept && currentPrice > prevHigh;
-    
-    return { detected: swept, reclaimed };
+    return { detected: swept, reclaimed: swept && currentPrice > prevHigh };
   }
 
-  checkChopZone(symbol) {
-    const prices = this.priceHistory.get(symbol);
-    if (!prices || prices.length < 10) return false;
-    
-    const recent = prices.slice(-10);
-    const high10 = Math.max(...recent.map(p => p.price));
-    const low10 = Math.min(...recent.map(p => p.price));
-    const currentPrice = prices[prices.length - 1].price;
-    const range = high10 - low10;
-    
-    return (range / currentPrice) < 0.01;
-  }
-
-  checkVolatilityExpansion(symbol) {
-    const atr = this.calculateATR(symbol);
-    const atrMA = this.calculateATRMA(symbol);
-    
-    if (!atr || !atrMA) return true;
-    return atr > atrMA;
-  }
-
-  checkMultiTimeframe(symbol) {
-    const prices = this.priceHistory.get(symbol);
-    const ltfEMA = this.calculateEMA(prices, 50);
-    const htfEMA = this.calculateEMA(prices, 200);
-    const currentPrice = prices ? prices[prices.length - 1].price : 0;
-    
-    if (!htfEMA || !ltfEMA) return { aligned: true, strength: 0 };
-    
-    const trendStrength = (currentPrice - htfEMA) / htfEMA;
-    const aligned = currentPrice > htfEMA && currentPrice > ltfEMA;
-    
-    return { aligned, strength: trendStrength };
-  }
-
-  getMicroPullbackEntry(symbol, atr) {
-    const prices = this.priceHistory.get(symbol);
-    if (!prices || prices.length < 2) return null;
-    
-    const high = Math.max(...prices.slice(-3).map(p => p.price));
-    const currentPrice = prices[prices.length - 1].price;
-    const pullback = (high - currentPrice) / high;
-    
-    const entryPrice = high - (0.3 * atr);
-    
-    return {
-      entryPrice,
-      pullback,
-      needsPullback: pullback < 0.002
-    };
-  }
-
-  detectWeakness(symbol, currentPrice) {
+  calculateVolumeTrend(symbol) {
     const volumes = this.volumeHistory.get(symbol);
-    const candles = this.candleHistory.get(symbol);
-    const prices = this.priceHistory.get(symbol);
-    
-    if (!volumes || volumes.length < 5 || !candles || !prices) return false;
-    
-    const recentVolumes = volumes.slice(-5);
-    const avgVolume = recentVolumes.reduce((a, b) => a + b.volume, 0) / 5;
-    const currentVolume = recentVolumes[recentVolumes.length - 1].volume;
-    const volumeDropping = currentVolume < avgVolume * 0.7;
-    
-    const momentum = this.calculateMomentum(prices);
-    const momentumSlowing = momentum < 0;
-    
-    const lastCandle = candles[candles.length - 1];
-    const body = Math.abs(lastCandle.close - (lastCandle.open || lastCandle.close));
-    const upperWick = lastCandle.high - Math.max(lastCandle.close, lastCandle.open || lastCandle.close);
-    const bearishCandle = lastCandle.close < (lastCandle.open || lastCandle.close) * 0.99;
-    
-    return volumeDropping && momentumSlowing && bearishCandle;
-  }
-
-  detectMarketRegime(symbol) {
-    const prices = this.priceHistory.get(symbol);
-    if (!prices || prices.length < 50) return 'RANGE';
-    
-    const recent = prices.slice(-50);
-    const highs = recent.map(p => p.price);
-    const highsTrend = highs.filter((h, i) => i > highs.indexOf(Math.max(...highs.slice(0, i + 1))));
-    
-    let trendDirection = 0;
+    if (!volumes || volumes.length < 5) return false;
+    const recent = volumes.slice(-5).map(v => v.volume);
     for (let i = 1; i < recent.length; i++) {
-      trendDirection += (recent[i].price - recent[i - 1].price) > 0 ? 1 : -1;
+      if (recent[i] < recent[i - 1]) return false;
     }
-    
-    const trendStrength = Math.abs(trendDirection) / recent.length;
-    
-    return trendStrength > 0.3 ? 'TREND' : 'RANGE';
+    return true;
   }
 
-  checkCooldown(symbol) {
-    const lastTime = this.lastSignalTime.get(symbol);
-    if (!lastTime) return true;
-    
-    const cooldownMs = config.signals.cooldownMinutes * 60 * 1000;
-    return Date.now() - lastTime > cooldownMs;
-  }
-
-  analyze(ticker) {
-    const { symbol, priceChangePercent } = ticker;
-
-    if (!this.preFilter(ticker)) return null;
-    this.updateHistory(symbol, ticker);
-
-    if (!this.checkCooldown(symbol)) return null;
-
-    const mtfCheck = this.checkMultiTimeframe(symbol);
-    const mtfAligned = mtfCheck.aligned;
-
-    const signals = this.checkPumpConditions(symbol, mtfAligned, priceChangePercent);
-    
-    const minScoreForEntry = config?.signals?.minScoreForEntry || 40;
-    const earlyPumpThreshold = config?.signals?.earlyPumpThreshold || 0.5;
-    const volumeSpikeThreshold = config?.signals?.volumeSpikeThreshold || 1.5;
-    
-    if (signals.strength >= minScoreForEntry && 
-        signals.priceChange >= earlyPumpThreshold && 
-        signals.volumeSpike >= volumeSpikeThreshold) {
-      console.log(`[SIGNAL CANDIDATE] ${symbol}: score=${signals.strength}, change=${signals.priceChange?.toFixed(2)}%, vol=${signals.volumeSpike?.toFixed(1)}x, factors=${signals.factors?.length}`);
-      
-      const pullbackEntry = this.getMicroPullbackEntry(symbol, signals.atr);
-      pumpAnalyzer.setLastSignalTime(symbol);
-      
-      return {
-        ...signals,
-        ticker,
-        mtfAligned,
-        mtfStrength: mtfCheck.strength,
-        pullbackEntry,
-        regime: this.detectMarketRegime(symbol)
-      };
-    }
-
-    return null;
+  calculateImbalance(symbol) {
+    const volumes = this.volumeHistory.get(symbol);
+    if (!volumes || volumes.length < 3) return 1;
+    const recent = volumes.slice(-3).map(v => v.volume);
+    const avg = recent.reduce((a, b) => a + b, 0) / 3;
+    const current = recent[recent.length - 1];
+    return avg > 0 ? current / avg : 1;
   }
 
   preFilter(ticker) {
     const { symbol, quoteVolume } = ticker;
-
-    if (quoteVolume < (config?.preFilters?.minVolume24h || 1000000)) {
-      return false;
-    }
+    if (quoteVolume < (config?.preFilters?.minVolume24h || 500000)) return false;
     if (this.isStablecoin(symbol)) return false;
-    if (this.calculateSpread(ticker) > (config?.preFilters?.maxSpreadPercent || 0.2)) return false;
-    
+    const spread = this.calculateSpread(ticker);
+    if (spread > (config?.preFilters?.maxSpreadPercent || 0.5)) return false;
     return true;
   }
 
@@ -287,37 +128,57 @@ class PumpAnalyzer {
       last.close = price;
     }
 
-    if (prices.length > 200) prices.shift();
-    if (volumes.length > 200) volumes.shift();
-    if (candles.length > 200) candles.shift();
-    if (highs.length > 200) highs.shift();
-    if (lows.length > 200) lows.shift();
+    if (prices.length > 100) prices.shift();
+    if (volumes.length > 100) volumes.shift();
+    if (candles.length > 100) candles.shift();
+    if (highs.length > 100) highs.shift();
+    if (lows.length > 100) lows.shift();
   }
 
-  checkPumpConditions(symbol, mtfAligned, tickerPriceChangePercent) {
+  checkCooldown(symbol) {
+    const lastTime = this.lastSignalTime.get(symbol);
+    if (!lastTime) return true;
+    const cooldownMs = (config?.signals?.cooldownMinutes || 2) * 60 * 1000;
+    return Date.now() - lastTime > cooldownMs;
+  }
+
+  analyze(ticker) {
+    const { symbol, priceChangePercent } = ticker;
+
+    if (!this.preFilter(ticker)) return null;
+    this.updateHistory(symbol, ticker);
+    if (!this.checkCooldown(symbol)) return null;
+
+    const analysis = this.calculateMetrics(symbol, priceChangePercent);
+    const tier = this.determineTier(analysis);
+    
+    if (tier) {
+      this.lastSignalTime.set(symbol, Date.now());
+      this.signalCounts[tier.type]++;
+      this.checkAutoRelax();
+    }
+    
+    return tier;
+  }
+
+  calculateMetrics(symbol, priceChangePercent) {
     const prices = this.priceHistory.get(symbol);
     const volumes = this.volumeHistory.get(symbol);
     const candles = this.candleHistory.get(symbol);
 
-    if (prices.length < 5) {
-      return { strength: 0, priceChange: 0, volumeSpike: 0 };
+    if (!prices || prices.length < 10) {
+      return { priceChange: 0, volumeSpike: 0, momentum: 0, acceleration: 0, strength: 0 };
     }
 
     const currentPrice = prices[prices.length - 1].price;
     const recentPrices = prices.slice(-10);
     
-    // Use local change for momentum calculations
     const localChange = ((currentPrice - recentPrices[0].price) / recentPrices[0].price) * 100;
-    
-    // Use ticker's 24h change as the primary price change metric
-    const priceChange = Math.abs(tickerPriceChangePercent || localChange || 0);
+    const priceChange = Math.abs(priceChangePercent || localChange || 0);
     
     const avgVolume = volumes.slice(-10).reduce((sum, v) => sum + v.volume, 0) / 10;
     const currentVolume = volumes[volumes.length - 1].volume;
     const volumeSpike = avgVolume > 0 ? currentVolume / avgVolume : 0;
-
-    // Always log for debugging
-    console.log(`[CHECK] ${symbol}: tickerPct=${tickerPriceChangePercent?.toFixed(2)}%, local=${localChange?.toFixed(2)}%, volSpike=${volumeSpike.toFixed(2)}x`);
 
     const momentum = this.calculateMomentum(recentPrices);
     const acceleration = this.calculateAcceleration(recentPrices);
@@ -327,121 +188,173 @@ class PumpAnalyzer {
 
     const { detected: liquiditySweep, reclaimed: sweptReclaimed } = this.checkLiquiditySweep(symbol, currentPrice);
     const breakOfStructure = this.checkBreakOfStructure(symbol);
-    const strongCandle = this.analyzeCandleStrength(candles);
+    const volumeTrend = this.calculateVolumeTrend(symbol);
+    const imbalance = this.calculateImbalance(symbol);
     const rsi = this.calculateRSI(symbol);
-    const { upperWick, body } = this.analyzeCandlePattern(candles);
-    const isInsideRange = this.checkInsideRange(candles);
+    const strongCandle = this.analyzeCandleStrength(candles);
 
-    if (this.aiQualityFilter(upperWick, body, isInsideRange, volumeSpike, rsi)) {
-      return { strength: 0 };
-    }
+    const score = this.calculateScore({
+      ema50, currentPrice, liquiditySweep, sweptReclaimed, volumeSpike,
+      momentum, acceleration, strongCandle, rsi, volumeTrend
+    });
 
+    return {
+      priceChange,
+      localChange,
+      volumeSpike,
+      momentum,
+      acceleration,
+      score,
+      atr,
+      entryPrice: currentPrice,
+      ema50,
+      breakOfStructure,
+      liquiditySweep,
+      sweptReclaimed,
+      volumeTrend,
+      imbalance,
+      rsi,
+      strongCandle,
+      factors: this.getFactors({
+        ema50, currentPrice, breakOfStructure, liquiditySweep, sweptReclaimed,
+        volumeSpike, momentum, acceleration, strongCandle, volumeTrend
+      })
+    };
+  }
+
+  calculateScore(metrics) {
+    const weights = config?.smartScoring || {};
+    const filters = config?.aiFilters || {};
     let score = 0;
+
+    if (metrics.ema50 !== null && metrics.currentPrice > metrics.ema50) {
+      score += weights.htfTrendWeight || 15;
+    }
+    if (metrics.breakOfStructure) score += weights.bosWeight || 20;
+    if (metrics.liquiditySweep) {
+      if (metrics.sweptReclaimed) score += (weights.liquiditySweepWeight || 20) + 10;
+      else score += 5;
+    }
+    if (metrics.volumeSpike >= 1.5) score += weights.volumeSpikeWeight || 15;
+    if (metrics.momentum > 0.2) score += weights.momentumWeight || 10;
+    if (metrics.acceleration > 0.05) score += weights.accelerationWeight || 10;
+    if (metrics.strongCandle) score += weights.candleStrengthWeight || 10;
+    if (metrics.volumeTrend) score += 10;
+
+    if (metrics.rsi > (filters.maxRSI || 85)) return 0;
+
+    return Math.min(score, 100);
+  }
+
+  getFactors(metrics) {
     const factors = [];
-    const validation = {};
+    if (metrics.ema50 !== null && metrics.currentPrice > metrics.ema50) factors.push('HTF Uptrend');
+    if (metrics.breakOfStructure) factors.push('BOS');
+    if (metrics.liquiditySweep) factors.push(metrics.sweptReclaimed ? 'Liq Sweep + Reclaim' : 'Liq Sweep');
+    if (metrics.volumeSpike >= 1.5) factors.push(`Vol: ${metrics.volumeSpike.toFixed(1)}x`);
+    if (metrics.momentum > 0.2) factors.push(`Momentum: ${metrics.momentum.toFixed(3)}`);
+    if (metrics.acceleration > 0.05) factors.push(`Accel: ${metrics.acceleration.toFixed(3)}`);
+    if (metrics.strongCandle) factors.push('Strong Candle');
+    if (metrics.volumeTrend) factors.push('Vol Trend Up');
+    return factors;
+  }
 
-    const htfTrendWeight = config?.smartScoring?.htfTrendWeight || 15;
-    const bosWeight = config?.smartScoring?.bosWeight || 20;
-    const liquiditySweepWeight = config?.smartScoring?.liquiditySweepWeight || 20;
-    const volumeSpikeWeight = config?.smartScoring?.volumeSpikeWeight || 15;
-    const momentumWeight = config?.smartScoring?.momentumWeight || 10;
-    const accelerationWeight = config?.smartScoring?.accelerationWeight || 10;
-    const candleStrengthWeight = config?.smartScoring?.candleStrengthWeight || 10;
-    const minScoreForEntry = config?.signals?.minScoreForEntry || 40;
-    const earlyPumpThreshold = config?.signals?.earlyPumpThreshold || 0.5;
-    const volumeSpikeThreshold = config?.signals?.volumeSpikeThreshold || 1.5;
-    const priceAccelerationThreshold = config?.signals?.priceAccelerationThreshold || 0.3;
+  determineTier(analysis) {
+    if (analysis.score === 0) return null;
 
-    if (ema50 !== null && currentPrice > ema50) {
-      score += htfTrendWeight;
-      factors.push(`HTF Uptrend: Price > EMA50`);
-    }
+    const tiers = config?.signalTiers || {};
+    const { score, priceChange, volumeSpike, momentum, imbalance } = analysis;
 
-    if (mtfAligned) {
-      score += 10;
-      factors.push(`Multi-Timeframe Aligned`);
-    }
-
-    if (breakOfStructure) {
-      score += bosWeight;
-      factors.push(`Break of Structure`);
-      validation.bos = true;
-    }
-
-    if (liquiditySweep) {
-      if (sweptReclaimed && volumeSpike >= 2) {
-        score += liquiditySweepWeight + 10;
-        factors.push(`Liquidity Sweep + Reclaim`);
-        validation.sweep = true;
-      } else {
-        score -= 5;
-      }
-    }
-
-    if (volumeSpike >= 2) {
-      score += volumeSpikeWeight;
-      factors.push(`Volume: ${volumeSpike.toFixed(1)}x`);
-      validation.volume = true;
-    }
-
-    if (momentum > priceAccelerationThreshold) {
-      score += momentumWeight;
-      factors.push(`Momentum: ${momentum.toFixed(3)}`);
-    }
-
-    if (acceleration > 0.05) {
-      score += accelerationWeight;
-      factors.push(`Acceleration: ${acceleration.toFixed(3)}`);
-    }
-
-    if (strongCandle) {
-      score += candleStrengthWeight;
-      factors.push(`Strong Candle`);
-    }
-
-    if (score >= minScoreForEntry && priceChange >= earlyPumpThreshold && acceleration > 0) {
+    if (score >= (tiers.SNIPER?.scoreThreshold || 75) &&
+        priceChange >= (tiers.SNIPER?.priceChangeThreshold || 3) &&
+        volumeSpike >= (tiers.SNIPER?.volumeSpikeThreshold || 3) &&
+        momentum >= (tiers.SNIPER?.momentumThreshold || 0.4)) {
       return {
-        strength: Math.min(score, 100),
-        type: 'PUMP',
-        factors,
-        validation,
-        priceChange,
-        volumeSpike,
-        momentum,
-        acceleration,
-        entryPrice: currentPrice,
-        atr,
-        signals: this.generateEntryExit(currentPrice, atr),
-        metadata: {
-          ema50,
-          breakOfStructure,
-          liquiditySweep,
-          sweptReclaimed,
-          strongCandle,
-          rsi
-        }
+        type: 'SNIPER',
+        score,
+        priority: 1,
+        signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER'),
+        ...analysis
       };
     }
 
-    return { strength: 0 };
+    if (score >= (tiers.CONFIRMED?.scoreThreshold || 65) &&
+        priceChange >= (tiers.CONFIRMED?.priceChangeThreshold || 2.5) &&
+        volumeSpike >= (tiers.CONFIRMED?.volumeSpikeThreshold || 2)) {
+      return {
+        type: 'CONFIRMED',
+        score,
+        priority: 2,
+        signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED'),
+        ...analysis
+      };
+    }
+
+    if (score >= (tiers.EARLY?.scoreThreshold || 50) &&
+        priceChange >= (tiers.EARLY?.priceChangeThreshold || 1.5) &&
+        volumeSpike >= (tiers.EARLY?.volumeSpikeThreshold || 1.5) &&
+        momentum >= (tiers.EARLY?.momentumThreshold || 0.2)) {
+      return {
+        type: 'EARLY',
+        score,
+        priority: 3,
+        signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY'),
+        ...analysis
+      };
+    }
+
+    return null;
+  }
+
+  generateEntryExit(entryPrice, atr, tier) {
+    const multipliers = config?.riskManagement?.atrMultiplier || { tp1: 0.5, tp2: 1.0, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.2 };
+    const tierMultipliers = tier === 'SNIPER' ? { tp1: 1, tp2: 2, tp3: 3, tp4: 4, tp5: 5, sl: 1.5 } :
+                            tier === 'CONFIRMED' ? { tp1: 0.75, tp2: 1.5, tp3: 2.5, tp4: 3.5, tp5: 5, sl: 1.2 } :
+                            { tp1: 0.5, tp2: 1, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.0 };
+
+    return {
+      entry: entryPrice,
+      tp1: entryPrice + (tierMultipliers.tp1 * atr),
+      tp2: entryPrice + (tierMultipliers.tp2 * atr),
+      tp3: entryPrice + (tierMultipliers.tp3 * atr),
+      tp4: entryPrice + (tierMultipliers.tp4 * atr),
+      tp5: entryPrice + (tierMultipliers.tp5 * atr),
+      sl: entryPrice - (tierMultipliers.sl * atr),
+      atr
+    };
+  }
+
+  calculateMomentum(prices) {
+    if (prices.length < 3) return 0;
+    const recent = prices.slice(-3);
+    const rate1 = (recent[2].price - recent[1].price) / recent[1].price;
+    const rate2 = (recent[1].price - recent[0].price) / recent[0].price;
+    return rate1 + rate2;
+  }
+
+  calculateAcceleration(prices) {
+    if (prices.length < 5) return 0;
+    const recent = prices.slice(-5);
+    const changes = [];
+    for (let i = 1; i < recent.length; i++) {
+      changes.push((recent[i].price - recent[i - 1].price) / recent[i - 1].price);
+    }
+    return changes[changes.length - 1] - changes[0];
   }
 
   calculateRSI(symbol, period = 14) {
     const prices = this.priceHistory.get(symbol);
     if (!prices || prices.length < period + 1) return 50;
-
     let gains = 0, losses = 0;
     for (let i = prices.length - period; i < prices.length - 1; i++) {
       const change = prices[i + 1].price - prices[i].price;
       if (change > 0) gains += change;
       else losses += Math.abs(change);
     }
-
     const avgGain = gains / period;
     const avgLoss = losses / period;
     if (avgLoss === 0) return 100;
-    const rs = avgGain / avgLoss;
-    return 100 - (100 / (1 + rs));
+    return 100 - (100 / (1 + avgGain / avgLoss));
   }
 
   analyzeCandleStrength(candles) {
@@ -453,83 +366,22 @@ class PumpAnalyzer {
     return (last.close - last.low) / range > 0.7;
   }
 
-  analyzeCandlePattern(candles) {
-    if (candles.length < 2) return { upperWick: 0, body: 0 };
-    const last = candles[candles.length - 1];
-    const body = Math.abs(last.close - (last.open || last.close));
-    const upperWick = last.high - Math.max(last.close, last.open || last.close);
+  checkAutoRelax() {
+    if (!config?.autoRelax?.enabled) return;
+    const now = Date.now();
+    const elapsed = (now - this.signalCounts.lastReset) / 60000;
     
-    return { upperWick, body };
-  }
-
-  checkInsideRange(candles) {
-    if (candles.length < 2) return false;
-    const last = candles[candles.length - 1];
-    const prev = candles[candles.length - 2];
-    return last.high < prev.high && last.low > prev.low;
-  }
-
-  aiQualityFilter(upperWick, body, isInsideRange, volumeSpike, rsi) {
-    const maxUpperWickRatio = config?.aiFilters?.maxUpperWickRatio || 1.5;
-    const minVolumeSpikeForQuality = config?.aiFilters?.minVolumeSpikeForQuality || 2;
-    const maxRSI = config?.aiFilters?.maxRSI || 80;
-    const filterInsideRange = config?.aiFilters?.filterInsideRange || false;
-    
-    if (body > 0 && upperWick > body * maxUpperWickRatio) return true;
-    if (filterInsideRange && isInsideRange) return true;
-    if (volumeSpike < minVolumeSpikeForQuality) return true;
-    if (rsi > maxRSI) return true;
-    return false;
-  }
-
-  generateEntryExit(entryPrice, atr) {
-    const atrMultiplier = config?.riskManagement?.atrMultiplier || { tp1: 0.5, tp2: 1.0, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.2 };
-
-    return {
-      entry: entryPrice,
-      tp1: entryPrice + (atrMultiplier.tp1 * atr),
-      tp2: entryPrice + (atrMultiplier.tp2 * atr),
-      tp3: entryPrice + (atrMultiplier.tp3 * atr),
-      tp4: entryPrice + (atrMultiplier.tp4 * atr),
-      tp5: entryPrice + (atrMultiplier.tp5 * atr),
-      sl: entryPrice - (atrMultiplier.sl * atr),
-      atr
-    };
-  }
-
-  recordConditionResult(condition, won) {
-    if (this.conditionStats[condition]) {
-      if (won) this.conditionStats[condition].wins++;
-      else this.conditionStats[condition].losses++;
+    if (elapsed >= (config.autoRelax.noSignalsMinutes || 10)) {
+      const totalSignals = this.signalCounts.EARLY + this.signalCounts.CONFIRMED + this.signalCounts.SNIPER;
+      if (totalSignals === 0) {
+        console.log(`\n⚠️ Auto-relax: No signals in ${elapsed.toFixed(0)}min, reducing thresholds...`);
+      }
+      this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, lastReset: now };
     }
   }
 
-  getConditionWinRates() {
-    const rates = {};
-    for (const [condition, stats] of Object.entries(this.conditionStats)) {
-      const total = stats.wins + stats.losses;
-      rates[condition] = total > 0 ? (stats.wins / total * 100).toFixed(1) + '%' : 'N/A';
-    }
-    return rates;
-  }
-
-  adjustWeights() {
-    const { bos, sweep, volume, mtf } = this.conditionStats;
-    
-    const bosTotal = bos.wins + bos.losses;
-    const sweepTotal = sweep.wins + sweep.losses;
-    
-    if (bosTotal >= 10 && (bos.wins / bosTotal) < 0.5) {
-      config.smartScoring.bosWeight = Math.max(10, config.smartScoring.bosWeight - 5);
-    }
-    
-    if (sweepTotal >= 10 && (sweep.wins / sweepTotal) < 0.5) {
-      config.smartScoring.liquiditySweepWeight = Math.max(10, config.smartScoring.liquiditySweepWeight - 5);
-    }
-  }
-
-  setLastSignalTime(symbol) {
-    this.lastSignalTime.set(symbol, Date.now());
+  getStats() {
+    return { ...this.signalCounts };
   }
 
   clearHistory(symbol) {
