@@ -1,39 +1,77 @@
-# 🚀 Deploy to Render (Free Tier)
+# Deploy to Fly.io
 
 ## Quick Deploy
 
-1. Go to [render.com](https://render.com)
-2. Click **"New +"** → **"Web Service"**
-3. Connect your GitHub: `manojkumar12-maker/binance-signal-engine`
-4. Configure:
-   - **Name:** `binance-signals`
-   - **Region:** Choose closest
-   - **Branch:** `main`
-   - **Root Directory:** (leave empty)
-   - **Runtime:** `Node"`
-   - **Build Command:** `npm install`
-   - **Start Command:** `node src/index.js`
-   - **Plan:** `Free`
+1. Install Fly CLI:
+   ```bash
+   fly install
+   ```
 
-5. Click **"Create Web Service"**
+2. Login to Fly.io:
+   ```bash
+   fly auth login
+   ```
 
-## API Endpoints
+3. Launch the app:
+   ```bash
+   fly launch
+   ```
 
-After deploy:
-- `https://binance-signals.onrender.com/api/signals`
-- `https://binance-signals.onrender.com/api/health`
+4. Set secrets (if needed):
+   ```bash
+   fly secrets set API_KEY=your_api_key
+   ```
 
-## Update Frontend
+5. Deploy:
+   ```bash
+   fly deploy
+   ```
 
-Edit `frontend/index.html`:
-```javascript
-const wsUrl = 'wss://binance-signals.onrender.com';
+6. Open your app:
+   ```bash
+   fly open
+   ```
+
+## Manual Setup
+
+1. Create app:
+   ```bash
+   fly apps create binance-signals
+   ```
+
+2. Deploy:
+   ```bash
+   fly deploy
+   ```
+
+3. Check status:
+   ```bash
+   fly status
+   ```
+
+## Scaling
+
+- Scale VMs:
+  ```bash
+  fly scale count 1
+  ```
+
+- Scale memory:
+  ```bash
+  fly scale memory 256
+  ```
+
+## Logs
+
+```bash
+fly logs
 ```
 
-Or change the WebSocket URL to your deployed backend.
+## Regions
 
-## Notes
+Default region is `iad` (Virginia). To change, edit `fly.toml`:
+```toml
+primary_region = "lax"  # Los Angeles
+```
 
-- Free tier sleeps after 15 min of inactivity
-- First deploy takes ~2-3 minutes
-- Subsequent deploys are faster
+Available regions: `iad`, `lax`, `ord`, `atl`, `sea`, `dfw`, `syd`, `fra`, `ams`
