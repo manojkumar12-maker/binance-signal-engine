@@ -344,28 +344,27 @@ class PumpAnalyzer {
 
     const result = analyzeSignal(confidenceData);
 
-    if (!result.tier) return null;
-    if (!result.hasConfluence) return null;
-    if (!result.isTrending) return null;
+    if (!result.shouldGenerateSignal) return null;
     if (result.isFakePump) return null;
-    if (result.entryWarning === 'Too early to enter' || result.entryWarning === 'Exhausted pump') return null;
 
     const qualityEmoji = result.entryQuality === 'EXCELLENT' ? '⭐' : result.entryQuality === 'GOOD' ? '✓' : '⚠️';
-    const tradeAction = result.shouldTrade ? '🔥' : '👀';
 
-    if (result.tier === 'SNIPER') {
-      console.log(`🔴 SNIPER ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
+    if (result.tier === 'SNIPER' && result.hasConfluence && result.confidence >= 80) {
+      console.log(`🔴 SNIPER ${qualityEmoji} 🔥: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluenceCount}`);
       return { symbol, type: 'SNIPER', score, ...result, priority: 1, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
     }
 
-    if (result.tier === 'CONFIRMED') {
-      console.log(`🟢 CONFIRMED ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
+    if (result.tier === 'CONFIRMED' && result.hasConfluence && result.confluenceCount >= 3 && result.confidence >= 70) {
+      console.log(`🟢 CONFIRMED ${qualityEmoji} 🔥: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluenceCount}`);
       return { symbol, type: 'CONFIRMED', score, ...result, priority: 2, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
     }
 
-    if (result.tier === 'EARLY' && result.shouldTrade) {
-      console.log(`🟡 EARLY ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
-      return { symbol, type: 'EARLY', score, ...result, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
+    if (result.tier === 'EARLY' || (result.confidence >= 40 && !result.isFakePump)) {
+      const tierType = result.tier === 'EARLY' ? 'EARLY' : (result.confidence >= 50 ? 'EARLY' : null);
+      if (tierType) {
+        console.log(`🟡 EARLY ${qualityEmoji} 👀: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluenceCount}`);
+        return { symbol, type: 'EARLY', score, ...result, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
+      }
     }
 
     return null;

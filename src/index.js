@@ -96,13 +96,9 @@ class SignalEngine {
         this.stats.signalsGenerated++;
         this.stats.signalsByTier[signal.tier]++;
         
-        if (signal.tier !== 'EARLY') {
-          console.log(signalGenerator.formatSignal(signal));
-          await notifier.sendSignal(signal);
-          await apiServer.addSignal(signal);
-        } else {
-          console.log(`🟡 EARLY: ${signal.symbol} (Score: ${signal.metrics?.score || 0})`);
-        }
+        console.log(signalGenerator.formatSignal(signal));
+        await notifier.sendSignal(signal);
+        await apiServer.addSignal(signal);
       }
     }
   }
