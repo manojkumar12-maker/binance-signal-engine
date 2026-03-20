@@ -325,26 +325,25 @@ class PumpAnalyzer {
   }
 
   determineTier(symbol, analysis) {
-    const { score, priceChange, volumeSpike } = analysis;
-    const tunedParams = autoTuner.getParams();
+    let { score, priceChange, volumeSpike } = analysis;
 
-    const pass = score >= 40 && priceChange >= 1 && volumeSpike >= 1;
-    console.log(`📊 ENTRY CHECK [${symbol}]: Score=${score.toFixed(1)}, PriceChg=${priceChange.toFixed(2)}%, Vol=${volumeSpike.toFixed(2)}x => ${pass ? '✅ PASS' : '❌ FAIL'}`);
+    if (priceChange > 12) score -= 10;
 
+    const pass = score >= 45 && priceChange >= 1.2 && volumeSpike >= 1;
     if (!pass) return null;
 
-    if (score >= 55 && priceChange >= 3 && volumeSpike >= 2) {
-      console.log(`🔴 SNIPER: ${symbol}`);
+    if (score >= 65 && priceChange >= 3 && volumeSpike >= 2.5) {
+      console.log(`🔴 SNIPER: ${symbol} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
       return { type: 'SNIPER', score, priority: 1, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER'), ...analysis };
     }
 
-    if (score >= 45 && priceChange >= 2 && volumeSpike >= 1.5) {
-      console.log(`🟢 CONFIRMED: ${symbol}`);
+    if (score >= 55 && priceChange >= 2 && volumeSpike >= 1.8) {
+      console.log(`🟢 CONFIRMED: ${symbol} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
       return { type: 'CONFIRMED', score, priority: 2, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED'), ...analysis };
     }
 
-    if (score >= 40 && priceChange >= 1 && volumeSpike >= 1) {
-      console.log(`🟡 EARLY: ${symbol}`);
+    if (score >= 45 && priceChange >= 1.2) {
+      console.log(`🟡 EARLY: ${symbol} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
       return { type: 'EARLY', score, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY'), ...analysis };
     }
 
