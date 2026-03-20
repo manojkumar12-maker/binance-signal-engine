@@ -1,14 +1,12 @@
 node_modules/
 .env
+.env.local
 *.log
 .DS_Store
 
-# Data files (signals stored here)
+# Data files
 data/
 
 # IDE
 .vscode/
 .idea/
-
-# Logs
-logs/
