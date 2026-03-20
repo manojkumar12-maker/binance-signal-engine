@@ -422,29 +422,33 @@
                     early: 0
                 };
 
-                this.apiBase = window.location.origin;
+                this.apiBase = 'https://binance-signal-engine.onrender.com';
                 this.fetchSignals();
                 this.initWebSocket();
                 this.initFilters();
             }
 
             initWebSocket() {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}`;
+                const protocol = 'wss:';
+                const wsUrl = `${protocol}//binance-signal-engine.onrender.com`;
                 
-                this.ws = new WebSocket(wsUrl);
-                this.ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'NEW_SIGNAL') {
-                        this.signals.unshift(data.signal);
-                        this.showNotification(`New ${data.signal.tier} signal: ${data.signal.symbol}`);
-                        this.renderSignals();
-                        this.updateStats();
-                    }
-                };
-                this.ws.onclose = () => {
-                    setTimeout(() => this.initWebSocket(), 3000);
-                };
+                try {
+                    this.ws = new WebSocket(wsUrl);
+                    this.ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'NEW_SIGNAL') {
+                            this.signals.unshift(data.signal);
+                            this.showNotification(`New ${data.signal.tier} signal: ${data.signal.symbol}`);
+                            this.renderSignals();
+                            this.updateStats();
+                        }
+                    };
+                    this.ws.onclose = () => {
+                        setTimeout(() => this.initWebSocket(), 5000);
+                    };
+                } catch (e) {
+                    console.log('WebSocket not available, polling only');
+                }
             }
 
             async fetchStats() {

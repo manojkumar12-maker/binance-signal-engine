@@ -367,15 +367,23 @@
             <div class="stats-bar">
                 <div class="stat-item">
                     <div class="stat-value" id="totalSignals">0</div>
-                    <div class="stat-label">Total Signals</div>
+                    <div class="stat-label">Total</div>
+                </div>
+                <div class="stat-item" style="color: #ef4444;">
+                    <div class="stat-value" id="sniperSignals">0</div>
+                    <div class="stat-label">🔴 Sniper</div>
+                </div>
+                <div class="stat-item" style="color: #10b981;">
+                    <div class="stat-value" id="confirmedSignals">0</div>
+                    <div class="stat-label">🟢 Confirmed</div>
+                </div>
+                <div class="stat-item" style="color: #f59e0b;">
+                    <div class="stat-value" id="earlySignals">0</div>
+                    <div class="stat-label">🟡 Early</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-value" id="activeSignals">0</div>
                     <div class="stat-label">Active</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value" id="hitTargets">0</div>
-                    <div class="stat-label">TP Hit</div>
                 </div>
             </div>
             <div class="status-indicator">
@@ -388,8 +396,9 @@
     <main class="main-content">
         <div class="filters">
             <button class="filter-btn active" data-filter="all">All Signals</button>
-            <button class="filter-btn" data-filter="active">Active</button>
-            <button class="filter-btn" data-filter="completed">Completed</button>
+            <button class="filter-btn" data-filter="sniper">🔴 Sniper</button>
+            <button class="filter-btn" data-filter="confirmed">🟢 Confirmed</button>
+            <button class="filter-btn" data-filter="early">🟡 Early</button>
         </div>
         <div class="signals-grid" id="signalsGrid">
             <div class="empty-state">
@@ -408,12 +417,35 @@
                 this.stats = {
                     total: 0,
                     active: 0,
-                    hitTargets: 0
+                    sniper: 0,
+                    confirmed: 0,
+                    early: 0
                 };
 
                 this.apiBase = 'https://binance-signal-engine.onrender.com';
+                this.fetchStats();
                 this.fetchSignals();
                 this.initFilters();
+            }
+
+            async fetchStats() {
+                try {
+                    const response = await fetch(`${this.apiBase}/api/stats`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.stats.total = data.signalsGenerated || 0;
+                        this.stats.active = data.state?.active || data.activeSignals || 0;
+                        if (data.state) {
+                            this.stats.sniper = data.state.sniper || 0;
+                            this.stats.confirmed = data.state.confirmed || 0;
+                            this.stats.early = data.state.early || 0;
+                        }
+                        this.updateStats();
+                    }
+                } catch (error) {
+                    console.error('Stats fetch error:', error);
+                }
+                setTimeout(() => this.fetchStats(), 10000);
             }
 
             async fetchSignals() {
@@ -422,15 +454,13 @@
                     if (response.ok) {
                         const data = await response.json();
                         this.signals = data.signals || [];
-                        this.stats.total = data.signals.length;
-                        this.stats.active = data.signals.filter(s => s.status === 'ACTIVE').length;
                         this.renderSignals();
-                        this.updateStats();
+                        this.fetchStats();
                     }
                 } catch (error) {
                     console.log('Waiting for connection...');
                 }
-                setTimeout(() => this.fetchSignals(), 3000);
+                setTimeout(() => this.fetchSignals(), 5000);
             }
 
             showNotification(message) {
@@ -455,10 +485,12 @@
 
             getFilteredSignals() {
                 switch(this.filter) {
-                    case 'active':
-                        return this.signals.filter(s => s.status === 'ACTIVE');
-                    case 'completed':
-                        return this.signals.filter(s => s.status !== 'ACTIVE');
+                    case 'sniper':
+                        return this.signals.filter(s => s.tier === 'SNIPER');
+                    case 'confirmed':
+                        return this.signals.filter(s => s.tier === 'CONFIRMED');
+                    case 'early':
+                        return this.signals.filter(s => s.tier === 'EARLY');
                     default:
                         return this.signals;
                 }
@@ -525,7 +557,9 @@
             updateStats() {
                 document.getElementById('totalSignals').textContent = this.stats.total;
                 document.getElementById('activeSignals').textContent = this.stats.active;
-                document.getElementById('hitTargets').textContent = this.stats.hitTargets;
+                document.getElementById('sniperSignals').textContent = this.stats.sniper;
+                document.getElementById('confirmedSignals').textContent = this.stats.confirmed;
+                document.getElementById('earlySignals').textContent = this.stats.early;
             }
 
             async saveSignals() {
