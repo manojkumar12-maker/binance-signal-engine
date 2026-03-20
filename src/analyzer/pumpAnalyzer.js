@@ -1,7 +1,7 @@
 import { config } from '../../config/config.js';
 import { autoTuner } from '../engine/autoTuner.js';
 import { orderBookAnalyzer } from '../engine/orderBookAnalyzer.js';
-import { calculateConfidence, classifyByConfidence, hasConfluence, isTrendingMarket, isFakePump, getSmartEntry, analyzeSignal } from '../engine/confidenceEngine.js';
+import { analyzeSignal, getSmartEntry } from '../engine/confidenceEngine.js';
 
 const STABLECOINS = ['USDT', 'BUSD', 'USDC', 'DAI', 'USD', 'UST'];
 
