@@ -34,18 +34,24 @@ class SignalGenerator {
       },
       stopLoss: signalSL,
       riskReward: {
-        tp1: signalSL ? ((signals.tp1 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
-        tp2: signalSL ? ((signals.tp2 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
-        tp3: signalSL ? ((signals.tp3 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0'
+        tp1: signalSL && signalEntry ? ((signals.tp1 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
+        tp2: signalSL && signalEntry ? ((signals.tp2 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
+        tp3: signalSL && signalEntry ? ((signals.tp3 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0'
       },
       metrics: {
-        priceChange: priceChange.toFixed(2),
-        volumeSpike: volumeSpike.toFixed(1),
-        momentum: momentum?.toFixed(4) || '0',
+        priceChange: typeof priceChange === 'number' ? priceChange.toFixed(2) : '0',
+        volumeSpike: typeof volumeSpike === 'number' ? volumeSpike.toFixed(1) : '0',
+        momentum: typeof momentum === 'number' ? momentum.toFixed(4) : '0',
         score
       },
-      factors,
+      factors: Array.isArray(factors) ? factors : [],
       metadata,
+      confidence: analysis.confidence || 0,
+      confluence: analysis.confluence || 0,
+      confluenceReasons: analysis.confluenceReasons || [],
+      entryQuality: analysis.entryQuality || 'N/A',
+      action: analysis.action || 'UNKNOWN',
+      shouldTrade: analysis.shouldTrade || false,
       status: type === 'SNIPER' ? 'HOT' : type === 'CONFIRMED' ? 'ACTIVE' : 'WATCHLIST',
       management: {
         slMovedToBreakeven: false,

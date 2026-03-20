@@ -61,8 +61,10 @@ class NotificationManager {
             inline: true
           },
           {
-            name: '⚡ Factors',
-            value: signal.factors.map(f => `• ${f}`).join('\n'),
+            name: '⚡ Confluence',
+            value: `Score: \`${signal.confluence || 0}\`\n` +
+                   `Confidence: \`${signal.confidence || 0}\`\n` +
+                   `Quality: \`${signal.entryQuality || 'N/A'}\``,
             inline: false
           }
         ],
@@ -108,23 +110,22 @@ class NotificationManager {
   formatTelegramMessage(signal) {
     const { targets, stopLoss, metrics } = signal;
     
+    const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : '🟡';
+    
     return `
-🚀 <b>PUMP SIGNAL - ${signal.symbol}</b>
+${tierEmoji} <b>${signal.tier} SIGNAL - ${signal.symbol}</b>
 
-💰 <b>Entry:</b> ${signal.entryPrice.toFixed(6)}
-🛑 <b>Stop Loss:</b> ${stopLoss.toFixed(6)}
+💰 <b>Entry:</b> ${(signal.entryPrice || 0).toFixed(6)}
+🛑 <b>Stop Loss:</b> ${(stopLoss || 0).toFixed(6)}
 
 🎯 <b>Take Profit:</b>
-TP1: ${targets.tp1.toFixed(6)} (+${config.riskManagement.tp1Percent}%)
-TP2: ${targets.tp2.toFixed(6)} (+${config.riskManagement.tp2Percent}%)
-TP3: ${targets.tp3.toFixed(6)} (+${config.riskManagement.tp3Percent}%)
-TP4: ${targets.tp4.toFixed(6)} (+${config.riskManagement.tp4Percent}%)
-TP5: ${targets.tp5.toFixed(6)} (+${config.riskManagement.tp5Percent}%)
+TP1: ${(targets?.tp1 || 0).toFixed(6)} (+0.5%)
+TP2: ${(targets?.tp2 || 0).toFixed(6)} (+1.0%)
+TP3: ${(targets?.tp3 || 0).toFixed(6)} (+1.5%)
 
-📊 <b>Metrics:</b>
-Price Change: ${metrics.priceChange}%
-Volume Spike: ${metrics.volumeSpike}x
-Strength: ${metrics.strength}
+📊 <b>Confidence:</b> ${signal.confidence || 0}
+📈 <b>Confluence:</b> ${signal.confluence || 0}
+🎯 <b>Quality:</b> ${signal.entryQuality || 'N/A'}
 
 ⚡ Signal #${signal.id}
     `;
