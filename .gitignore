@@ -1,4 +1,19 @@
 node_modules/
 .env
+.env.local
 *.log
 .DS_Store
+
+# Prisma
+/src/generated/prisma
+/prisma/migrations/
+/prisma/*.db
+/prisma/*.db-journal
+/prisma.config.ts
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+logs/

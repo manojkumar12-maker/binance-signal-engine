@@ -83,6 +83,11 @@ class NotificationManager {
   }
 
   async sendTelegram(signal) {
+    if (!config.notifications.telegram.botToken || !config.notifications.telegram.chatId) {
+      console.log('⚠️ Telegram not configured (missing botToken or chatId)');
+      return;
+    }
+    
     const text = this.formatTelegramMessage(signal);
     
     try {
@@ -94,6 +99,7 @@ class NotificationManager {
           parse_mode: 'HTML'
         }
       );
+      console.log(`✅ Telegram notification sent for ${signal.symbol}`);
     } catch (error) {
       console.error('❌ Telegram notification failed:', error.message);
     }

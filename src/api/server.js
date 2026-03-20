@@ -3,13 +3,14 @@ import { WebSocketServer } from 'ws';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { getSignals, getSignalStats, createSignal as dbCreateSignal, updateSignalStatus as dbUpdateSignalStatus } from '../database/db.js';
+import { state, getRecentSignals } from '../state.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 
 class SignalAPIServer {
   constructor() {
-    this.signals = [];
     this.server = null;
     this.wss = null;
     this.clients = new Set();
@@ -26,6 +27,8 @@ class SignalAPIServer {
       this.clients.add(ws);
       ws.on('close', () => this.clients.delete(ws));
       ws.on('error', () => this.clients.delete(ws));
+      
+      ws.send(JSON.stringify({ type: 'CONNECTED', message: 'Dashboard connected' }));
     });
 
     this.server.listen(PORT, () => {
@@ -46,10 +49,9 @@ class SignalAPIServer {
     res.setHeader('Content-Type', 'application/json');
 
     if (url === '/api/stats' && req.method === 'GET') {
-      const stats = this.getStats();
-      res.end(JSON.stringify(stats));
+      this.getStats().then(stats => res.end(JSON.stringify(stats)));
     } else if (url === '/api/signals' && req.method === 'GET') {
-      res.end(JSON.stringify({ signals: this.signals, count: this.signals.length }));
+      this.getAllSignals().then(data => res.end(JSON.stringify(data)));
     } else if (url === '/api/health' && req.method === 'GET') {
       res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
     } else {
@@ -58,14 +60,17 @@ class SignalAPIServer {
     }
   }
 
-  getStats() {
+  async getStats() {
+    const dbStats = await getSignalStats();
+    const recentSignals = getRecentSignals(20);
+    
     return {
-      signalsGenerated: global.engine?.stats?.signalsGenerated || 0,
-      signalsByTier: global.engine?.stats?.signalsByTier || { SNIPER: 0, CONFIRMED: 0, EARLY: 0 },
+      signalsGenerated: dbStats.total || state.stats.total,
+      signalsByTier: dbStats.tierCounts || state.stats,
       symbolsMonitored: global.engine?.stats?.symbolsMonitored || 0,
-      activeSignals: global.signalGenerator?.getActiveSignals?.()?.length || 0,
+      activeSignals: dbStats.active || state.stats.active,
       uptime: global.engine?.stats?.startedAt ? Date.now() - global.engine.stats.startedAt : 0,
-      recentSignals: this.signals.slice(0, 20).map(s => ({
+      recentSignals: recentSignals.map(s => ({
         symbol: s.symbol,
         tier: s.tier,
         score: s.metrics?.score,
@@ -73,7 +78,73 @@ class SignalAPIServer {
         volumeSpike: s.metrics?.volumeSpike,
         timestamp: s.timestamp
       })),
-      autoTuner: global.autoTuner?.getStats?.() || {}
+      autoTuner: global.autoTuner?.getStats?.() || {},
+      state: state.stats
+    };
+  }
+
+  async getAllSignals() {
+    const dbSignals = await getSignals(100);
+    const localSignals = getRecentSignals(100);
+    
+    const allSignals = [...localSignals];
+    
+    for (const dbSignal of dbSignals) {
+      const exists = allSignals.find(s => s.id === dbSignal.id);
+      if (!exists) {
+        allSignals.push(this.formatSignalForApi(dbSignal));
+      }
+    }
+    
+    allSignals.sort((a, b) => b.timestamp - a.timestamp);
+    
+    return { 
+      signals: allSignals.slice(0, 100), 
+      count: allSignals.length,
+      stats: state.stats
+    };
+  }
+
+  formatSignalForApi(signal) {
+    if (signal.timestamp instanceof Date) {
+      signal.timestamp = signal.timestamp.getTime();
+    }
+    
+    if (signal.closedAt instanceof Date) {
+      signal.closedAt = signal.closedAt.getTime();
+    }
+    
+    return {
+      id: signal.id,
+      symbol: signal.symbol,
+      type: signal.type,
+      tier: signal.tier,
+      timestamp: signal.timestamp,
+      entryPrice: signal.entryPrice,
+      atr: signal.atr,
+      targets: {
+        tp1: signal.tp1 || signal.targets?.tp1,
+        tp2: signal.tp2 || signal.targets?.tp2,
+        tp3: signal.tp3 || signal.targets?.tp3,
+        tp4: signal.tp4 || signal.targets?.tp4,
+        tp5: signal.tp5 || signal.targets?.tp5
+      },
+      stopLoss: signal.stopLoss,
+      riskReward: {
+        tp1: signal.tp1RR || signal.riskReward?.tp1,
+        tp2: signal.tp2RR || signal.riskReward?.tp2,
+        tp3: signal.tp3RR || signal.riskReward?.tp3
+      },
+      metrics: {
+        priceChange: signal.priceChange || signal.metrics?.priceChange,
+        volumeSpike: signal.volumeSpike || signal.metrics?.volumeSpike,
+        momentum: signal.momentum || signal.metrics?.momentum,
+        score: signal.score || signal.metrics?.score
+      },
+      factors: typeof signal.factors === 'string' ? JSON.parse(signal.factors) : (signal.factors || []),
+      status: signal.status,
+      closedAt: signal.closedAt,
+      closedPrice: signal.closedPrice
     };
   }
 
@@ -81,22 +152,48 @@ class SignalAPIServer {
     const message = JSON.stringify(data);
     this.clients.forEach(client => {
       if (client.readyState === 1) {
-        client.send(message);
+        try {
+          client.send(message);
+        } catch (e) {
+          this.clients.delete(client);
+        }
       }
     });
   }
 
-  addSignal(signal) {
-    this.signals.unshift(signal);
-    if (this.signals.length > 100) this.signals.pop();
-    this.broadcast({ type: 'NEW_SIGNAL', signal });
+  async addSignal(signal) {
+    try {
+      const dbSignal = await dbCreateSignal(signal);
+      const formattedSignal = this.formatSignalForApi(dbSignal);
+      
+      state.signals.unshift(formattedSignal);
+      if (state.signals.length > 500) state.signals.pop();
+      
+      this.broadcast({ type: 'NEW_SIGNAL', signal: formattedSignal });
+      
+      return formattedSignal;
+    } catch (error) {
+      console.error('Failed to save signal:', error);
+      return signal;
+    }
   }
 
-  updateSignal(symbol, update) {
-    const signal = this.signals.find(s => s.symbol === symbol);
-    if (signal) {
-      Object.assign(signal, update);
-      this.broadcast({ type: 'UPDATE_SIGNAL', signal });
+  async updateSignalStatus(symbol, status, closedPrice = null) {
+    try {
+      const signal = state.signals.find(s => s.symbol === symbol && 
+        (s.status === 'ACTIVE' || s.status === 'HOT' || s.status === 'WATCHLIST'));
+      
+      if (signal?.id) {
+        await dbUpdateSignalStatus(signal.id, status, closedPrice);
+        signal.status = status;
+        if (closedPrice) {
+          signal.closedPrice = closedPrice;
+          signal.closedAt = Date.now();
+        }
+        this.broadcast({ type: 'UPDATE_SIGNAL', symbol, status, closedPrice });
+      }
+    } catch (error) {
+      console.error('Failed to update signal status:', error);
     }
   }
 }

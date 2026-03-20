@@ -1,7 +1,7 @@
 export const config = {
   binance: {
-    wsUrl: 'wss://fstream.binance.com/ws',
-    apiUrl: 'https://fapi.binance.com',
+    wsUrl: process.env.BINANCE_WS_URL || 'wss://fstream.binance.com/ws',
+    apiUrl: process.env.BINANCE_API_URL || 'https://fapi.binance.com',
     streamType: 'perpetual'
   },
   signals: {
@@ -92,8 +92,15 @@ export const config = {
     tuneIntervalMinutes: 2
   },
   notifications: {
-    discord: { enabled: false, webhookUrl: '' },
-    telegram: { enabled: false, botToken: '', chatId: '' },
+    discord: { 
+      enabled: process.env.DISCORD_ENABLED === 'true', 
+      webhookUrl: process.env.DISCORD_WEBHOOK_URL || '' 
+    },
+    telegram: { 
+      enabled: process.env.TELEGRAM_ENABLED === 'true', 
+      botToken: process.env.TELEGRAM_BOT_TOKEN || '', 
+      chatId: process.env.TELEGRAM_CHAT_ID || '' 
+    },
     console: true
   },
   feedbackLoop: {

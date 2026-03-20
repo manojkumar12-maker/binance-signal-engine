@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Signal {
+  id          String   @id @default(uuid())
+  symbol      String
+  type        String
+  tier        String
+  timestamp   DateTime @default(now())
+  entryPrice  Float
+  atr         Float?
+  tp1         Float
+  tp2         Float
+  tp3         Float
+  tp4         Float
+  tp5         Float
+  stopLoss    Float
+  tp1RR       Float?
+  tp2RR       Float?
+  tp3RR       Float?
+  priceChange Float
+  volumeSpike Float
+  momentum    Float?
+  score       Float
+  factors     String?
+  metadata    String?
+  status      String   @default("ACTIVE")
+  closedAt    DateTime?
+  closedPrice Float?
+  slMovedToBreakeven Boolean @default(false)
+  trailingActive     Boolean @default(false)
+  tpHits       String?
+  
+  @@index([symbol])
+  @@index([tier])
+  @@index([status])
+  @@index([timestamp])
+}

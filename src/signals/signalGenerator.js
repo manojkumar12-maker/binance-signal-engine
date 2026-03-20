@@ -1,4 +1,5 @@
 import { config } from '../../config/config.js';
+import { createSignal as dbCreateSignal } from '../database/db.js';
 
 class SignalGenerator {
   constructor() {
@@ -8,7 +9,7 @@ class SignalGenerator {
     this.accountBalance = config?.positionSizing?.accountSize || 10000;
   }
 
-  generateSignal(analysis) {
+  async generateSignal(analysis) {
     if (!analysis || !analysis.type) return null;
 
     const { type, score, priceChange, volumeSpike, momentum, factors, signals, atr, entryPrice, symbol, metadata } = analysis;
@@ -17,7 +18,7 @@ class SignalGenerator {
     const signalSL = signals?.sl;
     
     const signal = {
-      id: ++this.signalId,
+      id: `sig_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       symbol: symbol || 'UNKNOWN',
       type,
       tier: type,
@@ -55,6 +56,12 @@ class SignalGenerator {
 
     this.activeSignals.set(signal.symbol, signal);
     this.signalHistory.push(signal);
+
+    try {
+      await dbCreateSignal(signal);
+    } catch (error) {
+      console.error('Failed to persist signal to database:', error);
+    }
 
     return signal;
   }
