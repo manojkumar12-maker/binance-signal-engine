@@ -2,6 +2,7 @@ import { wsManager } from './websocket/binanceWS.js';
 import { pumpAnalyzer } from './analyzer/pumpAnalyzer.js';
 import { signalGenerator } from './signals/signalGenerator.js';
 import { notifier } from './notifiers/notificationManager.js';
+import { apiServer } from './api/server.js';
 
 class SignalEngine {
   constructor() {
@@ -23,6 +24,8 @@ class SignalEngine {
     `);
 
     this.stats.startedAt = Date.now();
+
+    await apiServer.start();
 
     wsManager.onTicker((ticker) => {
       this.processTicker(ticker);
@@ -52,6 +55,7 @@ class SignalEngine {
           this.stats.signalsGenerated++;
           console.log(signalGenerator.formatSignal(signal));
           notifier.sendSignal(signal);
+          apiServer.addSignal(signal);
         }
       } else {
         const updatedSignal = signalGenerator.updateSignal(ticker.symbol, ticker.price);
