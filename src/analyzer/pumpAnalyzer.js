@@ -1,6 +1,7 @@
 import { config } from '../../config/config.js';
 import { autoTuner } from '../engine/autoTuner.js';
 import { orderBookAnalyzer } from '../engine/orderBookAnalyzer.js';
+import { calculateConfidence, classifyByConfidence, hasConfluence, isTrendingMarket, isFakePump, getEntryQuality, analyzeSignal } from '../engine/confidenceEngine.js';
 
 const STABLECOINS = ['USDT', 'BUSD', 'USDC', 'DAI', 'USD', 'UST'];
 
@@ -326,26 +327,52 @@ class PumpAnalyzer {
   }
 
   determineTier(symbol, analysis) {
-    let { score, priceChange, volumeSpike } = analysis;
+    let { score, priceChange, volumeSpike, momentum, orderbookImbalance } = analysis;
 
-    if (priceChange > 12) score -= 10;
+    const confidenceData = {
+      score,
+      volumeSpike,
+      momentum,
+      imbalance: orderbookImbalance,
+      priceChange,
+      trend: analysis.currentPrice > analysis.ema50 ? 'UP' : 'DOWN',
+      atr: analysis.atr,
+      atrMA: analysis.atr
+    };
 
-    const pass = score >= 45 && priceChange >= 1.2 && volumeSpike >= 1;
-    if (!pass) return null;
-
-    if (score >= 65 && priceChange >= 3 && volumeSpike >= 2.5) {
-      console.log(`🔴 SNIPER: ${symbol} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-      return { type: 'SNIPER', score, priority: 1, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER'), ...analysis };
+    if (isFakePump(confidenceData)) {
+      return null;
     }
 
-    if (score >= 55 && priceChange >= 2 && volumeSpike >= 1.8) {
-      console.log(`🟢 CONFIRMED: ${symbol} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-      return { type: 'CONFIRMED', score, priority: 2, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED'), ...analysis };
+    if (!isTrendingMarket(confidenceData)) {
+      return null;
     }
 
-    if (score >= 45 && priceChange >= 1.2) {
-      console.log(`🟡 EARLY: ${symbol} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-      return { type: 'EARLY', score, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY'), ...analysis };
+    const confidence = calculateConfidence(confidenceData);
+    const type = classifyByConfidence(confidence);
+    const entryQuality = getEntryQuality(confidenceData);
+
+    if (!type) return null;
+
+    if (entryQuality === 'TOO_LATE') {
+      return null;
+    }
+
+    const entryQualityLabel = entryQuality === 'EXCELLENT' ? '⭐' : entryQuality === 'GOOD' ? '✓' : '⚠️';
+
+    if (type === 'SNIPER') {
+      console.log(`🔴 SNIPER ${entryQualityLabel}: ${symbol} | Conf=${confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
+      return { type: 'SNIPER', score, confidence, priority: 1, entryQuality, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER'), ...analysis };
+    }
+
+    if (type === 'CONFIRMED') {
+      console.log(`🟢 CONFIRMED ${entryQualityLabel}: ${symbol} | Conf=${confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
+      return { type: 'CONFIRMED', score, confidence, priority: 2, entryQuality, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED'), ...analysis };
+    }
+
+    if (type === 'EARLY' && hasConfluence(confidenceData)) {
+      console.log(`🟡 EARLY ${entryQualityLabel}: ${symbol} | Conf=${confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
+      return { type: 'EARLY', score, confidence, priority: 3, entryQuality, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY'), ...analysis };
     }
 
     return null;
