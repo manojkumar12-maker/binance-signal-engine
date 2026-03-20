@@ -6,7 +6,7 @@ import { apiServer } from './api/server.js';
 import { autoTuner } from './engine/autoTuner.js';
 import { orderBookAnalyzer } from './engine/orderBookAnalyzer.js';
 import { initDatabase, closeDatabase, createSignal as dbCreateSignal } from './database/db.js';
-import { state, canTrigger, addSignal, updateSignalStatus } from './state.js';
+import { state, canTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
 
 class SignalEngine {
   constructor() {
@@ -71,38 +71,37 @@ class SignalEngine {
     const analysis = pumpAnalyzer.analyze(ticker);
     
     if (analysis && analysis.type) {
-      const existingSignal = signalGenerator.getActiveSignal(ticker.symbol);
-      
-      if (!existingSignal) {
-        if (!this.shouldGenerateSignal(analysis)) {
-          return;
-        }
-        
-        if (!canTrigger(ticker.symbol, 5 * 60 * 1000)) {
-          return;
-        }
-        
-        const signal = await signalGenerator.generateSignal(analysis);
-        
-        if (signal) {
-          addSignal(signal);
-          this.stats.signalsGenerated++;
-          this.stats.signalsByTier[signal.tier]++;
-          
-          if (signal.tier !== 'EARLY') {
-            console.log(signalGenerator.formatSignal(signal));
-            await notifier.sendSignal(signal);
-            await apiServer.addSignal(signal);
-          } else {
-            console.log(`🟡 EARLY: ${signal.symbol} (Score: ${signal.metrics.score})`);
-          }
-        }
-      } else {
+      if (isSymbolActive(ticker.symbol)) {
         const updatedSignal = signalGenerator.updateSignal(ticker.symbol, ticker.price);
         if (updatedSignal && updatedSignal.status !== 'ACTIVE' && updatedSignal.status !== 'WATCHLIST') {
           console.log(`\n📊 ${ticker.symbol}: ${updatedSignal.status} at ${updatedSignal.closedPrice?.toFixed(6)}\n`);
           updateSignalStatus(ticker.symbol, updatedSignal.status, updatedSignal.closedPrice);
           await apiServer.updateSignalStatus(ticker.symbol, updatedSignal.status, updatedSignal.closedPrice);
+        }
+        return;
+      }
+      
+      if (!this.shouldGenerateSignal(analysis)) {
+        return;
+      }
+      
+      if (!canTrigger(ticker.symbol, 5 * 60 * 1000)) {
+        return;
+      }
+      
+      const signal = await signalGenerator.generateSignal(analysis);
+      
+      if (signal) {
+        addSignal(signal);
+        this.stats.signalsGenerated++;
+        this.stats.signalsByTier[signal.tier]++;
+        
+        if (signal.tier !== 'EARLY') {
+          console.log(signalGenerator.formatSignal(signal));
+          await notifier.sendSignal(signal);
+          await apiServer.addSignal(signal);
+        } else {
+          console.log(`🟡 EARLY: ${signal.symbol} (Score: ${signal.metrics?.score || 0})`);
         }
       }
     }

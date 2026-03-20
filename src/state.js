@@ -1,6 +1,7 @@
 export const state = {
   signals: [],
   lastSignalTime: {},
+  activeSignals: new Set(),
   stats: {
     total: 0,
     early: 0,
@@ -20,6 +21,18 @@ export function canTrigger(symbol, cooldownMs = 5 * 60 * 1000) {
   
   state.lastSignalTime[symbol] = now;
   return true;
+}
+
+export function isSymbolActive(symbol) {
+  return state.activeSignals.has(symbol);
+}
+
+export function addToActive(symbol) {
+  state.activeSignals.add(symbol);
+}
+
+export function removeFromActive(symbol) {
+  state.activeSignals.delete(symbol);
 }
 
 export function addSignal(signal) {
@@ -46,6 +59,9 @@ export function updateSignalStatus(symbol, status, closedPrice = null) {
       signal.closedPrice = closedPrice;
       signal.closedAt = Date.now();
     }
+    if (status !== 'ACTIVE' && status !== 'HOT' && status !== 'WATCHLIST') {
+      removeFromActive(symbol);
+    }
   }
   
   return signal;
@@ -59,4 +75,11 @@ export function getActiveSignals() {
 
 export function getRecentSignals(limit = 100) {
   return state.signals.slice(0, limit);
+}
+
+export function getStats() {
+  return {
+    ...state.stats,
+    active: getActiveSignals().length
+  };
 }

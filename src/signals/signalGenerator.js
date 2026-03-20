@@ -1,5 +1,6 @@
 import { config } from '../../config/config.js';
 import { createSignal as dbCreateSignal } from '../database/db.js';
+import { addToActive } from '../state.js';
 
 class SignalGenerator {
   constructor() {
@@ -62,6 +63,7 @@ class SignalGenerator {
 
     this.activeSignals.set(signal.symbol, signal);
     this.signalHistory.push(signal);
+    addToActive(signal.symbol);
 
     try {
       await dbCreateSignal(signal);
