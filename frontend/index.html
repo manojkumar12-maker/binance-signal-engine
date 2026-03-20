@@ -501,41 +501,49 @@
                 const filtered = this.getFilteredSignals();
 
                 if (filtered.length === 0) {
+                    const messages = {
+                        sniper: 'No Sniper signals yet',
+                        confirmed: 'No Confirmed signals yet',
+                        early: 'No Early signals yet',
+                        all: 'No signals found'
+                    };
                     grid.innerHTML = `
                         <div class="empty-state">
                             <div class="empty-icon">📊</div>
-                            <div class="empty-text">No signals found</div>
-                            <div class="empty-subtext">${this.filter === 'active' ? 'No active signals' : 'No completed signals'}</div>
+                            <div class="empty-text">${messages[this.filter] || 'No signals found'}</div>
+                            <div class="empty-subtext">Waiting for pump signals...</div>
                         </div>
                     `;
                     return;
                 }
 
+                const tpPercents = [0.5, 1.0, 1.5, 2.5, 3.5];
+                
                 grid.innerHTML = filtered.map(signal => `
                     <div class="signal-card">
                         <div class="signal-header">
                             <span class="signal-symbol">${signal.symbol}</span>
-                            <span class="signal-badge">${signal.status}</span>
+                            <span class="signal-badge">${signal.tier} ${signal.status}</span>
                         </div>
                         <div class="signal-body">
                             <div class="signal-price">
                                 <div class="price-item">
                                     <div class="price-label">Entry</div>
-                                    <div class="price-value entry">${signal.entryPrice.toFixed(6)}</div>
+                                    <div class="price-value entry">${(signal.entryPrice || 0).toFixed(6)}</div>
                                 </div>
                                 <div class="price-item">
                                     <div class="price-label">Stop Loss</div>
-                                    <div class="price-value sl">${signal.stopLoss.toFixed(6)}</div>
+                                    <div class="price-value sl">${(signal.stopLoss || 0).toFixed(6)}</div>
                                 </div>
                             </div>
                             <div class="tp-levels">
                                 <div class="tp-levels-title">Take Profit Levels</div>
                                 <div class="tp-grid">
-                                    ${signal.targets.map(tp => `
+                                    ${[1,2,3,4,5].map(i => `
                                         <div class="tp-item">
-                                            <div class="tp-label">${tp.label}</div>
-                                            <div class="tp-value">${tp.price.toFixed(6)}</div>
-                                            <div class="tp-percent">+${tp.percent}%</div>
+                                            <div class="tp-label">TP${i}</div>
+                                            <div class="tp-value">${(signal.targets?.[`tp${i}`] || 0).toFixed(4)}</div>
+                                            <div class="tp-percent">+${tpPercents[i-1]}%</div>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -544,9 +552,9 @@
                                 <span class="signal-time">${new Date(signal.timestamp).toLocaleString()}</span>
                                 <div class="signal-strength">
                                     <div class="strength-bar">
-                                        <div class="strength-fill" style="width: ${signal.strength}%"></div>
+                                        <div class="strength-fill" style="width: ${signal.metrics?.score || 0}%"></div>
                                     </div>
-                                    <span class="strength-value">${signal.strength}%</span>
+                                    <span class="strength-value">${Math.round(signal.metrics?.score || 0)}%</span>
                                 </div>
                             </div>
                         </div>
