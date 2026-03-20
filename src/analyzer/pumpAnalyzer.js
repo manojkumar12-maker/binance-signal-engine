@@ -171,9 +171,6 @@ class PumpAnalyzer {
 
     if (!this.preFilter(ticker)) return null;
     
-    const priceChange = Math.abs(priceChangePercent || 0);
-    if (priceChange > 15) return null;
-    
     this.updateHistory(symbol, ticker);
     if (!this.checkCooldown(symbol)) return null;
 
@@ -328,53 +325,27 @@ class PumpAnalyzer {
   }
 
   determineTier(symbol, analysis) {
-    if (analysis.score === 0) return null;
-
-    const tiers = config?.signalTiers || {};
+    const { score, priceChange, volumeSpike } = analysis;
     const tunedParams = autoTuner.getParams();
-    const { score, priceChange, volumeSpike, momentum, imbalance, spoofingRisk } = analysis;
 
-    if (score >= 40) {
-      console.log(`🔍 DEBUG [${symbol}]: Score=${score.toFixed(1)}, PriceChg=${priceChange.toFixed(2)}%, Vol=${volumeSpike.toFixed(2)}x, Mom=${momentum.toFixed(3)}, RSI=${analysis.rsi?.toFixed(1)}`);
+    const pass = score >= 40 && priceChange >= 1 && volumeSpike >= 1;
+    console.log(`📊 ENTRY CHECK [${symbol}]: Score=${score.toFixed(1)}, PriceChg=${priceChange.toFixed(2)}%, Vol=${volumeSpike.toFixed(2)}x => ${pass ? '✅ PASS' : '❌ FAIL'}`);
+
+    if (!pass) return null;
+
+    if (score >= 55 && priceChange >= 3 && volumeSpike >= 2) {
+      console.log(`🔴 SNIPER: ${symbol}`);
+      return { type: 'SNIPER', score, priority: 1, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER'), ...analysis };
     }
 
-    if (spoofingRisk > 40) return null;
-
-    if (score >= Math.max(tiers.SNIPER?.scoreThreshold || 75, tunedParams.scoreThreshold) &&
-        priceChange >= (tiers.SNIPER?.priceChangeThreshold || 3) &&
-        volumeSpike >= Math.max(tiers.SNIPER?.volumeSpikeThreshold || 3, tunedParams.volumeSpike)) {
-      return {
-        type: 'SNIPER',
-        score,
-        priority: 1,
-        signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER'),
-        ...analysis
-      };
+    if (score >= 45 && priceChange >= 2 && volumeSpike >= 1.5) {
+      console.log(`🟢 CONFIRMED: ${symbol}`);
+      return { type: 'CONFIRMED', score, priority: 2, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED'), ...analysis };
     }
 
-    if (score >= Math.max(tiers.CONFIRMED?.scoreThreshold || 65, tunedParams.scoreThreshold - 10) &&
-        priceChange >= Math.max(tiers.CONFIRMED?.priceChangeThreshold || 2.5, tunedParams.priceChange) &&
-        volumeSpike >= Math.max(tiers.CONFIRMED?.volumeSpikeThreshold || 2, tunedParams.volumeSpike)) {
-      return {
-        type: 'CONFIRMED',
-        score,
-        priority: 2,
-        signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED'),
-        ...analysis
-      };
-    }
-
-    if (score >= Math.max(tiers.EARLY?.scoreThreshold || 50, tunedParams.scoreThreshold - 15) &&
-        priceChange >= (tiers.EARLY?.priceChangeThreshold || 1.5) &&
-        volumeSpike >= (tiers.EARLY?.volumeSpikeThreshold || 1.5) &&
-        momentum >= (tiers.EARLY?.momentumThreshold || 0.2)) {
-      return {
-        type: 'EARLY',
-        score,
-        priority: 3,
-        signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY'),
-        ...analysis
-      };
+    if (score >= 40 && priceChange >= 1 && volumeSpike >= 1) {
+      console.log(`🟡 EARLY: ${symbol}`);
+      return { type: 'EARLY', score, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY'), ...analysis };
     }
 
     return null;
