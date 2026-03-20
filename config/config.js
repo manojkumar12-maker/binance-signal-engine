@@ -14,19 +14,19 @@ export const config = {
       scoreThreshold: 25,
       priceChangeThreshold: 0.8,
       volumeSpikeThreshold: 1.2,
-      momentumThreshold: 0.03
+      momentumThreshold: 0.001
     },
     CONFIRMED: {
       scoreThreshold: 40,
       priceChangeThreshold: 1.5,
       volumeSpikeThreshold: 1.5,
-      momentumThreshold: 0.05
+      momentumThreshold: 0.001
     },
     SNIPER: {
       scoreThreshold: 50,
       priceChangeThreshold: 2.5,
       volumeSpikeThreshold: 2.0,
-      momentumThreshold: 0.1,
+      momentumThreshold: 0.001,
       requiresImbalance: false
     }
   },

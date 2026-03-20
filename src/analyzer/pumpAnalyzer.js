@@ -222,7 +222,7 @@ class PumpAnalyzer {
     const currentVolumeRate = volumeRates && volumeRates.length > 1 ? volumeRates[volumeRates.length - 2].rate : 1;
     const volumeSpike = avgVolumeRate > 0 ? currentVolumeRate / avgVolumeRate : volumeSpikeRatio;
 
-    const momentum = this.calculateMomentum(recentPrices);
+    const momentum = this.calculateMomentum(recentPrices, priceChangePercent);
     const acceleration = this.calculateAcceleration(recentPrices);
     const ema50 = this.calculateEMA(prices, 50);
     const atrPeriod = config?.riskManagement?.atrPeriod || 14;
@@ -393,12 +393,13 @@ class PumpAnalyzer {
     };
   }
 
-  calculateMomentum(prices) {
-    if (prices.length < 3) return 0;
+  calculateMomentum(prices, priceChangePercent) {
+    if (!prices || prices.length < 2) return priceChangePercent || 0;
     const recent = prices.slice(-3);
-    const rate1 = (recent[2].price - recent[1].price) / recent[1].price;
-    const rate2 = (recent[1].price - recent[0].price) / recent[0].price;
-    return rate1 + rate2;
+    if (recent.length < 2) return priceChangePercent || 0;
+    
+    const rate1 = (recent[recent.length - 1].price - recent[recent.length - 2].price) / recent[recent.length - 2].price;
+    return rate1;
   }
 
   calculateAcceleration(prices) {
