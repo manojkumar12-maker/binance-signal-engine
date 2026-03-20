@@ -334,48 +334,53 @@ class PumpAnalyzer {
       volumeSpike,
       momentum,
       imbalance: orderbookImbalance,
+      orderbookImbalance,
       priceChange,
       trend: analysis.currentPrice > analysis.ema50 ? 'UP' : 'DOWN',
       atr: analysis.atr,
-      atrMA: analysis.atr
+      atrMA: analysis.atr,
+      marketRegime: this.detectMarketRegime(symbol)
     };
 
-    if (isFakePump(confidenceData)) {
-      return null;
+    const result = analyzeSignal(confidenceData);
+
+    if (!result.tier) return null;
+    if (!result.hasConfluence) return null;
+    if (!result.isTrending) return null;
+    if (result.isFakePump) return null;
+    if (result.entryWarning === 'Too early to enter' || result.entryWarning === 'Exhausted pump') return null;
+
+    const qualityEmoji = result.entryQuality === 'EXCELLENT' ? '⭐' : result.entryQuality === 'GOOD' ? '✓' : '⚠️';
+    const tradeAction = result.shouldTrade ? '🔥' : '👀';
+
+    if (result.tier === 'SNIPER') {
+      console.log(`🔴 SNIPER ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
+      return { type: 'SNIPER', score, ...result, priority: 1, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
     }
 
-    if (!isTrendingMarket(confidenceData)) {
-      return null;
+    if (result.tier === 'CONFIRMED') {
+      console.log(`🟢 CONFIRMED ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
+      return { type: 'CONFIRMED', score, ...result, priority: 2, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
     }
 
-    const confidence = calculateConfidence(confidenceData);
-    const type = classifyByConfidence(confidence);
-    const entryQuality = getEntryQuality(confidenceData);
-
-    if (!type) return null;
-
-    if (entryQuality === 'TOO_LATE') {
-      return null;
-    }
-
-    const entryQualityLabel = entryQuality === 'EXCELLENT' ? '⭐' : entryQuality === 'GOOD' ? '✓' : '⚠️';
-
-    if (type === 'SNIPER') {
-      console.log(`🔴 SNIPER ${entryQualityLabel}: ${symbol} | Conf=${confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-      return { type: 'SNIPER', score, confidence, priority: 1, entryQuality, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER'), ...analysis };
-    }
-
-    if (type === 'CONFIRMED') {
-      console.log(`🟢 CONFIRMED ${entryQualityLabel}: ${symbol} | Conf=${confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-      return { type: 'CONFIRMED', score, confidence, priority: 2, entryQuality, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED'), ...analysis };
-    }
-
-    if (type === 'EARLY' && hasConfluence(confidenceData)) {
-      console.log(`🟡 EARLY ${entryQualityLabel}: ${symbol} | Conf=${confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-      return { type: 'EARLY', score, confidence, priority: 3, entryQuality, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY'), ...analysis };
+    if (result.tier === 'EARLY' && result.shouldTrade) {
+      console.log(`🟡 EARLY ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
+      return { type: 'EARLY', score, ...result, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
     }
 
     return null;
+  }
+
+  detectMarketRegime(symbol) {
+    const volumes = this.volumeHistory.get(symbol);
+    if (!volumes || volumes.length < 10) return 'TRENDING';
+    
+    const recent = volumes.slice(-10).map(v => v.volume);
+    const avg = recent.reduce((a, b) => a + b, 0) / 10;
+    const variance = recent.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / 10;
+    const cv = Math.sqrt(variance) / avg;
+    
+    return cv > 0.5 ? 'SIDEWAYS' : 'TRENDING';
   }
 
   generateEntryExit(entryPrice, atr, tier) {

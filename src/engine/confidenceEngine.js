@@ -1,114 +1,222 @@
 export function calculateConfidence(data) {
   let confidence = 0;
   
-  const { score, volumeSpike, momentum, imbalance, priceChange, trend, atr, atrMA } = data;
+  const { score, volumeSpike, momentum, imbalance, priceChange, trend, atr, atrMA, marketRegime } = data;
 
   if (!score || score < 40) return 0;
 
-  confidence += Math.min(score * 0.35, 35);
+  confidence += Math.min(score * 0.4, 40);
 
   if (volumeSpike) {
-    confidence += Math.min(volumeSpike * 12, 24);
+    confidence += Math.min(volumeSpike * 20, 40);
   }
 
   if (momentum !== undefined && momentum !== null) {
-    confidence += Math.max(Math.min(momentum * 80, 20), -10);
+    confidence += Math.max(Math.min(momentum * 50, 25), -15);
   }
 
   if (imbalance && imbalance > 1) {
-    confidence += Math.min(imbalance * 8, 16);
+    confidence += Math.min(imbalance * 20, 30);
   }
 
   if (trend === 'UP' || trend === 'BULLISH') {
-    confidence += 10;
+    confidence += 15;
   } else if (trend === 'DOWN' || trend === 'BEARISH') {
-    confidence -= 5;
+    confidence -= 10;
   }
 
   if (atr && atrMA && atr > atrMA) {
-    confidence += 8;
+    confidence += 12;
   }
 
-  if (priceChange > 12) {
-    confidence -= 18;
+  if (priceChange > 10) {
+    confidence -= 25;
   } else if (priceChange > 8) {
-    confidence -= 8;
+    confidence -= 12;
   } else if (priceChange < 1) {
-    confidence -= 5;
+    confidence -= 8;
   }
 
   if (volumeSpike > 3 && momentum < 0.05) {
-    confidence -= 15;
+    confidence -= 30;
   }
 
   if (momentum < 0) {
-    confidence -= 8;
+    confidence -= 12;
+  }
+
+  if (marketRegime === 'SIDEWAYS') {
+    confidence -= 20;
   }
 
   return Math.max(0, Math.min(100, Math.round(confidence)));
 }
 
 export function classifyByConfidence(confidence) {
-  if (confidence >= 80) return 'SNIPER';
-  if (confidence >= 65) return 'CONFIRMED';
-  if (confidence >= 50) return 'EARLY';
-  return null;
+  if (confidence >= 80) return { tier: 'SNIPER', action: 'TRADE' };
+  if (confidence >= 65) return { tier: 'CONFIRMED', action: 'WATCH' };
+  if (confidence >= 50) return { tier: 'EARLY', action: 'IGNORE' };
+  return { tier: null, action: 'REJECT' };
 }
 
-export function hasConfluence(data) {
+export function getConfluenceScore(data) {
   let confluence = 0;
+  const reasons = [];
   
-  const { volumeSpike, momentum, imbalance, trend, priceChange } = data;
+  const { volumeSpike, momentum, imbalance, trend, priceChange, orderbookImbalance } = data;
 
-  if (volumeSpike >= 2) confluence++;
-  if (volumeSpike >= 3) confluence++;
-  if (momentum >= 0.1) confluence++;
-  if (momentum >= 0.2) confluence++;
-  if (imbalance >= 1.3) confluence++;
-  if (imbalance >= 1.5) confluence++;
-  if (trend === 'UP' || trend === 'BULLISH') confluence++;
-  if (priceChange >= 2 && priceChange <= 8) confluence++;
+  if (volumeSpike > 2) { confluence++; reasons.push('Vol Spike'); }
+  if (volumeSpike > 3) { confluence++; reasons.push('Strong Vol'); }
+  if (momentum > 0.1) { confluence++; reasons.push('Momentum'); }
+  if (momentum > 0.2) { confluence++; reasons.push('Strong Mom'); }
+  if ((imbalance || orderbookImbalance) > 1.3) { confluence++; reasons.push('OB Imbalance'); }
+  if ((imbalance || orderbookImbalance) > 1.5) { confluence++; reasons.push('Strong OB'); }
+  if (trend === 'UP' || trend === 'BULLISH') { confluence++; reasons.push('Uptrend'); }
+  if (priceChange >= 2 && priceChange <= 8) { confluence++; reasons.push('Sweet Spot'); }
 
-  return confluence >= 4;
+  return { score: confluence, reasons, passed: confluence >= 3 };
 }
 
 export function isTrendingMarket(data) {
   const { atr, atrMA } = data;
-  if (!atr || !atrMA) return true;
-  return atr > atrMA * 0.9;
+  if (!atr || !atrMA) return { trending: true, regime: 'TRENDING' };
+  
+  const trending = atr > atrMA * 0.9;
+  return { 
+    trending, 
+    regime: trending ? 'TRENDING' : 'SIDEWAYS' 
+  };
 }
 
 export function isFakePump(data) {
   const { volumeSpike, momentum } = data;
-  return volumeSpike > 3 && (momentum < 0.05 || momentum < 0);
+  const isFake = volumeSpike > 3 && (momentum < 0.05 || momentum < 0);
+  return { isFake, reason: isFake ? 'High vol + low momentum (manipulation)' : null };
+}
+
+export function getLateEntryStatus(priceChange) {
+  if (priceChange > 12) return { late: true, quality: 'TOO_LATE', warning: 'Exhausted pump' };
+  if (priceChange > 10) return { late: true, quality: 'LATE', warning: 'Getting late' };
+  if (priceChange >= 5 && priceChange <= 10) return { late: false, quality: 'GOOD', warning: null };
+  if (priceChange >= 2 && priceChange < 5) return { late: false, quality: 'EXCELLENT', warning: null };
+  return { late: true, quality: 'TOO_EARLY', warning: 'Too early to enter' };
 }
 
 export function getSmartEntry(entryPrice, atr) {
-  if (!atr) return entryPrice;
+  if (!atr || !entryPrice) return entryPrice;
   return entryPrice - (0.003 * atr);
-}
-
-export function getEntryQuality(data) {
-  const { priceChange } = data;
-  
-  if (priceChange >= 2 && priceChange <= 5) return 'EXCELLENT';
-  if (priceChange >= 5 && priceChange <= 8) return 'GOOD';
-  if (priceChange >= 8 && priceChange <= 12) return 'LATE';
-  return 'TOO_LATE';
 }
 
 export function analyzeSignal(data) {
   const confidence = calculateConfidence(data);
-  const type = classifyByConfidence(confidence);
+  const classification = classifyByConfidence(confidence);
+  const confluence = getConfluenceScore(data);
+  const marketStatus = isTrendingMarket(data);
+  const fakePump = isFakePump(data);
+  const entryStatus = getLateEntryStatus(data.priceChange);
   
+  const shouldTrade = 
+    classification.action === 'TRADE' &&
+    confluence.passed &&
+    marketStatus.trending &&
+    !fakePump.isFake &&
+    !entryStatus.late;
+
   return {
     ...data,
     confidence,
-    type,
-    hasConfluence: hasConfluence(data),
-    isTrendingMarket: isTrendingMarket(data),
-    isFakePump: isFakePump(data),
-    entryQuality: getEntryQuality(data),
-    smartEntry: getSmartEntry(data.entryPrice, data.atr)
+    tier: classification.tier,
+    action: classification.action,
+    confluence: confluence.score,
+    confluenceReasons: confluence.reasons,
+    hasConfluence: confluence.passed,
+    regime: marketStatus.regime,
+    isTrending: marketStatus.trending,
+    isFakePump: fakePump.isFake,
+    fakePumpReason: fakePump.reason,
+    entryQuality: entryStatus.quality,
+    entryWarning: entryStatus.warning,
+    smartEntry: getSmartEntry(data.entryPrice, data.atr),
+    shouldTrade
+  };
+}
+
+export function rankSignals(signals) {
+  return signals
+    .map(signal => {
+      const rankScore = calculateRankScore(signal);
+      return { ...signal, rankScore };
+    })
+    .sort((a, b) => b.rankScore - a.rankScore)
+    .map((signal, index) => ({ ...signal, rank: index + 1 }));
+}
+
+export function calculateRankScore(signal) {
+  let score = 0;
+  
+  score += (signal.confidence || 0) * 0.6;
+  
+  score += Math.min((signal.volumeSpike || 0) * 15, 35);
+  
+  score += Math.max((signal.momentum || 0) * 45, -15);
+  
+  if (signal.hasConfluence) score += 20;
+  
+  if (signal.isTrending) score += 15;
+  
+  if (signal.entryQuality === 'EXCELLENT') score += 25;
+  else if (signal.entryQuality === 'GOOD') score += 15;
+  else if (signal.entryQuality === 'LATE') score += 5;
+  else score -= 25;
+  
+  if (signal.tier === 'SNIPER') score += 30;
+  else if (signal.tier === 'CONFIRMED') score += 20;
+  else if (signal.tier === 'EARLY') score += 5;
+  
+  if (signal.imbalance && signal.imbalance > 1.5) score += 12;
+  
+  if (!signal.isFakePump) score += 15;
+  else score -= 35;
+  
+  return Math.round(score * 100) / 100;
+}
+
+export function getTopSignals(signals, limit = 3) {
+  return rankSignals(signals).slice(0, limit);
+}
+
+export function filterTradeableSignals(signals) {
+  return rankSignals(signals).filter(s => 
+    s.shouldTrade && 
+    s.tier !== null &&
+    s.rank <= 5
+  );
+}
+
+export function getSignalSummary(signals) {
+  const ranked = rankSignals(signals);
+  const tradeable = filterTradeableSignals(signals);
+  
+  return {
+    totalSignals: signals.length,
+    tradeableCount: tradeable.length,
+    topSignals: ranked.slice(0, 5).map(s => ({
+      rank: s.rank,
+      symbol: s.symbol,
+      tier: s.tier,
+      confidence: s.confidence,
+      action: s.action,
+      entryQuality: s.entryQuality,
+      rankScore: s.rankScore,
+      shouldTrade: s.shouldTrade
+    })),
+    distribution: {
+      sniper: signals.filter(s => s.tier === 'SNIPER').length,
+      confirmed: signals.filter(s => s.tier === 'CONFIRMED').length,
+      early: signals.filter(s => s.tier === 'EARLY').length
+    },
+    averageConfidence: signals.length > 0 
+      ? Math.round(signals.reduce((sum, s) => sum + (s.confidence || 0), 0) / signals.length)
+      : 0
   };
 }
