@@ -6,17 +6,17 @@ export const config = {
   },
   signals: {
     minVolume: 1000000,
-    minPriceChange: 2,
-    pumpThreshold: 2.5,
-    earlyPumpThreshold: 2.5,
+    minPriceChange: 0.5,
+    pumpThreshold: 0.5,
+    earlyPumpThreshold: 0.2,
     timeframes: ['1m', '5m', '15m'],
-    volumeSpikeMultiplier: 3,
-    priceAccelerationThreshold: 0.5,
-    scoreThreshold: 70,
-    volumeSpikeThreshold: 2.5,
-    minScoreForEntry: 70,
-    cooldownMinutes: 5,
-    minHistoryForAnalysis: 20
+    volumeSpikeMultiplier: 1.5,
+    priceAccelerationThreshold: 0.1,
+    scoreThreshold: 30,
+    volumeSpikeThreshold: 1.0,
+    minScoreForEntry: 30,
+    cooldownMinutes: 2,
+    minHistoryForAnalysis: 10
   },
   riskManagement: {
     defaultRiskPercent: 1,

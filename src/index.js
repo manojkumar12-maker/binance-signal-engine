@@ -45,7 +45,7 @@ class SignalEngine {
   processTicker(ticker) {
     const analysis = pumpAnalyzer.analyze(ticker);
     
-    if (analysis && analysis.strength >= 60) {
+    if (analysis && analysis.strength >= 40) {
       const existingSignal = signalGenerator.getActiveSignal(ticker.symbol);
       
       if (!existingSignal) {

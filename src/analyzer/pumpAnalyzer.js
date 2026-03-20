@@ -207,25 +207,29 @@ class PumpAnalyzer {
   }
 
   analyze(ticker) {
-    const { symbol } = ticker;
+    const { symbol, priceChangePercent } = ticker;
 
     if (!this.preFilter(ticker)) return null;
     this.updateHistory(symbol, ticker);
 
     if (!this.checkCooldown(symbol)) return null;
-    if (this.checkChopZone(symbol)) return null;
-    if (!this.checkVolatilityExpansion(symbol)) return null;
 
     const mtfCheck = this.checkMultiTimeframe(symbol);
     const mtfAligned = mtfCheck.aligned;
 
-    const signals = this.checkPumpConditions(symbol, mtfAligned);
+    const signals = this.checkPumpConditions(symbol, mtfAligned, priceChangePercent);
     
-    if (signals.strength >= config.signals.minScoreForEntry && 
-        signals.priceChange >= config.signals.earlyPumpThreshold && 
-        signals.volumeSpike >= config.signals.volumeSpikeThreshold) {
+    const minScoreForEntry = config?.signals?.minScoreForEntry || 40;
+    const earlyPumpThreshold = config?.signals?.earlyPumpThreshold || 0.5;
+    const volumeSpikeThreshold = config?.signals?.volumeSpikeThreshold || 1.5;
+    
+    if (signals.strength >= minScoreForEntry && 
+        signals.priceChange >= earlyPumpThreshold && 
+        signals.volumeSpike >= volumeSpikeThreshold) {
+      console.log(`[SIGNAL CANDIDATE] ${symbol}: score=${signals.strength}, change=${signals.priceChange?.toFixed(2)}%, vol=${signals.volumeSpike?.toFixed(1)}x, factors=${signals.factors?.length}`);
       
       const pullbackEntry = this.getMicroPullbackEntry(symbol, signals.atr);
+      pumpAnalyzer.setLastSignalTime(symbol);
       
       return {
         ...signals,
@@ -243,9 +247,11 @@ class PumpAnalyzer {
   preFilter(ticker) {
     const { symbol, quoteVolume } = ticker;
 
-    if (quoteVolume < config.preFilters.minVolume24h) return false;
+    if (quoteVolume < (config?.preFilters?.minVolume24h || 1000000)) {
+      return false;
+    }
     if (this.isStablecoin(symbol)) return false;
-    if (this.calculateSpread(ticker) > config.preFilters.maxSpreadPercent) return false;
+    if (this.calculateSpread(ticker) > (config?.preFilters?.maxSpreadPercent || 0.2)) return false;
     
     return true;
   }
@@ -288,26 +294,36 @@ class PumpAnalyzer {
     if (lows.length > 200) lows.shift();
   }
 
-  checkPumpConditions(symbol, mtfAligned) {
+  checkPumpConditions(symbol, mtfAligned, tickerPriceChangePercent) {
     const prices = this.priceHistory.get(symbol);
     const volumes = this.volumeHistory.get(symbol);
     const candles = this.candleHistory.get(symbol);
 
-    if (prices.length < 20) return { strength: 0 };
+    if (prices.length < 5) {
+      return { strength: 0, priceChange: 0, volumeSpike: 0 };
+    }
 
     const currentPrice = prices[prices.length - 1].price;
     const recentPrices = prices.slice(-10);
     
-    const priceChange = ((currentPrice - recentPrices[0].price) / recentPrices[0].price) * 100;
+    // Use local change for momentum calculations
+    const localChange = ((currentPrice - recentPrices[0].price) / recentPrices[0].price) * 100;
+    
+    // Use ticker's 24h change as the primary price change metric
+    const priceChange = Math.abs(tickerPriceChangePercent || localChange || 0);
     
     const avgVolume = volumes.slice(-10).reduce((sum, v) => sum + v.volume, 0) / 10;
     const currentVolume = volumes[volumes.length - 1].volume;
     const volumeSpike = avgVolume > 0 ? currentVolume / avgVolume : 0;
 
+    // Always log for debugging
+    console.log(`[CHECK] ${symbol}: tickerPct=${tickerPriceChangePercent?.toFixed(2)}%, local=${localChange?.toFixed(2)}%, volSpike=${volumeSpike.toFixed(2)}x`);
+
     const momentum = this.calculateMomentum(recentPrices);
     const acceleration = this.calculateAcceleration(recentPrices);
     const ema50 = this.calculateEMA(prices, 50);
-    const atr = this.calculateATR(symbol, config.riskManagement.atrPeriod) || currentPrice * 0.01;
+    const atrPeriod = config?.riskManagement?.atrPeriod || 14;
+    const atr = this.calculateATR(symbol, atrPeriod) || currentPrice * 0.01;
 
     const { detected: liquiditySweep, reclaimed: sweptReclaimed } = this.checkLiquiditySweep(symbol, currentPrice);
     const breakOfStructure = this.checkBreakOfStructure(symbol);
@@ -324,8 +340,20 @@ class PumpAnalyzer {
     const factors = [];
     const validation = {};
 
+    const htfTrendWeight = config?.smartScoring?.htfTrendWeight || 15;
+    const bosWeight = config?.smartScoring?.bosWeight || 20;
+    const liquiditySweepWeight = config?.smartScoring?.liquiditySweepWeight || 20;
+    const volumeSpikeWeight = config?.smartScoring?.volumeSpikeWeight || 15;
+    const momentumWeight = config?.smartScoring?.momentumWeight || 10;
+    const accelerationWeight = config?.smartScoring?.accelerationWeight || 10;
+    const candleStrengthWeight = config?.smartScoring?.candleStrengthWeight || 10;
+    const minScoreForEntry = config?.signals?.minScoreForEntry || 40;
+    const earlyPumpThreshold = config?.signals?.earlyPumpThreshold || 0.5;
+    const volumeSpikeThreshold = config?.signals?.volumeSpikeThreshold || 1.5;
+    const priceAccelerationThreshold = config?.signals?.priceAccelerationThreshold || 0.3;
+
     if (ema50 !== null && currentPrice > ema50) {
-      score += config.smartScoring.htfTrendWeight;
+      score += htfTrendWeight;
       factors.push(`HTF Uptrend: Price > EMA50`);
     }
 
@@ -335,44 +363,43 @@ class PumpAnalyzer {
     }
 
     if (breakOfStructure) {
-      score += config.smartScoring.bosWeight;
+      score += bosWeight;
       factors.push(`Break of Structure`);
       validation.bos = true;
     }
 
     if (liquiditySweep) {
-      if (sweptReclaimed && volumeSpike >= 2.5) {
-        score += config.smartScoring.liquiditySweepWeight + 10;
-        factors.push(`Liquidity Sweep + Reclaim + Volume`);
+      if (sweptReclaimed && volumeSpike >= 2) {
+        score += liquiditySweepWeight + 10;
+        factors.push(`Liquidity Sweep + Reclaim`);
         validation.sweep = true;
       } else {
-        score -= 10;
-        factors.push(`Weak Sweep (penalized)`);
+        score -= 5;
       }
     }
 
-    if (volumeSpike >= 3) {
-      score += config.smartScoring.volumeSpikeWeight;
+    if (volumeSpike >= 2) {
+      score += volumeSpikeWeight;
       factors.push(`Volume: ${volumeSpike.toFixed(1)}x`);
       validation.volume = true;
     }
 
-    if (momentum > config.signals.priceAccelerationThreshold) {
-      score += config.smartScoring.momentumWeight;
+    if (momentum > priceAccelerationThreshold) {
+      score += momentumWeight;
       factors.push(`Momentum: ${momentum.toFixed(3)}`);
     }
 
-    if (acceleration > 0.1) {
-      score += config.smartScoring.accelerationWeight;
+    if (acceleration > 0.05) {
+      score += accelerationWeight;
       factors.push(`Acceleration: ${acceleration.toFixed(3)}`);
     }
 
     if (strongCandle) {
-      score += config.smartScoring.candleStrengthWeight;
+      score += candleStrengthWeight;
       factors.push(`Strong Candle`);
     }
 
-    if (score >= config.signals.minScoreForEntry && priceChange >= config.signals.earlyPumpThreshold && acceleration > 0) {
+    if (score >= minScoreForEntry && priceChange >= earlyPumpThreshold && acceleration > 0) {
       return {
         strength: Math.min(score, 100),
         type: 'PUMP',
@@ -443,15 +470,20 @@ class PumpAnalyzer {
   }
 
   aiQualityFilter(upperWick, body, isInsideRange, volumeSpike, rsi) {
-    if (body > 0 && upperWick > body * config.aiFilters.maxUpperWickRatio) return true;
-    if (config.aiFilters.filterInsideRange && isInsideRange) return true;
-    if (volumeSpike < config.aiFilters.minVolumeSpikeForQuality) return true;
-    if (rsi > config.aiFilters.maxRSI) return true;
+    const maxUpperWickRatio = config?.aiFilters?.maxUpperWickRatio || 1.5;
+    const minVolumeSpikeForQuality = config?.aiFilters?.minVolumeSpikeForQuality || 2;
+    const maxRSI = config?.aiFilters?.maxRSI || 80;
+    const filterInsideRange = config?.aiFilters?.filterInsideRange || false;
+    
+    if (body > 0 && upperWick > body * maxUpperWickRatio) return true;
+    if (filterInsideRange && isInsideRange) return true;
+    if (volumeSpike < minVolumeSpikeForQuality) return true;
+    if (rsi > maxRSI) return true;
     return false;
   }
 
   generateEntryExit(entryPrice, atr) {
-    const { atrMultiplier } = config.riskManagement;
+    const atrMultiplier = config?.riskManagement?.atrMultiplier || { tp1: 0.5, tp2: 1.0, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.2 };
 
     return {
       entry: entryPrice,
