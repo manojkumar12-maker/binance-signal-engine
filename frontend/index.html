@@ -417,20 +417,20 @@
             }
 
             initWebSocket() {
-                const wsUrl = 'wss://fstream.binance.com/ws';
+                const wsUrl = 'wss://binance-signal-engine.onrender.com';
                 
                 try {
                     this.ws = new WebSocket(wsUrl);
                     
                     this.ws.onopen = () => {
-                        console.log('Connected to Binance WebSocket');
+                        console.log('Connected to Signal Engine');
                         this.fetchInitialSignals();
                     };
 
                     this.ws.onmessage = (event) => {
                         const data = JSON.parse(event.data);
-                        if (data.e === '24hrTicker') {
-                            this.processTicker(data);
+                        if (data.type === 'NEW_SIGNAL') {
+                            this.addSignal(data.signal);
                         }
                     };
 
@@ -449,10 +449,12 @@
 
             async fetchInitialSignals() {
                 try {
-                    const response = await fetch('signals.json');
+                    const response = await fetch('https://binance-signal-engine.onrender.com/api/signals');
                     if (response.ok) {
                         const data = await response.json();
                         this.signals = data.signals || [];
+                        this.stats.total = data.signals.length;
+                        this.stats.active = data.signals.filter(s => s.status === 'ACTIVE').length;
                         this.renderSignals();
                         this.updateStats();
                     }
@@ -461,45 +463,10 @@
                 }
             }
 
-            processTicker(ticker) {
-                const priceChange = parseFloat(ticker.P);
-                const volumeSpike = parseFloat(ticker.Q) / 1000000;
-
-                if (priceChange > 5 && volumeSpike > 2) {
-                    const existingSignal = this.signals.find(s => s.symbol === ticker.s);
-                    
-                    if (!existingSignal) {
-                        this.createSignal(ticker);
-                    }
-                }
-            }
-
-            createSignal(ticker) {
-                const entryPrice = parseFloat(ticker.c);
-                const tpLevels = [
-                    { label: 'TP1', percent: 0.5 },
-                    { label: 'TP2', percent: 1.0 },
-                    { label: 'TP3', percent: 2.0 },
-                    { label: 'TP4', percent: 3.5 },
-                    { label: 'TP5', percent: 5.0 }
-                ];
-
-                const signal = {
-                    id: Date.now(),
-                    symbol: ticker.s,
-                    entryPrice: entryPrice,
-                    targets: tpLevels.map(tp => ({
-                        ...tp,
-                        price: entryPrice * (1 + tp.percent / 100)
-                    })),
-                    stopLoss: entryPrice * 0.985,
-                    priceChange: parseFloat(ticker.P).toFixed(2),
-                    volumeSpike: (parseFloat(ticker.Q) / 1000000).toFixed(1),
-                    timestamp: Date.now(),
-                    status: 'ACTIVE',
-                    strength: Math.min(100, Math.floor(priceChange * 10 + volumeSpike * 5))
-                };
-
+            addSignal(signal) {
+                const existingSignal = this.signals.find(s => s.symbol === signal.symbol);
+                if (existingSignal) return;
+                
                 this.signals.unshift(signal);
                 this.stats.total++;
                 this.stats.active++;
