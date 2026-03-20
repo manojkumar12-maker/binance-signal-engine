@@ -1,5 +1,3 @@
-import { config } from './config/config.js';
-import axios from 'axios';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 
