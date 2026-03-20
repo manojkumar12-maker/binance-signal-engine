@@ -355,17 +355,17 @@ class PumpAnalyzer {
 
     if (result.tier === 'SNIPER') {
       console.log(`🔴 SNIPER ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
-      return { type: 'SNIPER', score, ...result, priority: 1, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
+      return { symbol, type: 'SNIPER', score, ...result, priority: 1, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
     }
 
     if (result.tier === 'CONFIRMED') {
       console.log(`🟢 CONFIRMED ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
-      return { type: 'CONFIRMED', score, ...result, priority: 2, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
+      return { symbol, type: 'CONFIRMED', score, ...result, priority: 2, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
     }
 
     if (result.tier === 'EARLY' && result.shouldTrade) {
       console.log(`🟡 EARLY ${qualityEmoji} ${tradeAction}: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluence}`);
-      return { type: 'EARLY', score, ...result, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
+      return { symbol, type: 'EARLY', score, ...result, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
     }
 
     return null;
