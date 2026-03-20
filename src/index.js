@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { wsManager } from './websocket/binanceWS.js';
 import { pumpAnalyzer } from './analyzer/pumpAnalyzer.js';
 import { signalGenerator } from './signals/signalGenerator.js';
