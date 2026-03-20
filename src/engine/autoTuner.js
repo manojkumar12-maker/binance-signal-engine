@@ -66,10 +66,11 @@ class AutoTuner {
       }
     }
 
-    if (this.noSignalCount > 20) {
-      console.log('  ⚡ Relaxing filters (no signals)');
-      this.params.scoreThreshold = Math.max(this.params.scoreThreshold - 5, 35);
+    if (this.noSignalCount > 5) {
+      console.log(`  ⚡ Relaxing filters (no signals for ${this.noSignalCount} checks)`);
+      this.params.scoreThreshold = Math.max(this.params.scoreThreshold - 5, 25);
       this.params.volumeSpike = Math.max(this.params.volumeSpike - 0.3, 1.0);
+      this.params.priceChange = Math.max(this.params.priceChange - 0.2, 0.5);
     }
     this.noSignalCount = 0;
 

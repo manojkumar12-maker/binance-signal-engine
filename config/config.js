@@ -90,10 +90,10 @@ export const config = {
   },
   autoTuner: {
     enabled: true,
-    baseScoreThreshold: 50,
-    baseVolumeSpike: 1.5,
-    basePriceChange: 1.5,
-    tuneIntervalMinutes: 5
+    baseScoreThreshold: 40,
+    baseVolumeSpike: 1.3,
+    basePriceChange: 1.0,
+    tuneIntervalMinutes: 2
   },
   notifications: {
     discord: { enabled: false, webhookUrl: '' },

@@ -170,6 +170,10 @@ class PumpAnalyzer {
     const { symbol, priceChangePercent } = ticker;
 
     if (!this.preFilter(ticker)) return null;
+    
+    const priceChange = Math.abs(priceChangePercent || 0);
+    if (priceChange > 15) return null;
+    
     this.updateHistory(symbol, ticker);
     if (!this.checkCooldown(symbol)) return null;
 
@@ -288,8 +292,9 @@ class PumpAnalyzer {
       else score += 5;
     }
     if (metrics.volumeSpike >= 1.2) score += Math.min((metrics.volumeSpike - 1) * 25, weights.volumeSpikeWeight || 18);
-    if (metrics.momentum > 0.03) score += Math.min(metrics.momentum * 60, weights.momentumWeight || 12);
-    if (metrics.acceleration > 0.005) score += Math.min(metrics.acceleration * 120, weights.accelerationWeight || 12);
+    if (metrics.momentum > 0.1) score += Math.min(metrics.momentum * 3, weights.momentumWeight || 12);
+    else if (metrics.momentum > 0) score += 2;
+    if (metrics.acceleration > 0.01) score += Math.min(metrics.acceleration * 30, weights.accelerationWeight || 8);
     if (metrics.strongCandle) score += weights.candleStrengthWeight || 6;
     if (metrics.volumeTrend) score += 4;
 
@@ -300,8 +305,8 @@ class PumpAnalyzer {
     if (metrics.spoofingRisk > 30) score -= 20;
     else if (metrics.spoofingRisk > 15) score -= 10;
 
-    if (metrics.rsi > 90) return Math.max(0, score - 10);
-    if (metrics.rsi > 85) score -= 2;
+    if (metrics.rsi > 95) score -= 5;
+    if (metrics.rsi > 92) score -= 2;
 
     return Math.min(Math.max(score, 0), 100);
   }
@@ -394,12 +399,12 @@ class PumpAnalyzer {
   }
 
   calculateMomentum(prices, priceChangePercent) {
-    if (!prices || prices.length < 2) return priceChangePercent || 0;
-    const recent = prices.slice(-3);
-    if (recent.length < 2) return priceChangePercent || 0;
+    if (!prices || prices.length < 4) return priceChangePercent || 0;
+    const recent = prices.slice(-4);
+    if (recent.length < 4) return priceChangePercent || 0;
     
-    const rate1 = (recent[recent.length - 1].price - recent[recent.length - 2].price) / recent[recent.length - 2].price;
-    return rate1;
+    const rate = ((recent[recent.length - 1].price - recent[0].price) / recent[0].price) * 100;
+    return rate;
   }
 
   calculateAcceleration(prices) {
