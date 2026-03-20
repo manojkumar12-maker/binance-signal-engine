@@ -1,6 +1,10 @@
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 
 class SignalAPIServer {
@@ -30,17 +34,47 @@ class SignalAPIServer {
   }
 
   handleRequest(req, res) {
+    const url = req.url.split('?')[0];
+
+    if (url === '/' || url === '/dashboard') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(readFileSync(join(__dirname, '../../dashboard/index.html')));
+      return;
+    }
+
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
 
-    if (req.url === '/api/signals' && req.method === 'GET') {
+    if (url === '/api/stats' && req.method === 'GET') {
+      const stats = this.getStats();
+      res.end(JSON.stringify(stats));
+    } else if (url === '/api/signals' && req.method === 'GET') {
       res.end(JSON.stringify({ signals: this.signals, count: this.signals.length }));
-    } else if (req.url === '/api/health' && req.method === 'GET') {
+    } else if (url === '/api/health' && req.method === 'GET') {
       res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
     } else {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'Not found' }));
     }
+  }
+
+  getStats() {
+    return {
+      signalsGenerated: global.engine?.stats?.signalsGenerated || 0,
+      signalsByTier: global.engine?.stats?.signalsByTier || { SNIPER: 0, CONFIRMED: 0, EARLY: 0 },
+      symbolsMonitored: global.engine?.stats?.symbolsMonitored || 0,
+      activeSignals: global.signalGenerator?.getActiveSignals?.()?.length || 0,
+      uptime: global.engine?.stats?.startedAt ? Date.now() - global.engine.stats.startedAt : 0,
+      recentSignals: this.signals.slice(0, 20).map(s => ({
+        symbol: s.symbol,
+        tier: s.tier,
+        score: s.metrics?.score,
+        priceChange: s.metrics?.priceChange,
+        volumeSpike: s.metrics?.volumeSpike,
+        timestamp: s.timestamp
+      })),
+      autoTuner: global.autoTuner?.getStats?.() || {}
+    };
   }
 
   broadcast(data) {

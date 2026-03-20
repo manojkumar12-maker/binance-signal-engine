@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pump Signal Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Segoe UI', system-ui, sans-serif; 
+      background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+      color: #fff;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .header h1 { 
+      font-size: 2.5rem; 
+      background: linear-gradient(90deg, #00d4ff, #00ff88);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .card {
+      background: rgba(255,255,255,0.05);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      color: #888;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .stat-label { color: #888; }
+    .stat-value { font-weight: 600; font-size: 1.2rem; }
+    .stat-value.positive { color: #00ff88; }
+    .stat-value.negative { color: #ff4757; }
+    .tier-sniper { color: #ff4757; }
+    .tier-confirmed { color: #00ff88; }
+    .tier-early { color: #ffd93d; }
+    .signals-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .signal-item {
+      padding: 12px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .signal-symbol {
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+    .signal-details {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: #888;
+    }
+    .params-table td {
+      padding: 8px;
+    }
+    .params-table td:first-child { color: #888; }
+    .progress-bar {
+      height: 8px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+    .progress-fill.win { background: linear-gradient(90deg, #00ff88, #00d4ff); }
+    .progress-fill.loss { background: linear-gradient(90deg, #ff4757, #ff6b81); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .live-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      background: #00ff88;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 1.5s infinite;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🚀 Pump Signal Engine Dashboard</h1>
+    <p><span class="live-indicator"></span> Live Data</p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>📊 System Overview</h2>
+      <div class="stat-row">
+        <span class="stat-label">Symbols Monitored</span>
+        <span class="stat-value" id="symbols">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Total Signals</span>
+        <span class="stat-value" id="total-signals">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Active Trades</span>
+        <span class="stat-value" id="active-trades">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Uptime</span>
+        <span class="stat-value" id="uptime">-</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🧠 Auto-Tuner</h2>
+      <div class="stat-row">
+        <span class="stat-label">Win Rate</span>
+        <span class="stat-value" id="win-rate">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Total Trades</span>
+        <span class="stat-value" id="total-trades">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Wins / Losses</span>
+        <span class="stat-value" id="wl-ratio">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Net PnL</span>
+        <span class="stat-value" id="net-pnl">-</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill win" id="win-bar" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⚙️ Tuned Parameters</h2>
+      <table class="params-table">
+        <tr>
+          <td>Score Threshold</td>
+          <td class="stat-value" id="param-score">-</td>
+        </tr>
+        <tr>
+          <td>Volume Spike</td>
+          <td class="stat-value" id="param-vol">-</td>
+        </tr>
+        <tr>
+          <td>Price Change</td>
+          <td class="stat-value" id="param-change">-</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>📈 Signals by Tier</h2>
+      <div class="stat-row">
+        <span class="stat-label tier-sniper">🔴 SNIPER</span>
+        <span class="stat-value" id="sniper-count">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tier-confirmed">🟢 CONFIRMED</span>
+        <span class="stat-value" id="confirmed-count">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tier-early">🟡 EARLY</span>
+        <span class="stat-value" id="early-count">-</span>
+      </div>
+    </div>
+
+    <div class="card" style="grid-column: span 2;">
+      <h2>📜 Recent Signals</h2>
+      <div class="signals-list" id="signals-list">
+        <p style="color: #888;">No signals yet...</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadData() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        
+        document.getElementById('symbols').textContent = data.symbolsMonitored || '-';
+        document.getElementById('total-signals').textContent = data.signalsGenerated || 0;
+        document.getElementById('active-trades').textContent = data.activeSignals || 0;
+        document.getElementById('uptime').textContent = formatUptime(data.uptime);
+        
+        const tuner = data.autoTuner || {};
+        document.getElementById('win-rate').textContent = tuner.winRate ? tuner.winRate.toFixed(1) + '%' : 'N/A';
+        document.getElementById('total-trades').textContent = tuner.totalTrades || 0;
+        document.getElementById('wl-ratio').textContent = `${tuner.wins || 0} / ${tuner.losses || 0}`;
+        
+        const pnl = (tuner.wins || 0) - (tuner.losses || 0);
+        const pnlEl = document.getElementById('net-pnl');
+        pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl;
+        pnlEl.className = 'stat-value ' + (pnl >= 0 ? 'positive' : 'negative');
+        
+        document.getElementById('win-bar').style.width = (tuner.winRate || 0) + '%';
+        
+        const params = tuner.params || {};
+        document.getElementById('param-score').textContent = params.scoreThreshold || '-';
+        document.getElementById('param-vol').textContent = (params.volumeSpike || '-') + 'x';
+        document.getElementById('param-change').textContent = (params.priceChange || '-') + '%';
+        
+        const tiers = data.signalsByTier || {};
+        document.getElementById('sniper-count').textContent = tiers.SNIPER || 0;
+        document.getElementById('confirmed-count').textContent = tiers.CONFIRMED || 0;
+        document.getElementById('early-count').textContent = tiers.EARLY || 0;
+        
+        const signals = data.recentSignals || [];
+        const signalsList = document.getElementById('signals-list');
+        
+        if (signals.length === 0) {
+          signalsList.innerHTML = '<p style="color: #888;">No signals yet...</p>';
+        } else {
+          signalsList.innerHTML = signals.slice(0, 20).map(s => {
+            const tierClass = 'tier-' + s.tier.toLowerCase();
+            const tierEmoji = s.tier === 'SNIPER' ? '🔴' : s.tier === 'CONFIRMED' ? '🟢' : '🟡';
+            return `
+              <div class="signal-item">
+                <div class="signal-symbol ${tierClass}">${tierEmoji} ${s.symbol}</div>
+                <div class="signal-details">
+                  <span>Score: ${s.score?.toFixed(0) || '-'}</span>
+                  <span>Change: ${s.priceChange?.toFixed(2) || '-'}%</span>
+                  <span>Vol: ${s.volumeSpike?.toFixed(1) || '-'}x</span>
+                  <span>${new Date(s.timestamp).toLocaleTimeString()}</span>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      } catch (e) {
+        console.error('Failed to load data:', e);
+      }
+    }
+
+    function formatUptime(ms) {
+      if (!ms) return '-';
+      const hours = Math.floor(ms / 3600000);
+      const mins = Math.floor((ms % 3600000) / 60000);
+      return `${hours}h ${mins}m`;
+    }
+
+    loadData();
+    setInterval(loadData, 3000);
+  </script>
+</body>
+</html>

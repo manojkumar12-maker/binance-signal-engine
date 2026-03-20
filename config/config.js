@@ -88,6 +88,13 @@ export const config = {
     minScore: 40,
     minVolume: 1.0
   },
+  autoTuner: {
+    enabled: true,
+    baseScoreThreshold: 50,
+    baseVolumeSpike: 1.5,
+    basePriceChange: 1.5,
+    tuneIntervalMinutes: 5
+  },
   notifications: {
     discord: { enabled: false, webhookUrl: '' },
     telegram: { enabled: false, botToken: '', chatId: '' },

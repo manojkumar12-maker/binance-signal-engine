@@ -1,4 +1,6 @@
 import { config } from '../../config/config.js';
+import { autoTuner } from '../engine/autoTuner.js';
+import { orderBookAnalyzer } from '../engine/orderBookAnalyzer.js';
 
 const STABLECOINS = ['USDT', 'BUSD', 'USDC', 'DAI', 'USD', 'UST'];
 
@@ -13,6 +15,8 @@ class PumpAnalyzer {
     this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, lastReset: Date.now() };
     this.volumeRateHistory = new Map();
     this.quoteVolumeHistory = new Map();
+    this.orderbookImbalance = new Map();
+    this.lastSignalEmit = 0;
   }
 
   isStablecoin(symbol) {
@@ -169,19 +173,27 @@ class PumpAnalyzer {
     this.updateHistory(symbol, ticker);
     if (!this.checkCooldown(symbol)) return null;
 
-    const analysis = this.calculateMetrics(symbol, priceChangePercent);
+    const orderbookData = orderBookAnalyzer.getAnalysis(symbol);
+    const analysis = this.calculateMetrics(symbol, priceChangePercent, orderbookData);
+    
     const tier = this.determineTier(analysis);
     
     if (tier) {
       this.lastSignalTime.set(symbol, Date.now());
+      this.lastSignalEmit = Date.now();
       this.signalCounts[tier.type]++;
       this.checkAutoRelax();
+    } else {
+      if (Date.now() - this.lastSignalEmit > 60000) {
+        autoTuner.incrementNoSignal();
+      }
     }
     
+    autoTuner.tune();
     return tier;
   }
 
-  calculateMetrics(symbol, priceChangePercent) {
+  calculateMetrics(symbol, priceChangePercent, orderbookData = null) {
     const prices = this.priceHistory.get(symbol);
     const volumes = this.volumeHistory.get(symbol);
     const candles = this.candleHistory.get(symbol);
@@ -221,9 +233,13 @@ class PumpAnalyzer {
     const rsi = this.calculateRSI(symbol);
     const strongCandle = this.analyzeCandleStrength(candles);
 
+    const orderbookImbalance = orderbookData?.imbalance || 1;
+    const spoofingRisk = orderbookData?.spoofingRisk || 0;
+
     const score = this.calculateScore({
       ema50, currentPrice, liquiditySweep, sweptReclaimed, volumeSpike,
-      momentum, acceleration, strongCandle, rsi, volumeTrend, priceChange
+      momentum, acceleration, strongCandle, rsi, volumeTrend, priceChange,
+      orderbookImbalance, spoofingRisk
     });
 
     return {
@@ -243,9 +259,12 @@ class PumpAnalyzer {
       imbalance,
       rsi,
       strongCandle,
+      orderbookImbalance,
+      spoofingRisk,
       factors: this.getFactors({
         ema50, currentPrice, breakOfStructure, liquiditySweep, sweptReclaimed,
-        volumeSpike, momentum, acceleration, strongCandle, volumeTrend, priceChange
+        volumeSpike, momentum, acceleration, strongCandle, volumeTrend, priceChange,
+        orderbookImbalance
       })
     };
   }
@@ -253,6 +272,7 @@ class PumpAnalyzer {
   calculateScore(metrics) {
     const weights = config?.smartScoring || {};
     const filters = config?.aiFilters || {};
+    const tunedParams = autoTuner.getParams();
     let score = 0;
 
     if (metrics.priceChange >= 0.5) score += Math.min(metrics.priceChange * 4, 35);
@@ -271,6 +291,13 @@ class PumpAnalyzer {
     if (metrics.strongCandle) score += weights.candleStrengthWeight || 6;
     if (metrics.volumeTrend) score += 4;
 
+    if (metrics.orderbookImbalance > 1.5) score += 15;
+    if (metrics.orderbookImbalance > 1.8) score += 15;
+    if (metrics.orderbookImbalance > 2.2) score += 10;
+    
+    if (metrics.spoofingRisk > 30) score -= 20;
+    else if (metrics.spoofingRisk > 15) score -= 10;
+
     if (metrics.rsi > (filters.maxRSI || 85)) return Math.max(0, score - 15);
     if (metrics.rsi > 75) score -= 3;
 
@@ -288,6 +315,8 @@ class PumpAnalyzer {
     if (metrics.acceleration > 0.01) factors.push(`Acc: ${metrics.acceleration.toFixed(3)}`);
     if (metrics.strongCandle) factors.push('Strong Candle');
     if (metrics.volumeTrend) factors.push('Vol Trend Up');
+    if (metrics.orderbookImbalance > 1.3) factors.push(`OB Imb: ${metrics.orderbookImbalance.toFixed(2)}`);
+    if (metrics.spoofingRisk > 15) factors.push(`Spoof: ${metrics.spoofingRisk.toFixed(0)}`);
     return factors;
   }
 
@@ -295,12 +324,14 @@ class PumpAnalyzer {
     if (analysis.score === 0) return null;
 
     const tiers = config?.signalTiers || {};
-    const { score, priceChange, volumeSpike, momentum, imbalance } = analysis;
+    const tunedParams = autoTuner.getParams();
+    const { score, priceChange, volumeSpike, momentum, imbalance, spoofingRisk } = analysis;
 
-    if (score >= (tiers.SNIPER?.scoreThreshold || 75) &&
+    if (spoofingRisk > 40) return null;
+
+    if (score >= Math.max(tiers.SNIPER?.scoreThreshold || 75, tunedParams.scoreThreshold) &&
         priceChange >= (tiers.SNIPER?.priceChangeThreshold || 3) &&
-        volumeSpike >= (tiers.SNIPER?.volumeSpikeThreshold || 3) &&
-        momentum >= (tiers.SNIPER?.momentumThreshold || 0.4)) {
+        volumeSpike >= Math.max(tiers.SNIPER?.volumeSpikeThreshold || 3, tunedParams.volumeSpike)) {
       return {
         type: 'SNIPER',
         score,
@@ -310,9 +341,9 @@ class PumpAnalyzer {
       };
     }
 
-    if (score >= (tiers.CONFIRMED?.scoreThreshold || 65) &&
-        priceChange >= (tiers.CONFIRMED?.priceChangeThreshold || 2.5) &&
-        volumeSpike >= (tiers.CONFIRMED?.volumeSpikeThreshold || 2)) {
+    if (score >= Math.max(tiers.CONFIRMED?.scoreThreshold || 65, tunedParams.scoreThreshold - 10) &&
+        priceChange >= Math.max(tiers.CONFIRMED?.priceChangeThreshold || 2.5, tunedParams.priceChange) &&
+        volumeSpike >= Math.max(tiers.CONFIRMED?.volumeSpikeThreshold || 2, tunedParams.volumeSpike)) {
       return {
         type: 'CONFIRMED',
         score,
@@ -322,7 +353,7 @@ class PumpAnalyzer {
       };
     }
 
-    if (score >= (tiers.EARLY?.scoreThreshold || 50) &&
+    if (score >= Math.max(tiers.EARLY?.scoreThreshold || 50, tunedParams.scoreThreshold - 15) &&
         priceChange >= (tiers.EARLY?.priceChangeThreshold || 1.5) &&
         volumeSpike >= (tiers.EARLY?.volumeSpikeThreshold || 1.5) &&
         momentum >= (tiers.EARLY?.momentumThreshold || 0.2)) {
