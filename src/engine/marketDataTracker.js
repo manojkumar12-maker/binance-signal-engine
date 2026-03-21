@@ -247,36 +247,55 @@ class MarketDataTracker {
     const penalties = [];
 
     const orderflow = this.getOrderflowData(symbol);
-    if (orderflow.ratio > 1.6) {
-      confidence += 20;
-      bonuses.push(`Orderflow: ${orderflow.ratio.toFixed(2)}x (+20)`);
-    } else if (orderflow.ratio > 1.3) {
-      confidence += 10;
-      bonuses.push(`Orderflow: ${orderflow.ratio.toFixed(2)}x (+10)`);
-    } else if (orderflow.ratio < 0.8) {
-      confidence -= 15;
-      penalties.push(`Orderflow: ${orderflow.ratio.toFixed(2)}x (-15)`);
-    }
-
     const oi = this.getOpenInterestData(symbol);
-    if (oi.change > 5) {
+    const funding = this.getFundingRateData(symbol);
+    const regime = this.getMarketRegime(symbol);
+
+    if (orderflow.ratio > 1.5 && oi.change > 3) {
       confidence += 20;
-      bonuses.push(`OI: +${oi.change.toFixed(1)}% (+20)`);
-    } else if (oi.change > 2) {
-      confidence += 10;
-      bonuses.push(`OI: +${oi.change.toFixed(1)}% (+10)`);
-    } else if (oi.change < -2) {
-      confidence -= 10;
-      penalties.push(`OI: ${oi.change.toFixed(1)}% (-10)`);
+      bonuses.push(`OF+OI Combo: ${orderflow.ratio.toFixed(2)}x + ${oi.change.toFixed(1)}% (+20)`);
+    } else {
+      if (orderflow.ratio > 1.6) {
+        confidence += 10;
+        bonuses.push(`Orderflow: ${orderflow.ratio.toFixed(2)}x (+10)`);
+      } else if (orderflow.ratio > 1.3) {
+        confidence += 5;
+        bonuses.push(`Orderflow: ${orderflow.ratio.toFixed(2)}x (+5)`);
+      }
+      
+      if (oi.change > 5) {
+        confidence += 10;
+        bonuses.push(`OI: +${oi.change.toFixed(1)}% (+10)`);
+      } else if (oi.change > 2) {
+        confidence += 5;
+        bonuses.push(`OI: +${oi.change.toFixed(1)}% (+5)`);
+      }
     }
 
-    const funding = this.getFundingRateData(symbol);
-    if (funding.signal === 'SHORT_SQUEEZE' && priceChange > 0) {
+    if (funding.rate < -0.01 && oi.change > 2) {
+      confidence += 20;
+      bonuses.push('Funding+OI Squeeze (+20)');
+    } else if (funding.signal === 'SHORT_SQUEEZE' && priceChange > 0) {
       confidence += 15;
       bonuses.push('Funding Short Squeeze (+15)');
     } else if (funding.signal === 'RISKY_LONG' && priceChange > 0) {
       confidence -= 10;
       penalties.push('Crowded Longs (-10)');
+    }
+
+    if (oi.change < -2) {
+      confidence -= 10;
+      penalties.push(`OI Decrease: ${oi.change.toFixed(1)}% (-10)`);
+    }
+
+    if (orderflow.ratio < 0.8) {
+      confidence -= 15;
+      penalties.push(`Weak Orderflow: ${orderflow.ratio.toFixed(2)}x (-15)`);
+    }
+
+    if (regime === 'WEAK_MARKET' || regime === 'BALANCED') {
+      confidence -= 5;
+      penalties.push(`Regime: ${regime} (-5)`);
     }
 
     return {
@@ -286,7 +305,7 @@ class MarketDataTracker {
       orderflow,
       openInterest: oi,
       funding,
-      regime: this.getMarketRegime(symbol)
+      regime
     };
   }
 

@@ -65,8 +65,15 @@ class TradeLogger {
     return trade;
   }
 
-  analyzePerformance() {
-    if (this.tradeLog.length === 0) {
+  getRollingWindow(windowSize = 50) {
+    return this.tradeLog.slice(-(windowSize || this.tradeLog.length));
+  }
+
+  analyzePerformance(useRollingWindow = true) {
+    const windowSize = useRollingWindow ? (parseInt(process.env.ROLLING_WINDOW) || 50) : this.tradeLog.length;
+    const trades = useRollingWindow ? this.getRollingWindow(windowSize) : this.tradeLog;
+    
+    if (trades.length === 0) {
       return {
         totalTrades: 0,
         winRate: 0,
@@ -74,13 +81,14 @@ class TradeLogger {
         avgLoss: 0,
         bestTier: null,
         avgConfidenceWin: 0,
-        avgConfidenceLoss: 0
+        avgConfidenceLoss: 0,
+        rollingWindow: windowSize
       };
     }
 
-    const wins = this.tradeLog.filter(t => t.result === 'WIN');
-    const losses = this.tradeLog.filter(t => t.result === 'LOSS');
-    const breakeven = this.tradeLog.filter(t => t.result === 'BREAKEVEN');
+    const wins = trades.filter(t => t.result === 'WIN');
+    const losses = trades.filter(t => t.result === 'LOSS');
+    const breakeven = trades.filter(t => t.result === 'BREAKEVEN');
 
     const avgWin = wins.length > 0 
       ? wins.reduce((sum, t) => sum + t.pnlPercent, 0) / wins.length 
@@ -100,7 +108,7 @@ class TradeLogger {
 
     const tierStats = {};
     ['SNIPER', 'CONFIRMED', 'EARLY'].forEach(tier => {
-      const tierTrades = this.tradeLog.filter(t => t.tier === tier);
+      const tierTrades = trades.filter(t => t.tier === tier);
       const tierWins = tierTrades.filter(t => t.result === 'WIN').length;
       tierStats[tier] = {
         total: tierTrades.length,
@@ -117,16 +125,16 @@ class TradeLogger {
       .sort((a, b) => b[1].winRate - a[1].winRate)[0]?.[0] || null;
 
     const exitReasons = {};
-    this.tradeLog.forEach(t => {
+    trades.forEach(t => {
       exitReasons[t.exitReason] = (exitReasons[t.exitReason] || 0) + 1;
     });
 
     return {
-      totalTrades: this.tradeLog.length,
+      totalTrades: trades.length,
       wins: wins.length,
       losses: losses.length,
       breakeven: breakeven.length,
-      winRate: this.tradeLog.length > 0 ? wins.length / this.tradeLog.length : 0,
+      winRate: trades.length > 0 ? wins.length / trades.length : 0,
       avgWin,
       avgLoss,
       bestTier,
@@ -134,7 +142,8 @@ class TradeLogger {
       avgConfidenceLoss,
       tierStats,
       exitReasons,
-      profitFactor: avgLoss > 0 ? avgWin / avgLoss : 0
+      profitFactor: avgLoss > 0 ? avgWin / avgLoss : 0,
+      rollingWindow: windowSize
     };
   }
 

@@ -7,12 +7,13 @@ export const config = {
     minVolume: 1000000,
     cooldownMinutes: 2,
     maxSignalsPerCycle: 3,
-    signalDecayMinutes: 3
+    signalDecayMinutes: 3,
+    rollingWindowSize: 50
   },
   signalTiers: {
-    EARLY: { scoreThreshold: 40, confidenceThreshold: 45, priceChangeMin: 1, priceChangeMax: 6, volumeSpikeThreshold: 1 },
-    CONFIRMED: { scoreThreshold: 50, confidenceThreshold: 65, priceChangeMin: 2, priceChangeMax: 10, volumeSpikeThreshold: 1.5 },
-    SNIPER: { scoreThreshold: 60, confidenceThreshold: 80, priceChangeMin: 2, priceChangeMax: 8, volumeSpikeThreshold: 2 }
+    EARLY: { scoreThreshold: 35, confidenceThreshold: 40, priceChangeMin: 0.5, priceChangeMax: 8, volumeSpikeThreshold: 1 },
+    CONFIRMED: { scoreThreshold: 45, confidenceThreshold: 55, priceChangeMin: 1, priceChangeMax: 12, volumeSpikeThreshold: 1.2 },
+    SNIPER: { scoreThreshold: 55, confidenceThreshold: 70, priceChangeMin: 2, priceChangeMax: 10, volumeSpikeThreshold: 1.5 }
   },
   scoring: {
     priceActionWeight: 30,
@@ -28,15 +29,23 @@ export const config = {
   riskManagement: {
     atrPeriod: 14,
     atrMultiplier: {
-      tp1: 0.5, tp2: 1.0, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.2
+      tp1: 0.5, tp2: 1.0, tp3: 1.5, tp4: 2.5, tp5: 3.0, sl: 1.2
+    },
+    dynamicTP: {
+      enabled: true,
+      basePercent: 0.3,
+      volatilityMultiplier: true
     }
   },
   filters: {
     volatilityExpansionBonus: 10,
-    entryPrecisionMaxPullback: 0.002,
+    volatilityExpansionPenalty: 10,
+    entryPrecisionMaxPullback: 0.005,
+    entryPrecisionPenalty: 10,
     latePumpPenalty: 15,
     smartMoneyBonus: 15,
     signalDecayPenalty: 10,
+    chopMarketPenalty: 15,
     minOrderflowRatio: 0.8,
     maxOrderflowRatio: 1.6,
     minOIChange: -2,
@@ -59,7 +68,9 @@ export const config = {
     },
     liquidationZones: {
       enabled: true
-    }
+    },
+    parallelEvaluation: true,
+    penaltiesNotFilters: true
   },
   notifications: {
     telegram: {

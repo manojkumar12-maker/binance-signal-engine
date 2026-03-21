@@ -229,9 +229,15 @@ class PumpAnalyzer {
     const orderbookData = orderBookAnalyzer.getAnalysis(symbol);
     const analysis = this.calculateMetrics(symbol, priceChangePercent, orderbookData);
     
-    if (!this.checkVolatilityExpansion(analysis)) return null;
+    const volCheck = this.checkVolatilityExpansion(analysis);
+    if (volCheck.penalty) {
+      analysis.score -= volCheck.penalty;
+    }
     
-    if (!this.checkEntryPrecision(analysis, ticker)) return null;
+    const entryCheck = this.checkEntryPrecision(analysis, ticker);
+    if (entryCheck.penalty) {
+      analysis.score -= entryCheck.penalty;
+    }
     
     const tier = this.determineTier(symbol, analysis);
     
@@ -240,7 +246,11 @@ class PumpAnalyzer {
       tier.confidence = this.applySignalDecay(tier);
       tier.confidence = this.applySmartMoneyBonus(tier, analysis);
       
-      if (tier.confidence < (config.signalTiers[tier.type]?.confidenceThreshold || 40)) {
+      if (entryCheck.penalty) {
+        tier.confidence -= entryCheck.penalty;
+      }
+      
+      if (tier.confidence < (config.signalTiers[tier.type]?.confidenceThreshold || 30)) {
         return null;
       }
       
@@ -265,17 +275,17 @@ class PumpAnalyzer {
     
     if (atr && atrMA && atr > atrMA) {
       analysis.score += config.filters.volatilityExpansionBonus;
-      return true;
+      return { passed: true, bonus: config.filters.volatilityExpansionBonus };
     }
     
-    if (!atrMA) return true;
+    if (!atrMA) return { passed: true, bonus: 0 };
     
-    return true;
+    return { passed: true, penalty: config.filters.volatilityExpansionPenalty };
   }
 
   checkEntryPrecision(analysis, ticker) {
     const highs = this.highPrices.get(analysis.symbol);
-    if (!highs || highs.length < 2) return true;
+    if (!highs || highs.length < 2) return { passed: true, penalty: 0 };
     
     const recentHigh = highs[highs.length - 1];
     const currentPrice = ticker.price;
@@ -283,10 +293,11 @@ class PumpAnalyzer {
     const pullback = (recentHigh - currentPrice) / recentHigh;
     
     if (pullback > config.filters.entryPrecisionMaxPullback) {
-      return false;
+      const penalty = Math.min(pullback * 100, config.filters.entryPrecisionPenalty);
+      return { passed: true, penalty, pullback: pullback.toFixed(4) };
     }
     
-    return true;
+    return { passed: true, penalty: 0 };
   }
 
   applyLatePumpPenalty(confidence, priceChange) {
