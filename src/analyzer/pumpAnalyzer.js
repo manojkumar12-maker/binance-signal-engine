@@ -18,6 +18,8 @@ class PumpAnalyzer {
     this.quoteVolumeHistory = new Map();
     this.orderbookImbalance = new Map();
     this.lastSignalEmit = 0;
+    this.signalQueue = [];
+    this.vwapHistory = new Map();
   }
 
   isStablecoin(symbol) {
@@ -40,6 +42,23 @@ class PumpAnalyzer {
     return ema;
   }
 
+  calculateVWAP(symbol, ticker) {
+    const candles = this.candleHistory.get(symbol);
+    if (!candles || candles.length < 5) return ticker.price;
+    
+    const recent = candles.slice(-20);
+    let cumVP = 0;
+    let cumV = 0;
+    
+    for (const c of recent) {
+      const typicalPrice = (c.high + c.low + c.close) / 3;
+      cumVP += typicalPrice * (c.close > c.open ? c.close - c.open : 1);
+      cumV += (c.close > c.open ? c.close - c.open : 1);
+    }
+    
+    return cumV > 0 ? cumVP / cumV : ticker.price;
+  }
+
   calculateATR(symbol, period = 14) {
     const candles = this.candleHistory.get(symbol);
     if (!candles || candles.length < period + 1) return null;
@@ -54,6 +73,27 @@ class PumpAnalyzer {
       trueRanges.push(tr);
     }
     return trueRanges.slice(-period).reduce((a, b) => a + b, 0) / period;
+  }
+
+  calculateATRMA(symbol, period = 14) {
+    const atrHistory = [];
+    const candles = this.candleHistory.get(symbol);
+    if (!candles || candles.length < period * 2) return null;
+    
+    for (let i = period; i < candles.length; i++) {
+      const trs = [];
+      for (let j = i - period + 1; j <= i; j++) {
+        const tr = Math.max(
+          candles[j].high - candles[j].low,
+          Math.abs(candles[j].high - candles[j - 1].close),
+          Math.abs(candles[j].low - candles[j - 1].close)
+        );
+        trs.push(tr);
+      }
+      atrHistory.push(trs.reduce((a, b) => a + b, 0) / period);
+    }
+    
+    return atrHistory.slice(-5).reduce((a, b) => a + b, 0) / Math.min(atrHistory.length, 5);
   }
 
   checkBreakOfStructure(symbol) {
@@ -178,9 +218,22 @@ class PumpAnalyzer {
     const orderbookData = orderBookAnalyzer.getAnalysis(symbol);
     const analysis = this.calculateMetrics(symbol, priceChangePercent, orderbookData);
     
+    if (!this.checkVolatilityExpansion(analysis)) return null;
+    
+    if (!this.checkEntryPrecision(analysis, ticker)) return null;
+    
     const tier = this.determineTier(symbol, analysis);
     
     if (tier) {
+      tier.confidence = this.applyLatePumpPenalty(tier.confidence, analysis.priceChange);
+      tier.confidence = this.applySignalDecay(tier);
+      tier.confidence = this.applySmartMoneyBonus(tier, analysis);
+      
+      if (tier.confidence < (config.signalTiers[tier.type]?.confidenceThreshold || 40)) {
+        return null;
+      }
+      
+      this.signalQueue.push(tier);
       this.lastSignalTime.set(symbol, Date.now());
       this.lastSignalEmit = Date.now();
       this.signalCounts[tier.type]++;
@@ -192,7 +245,81 @@ class PumpAnalyzer {
     }
     
     autoTuner.tune();
-    return tier;
+    return this.selectTopSignals();
+  }
+
+  checkVolatilityExpansion(analysis) {
+    const atr = analysis.atr;
+    const atrMA = analysis.atrMA;
+    
+    if (atr && atrMA && atr > atrMA) {
+      analysis.score += config.filters.volatilityExpansionBonus;
+      return true;
+    }
+    
+    if (!atrMA) return true;
+    
+    return true;
+  }
+
+  checkEntryPrecision(analysis, ticker) {
+    const highs = this.highPrices.get(analysis.symbol);
+    if (!highs || highs.length < 2) return true;
+    
+    const recentHigh = highs[highs.length - 1];
+    const currentPrice = ticker.price;
+    
+    const pullback = (recentHigh - currentPrice) / recentHigh;
+    
+    if (pullback > config.filters.entryPrecisionMaxPullback) {
+      return false;
+    }
+    
+    return true;
+  }
+
+  applyLatePumpPenalty(confidence, priceChange) {
+    if (priceChange > 10) {
+      confidence -= config.filters.latePumpPenalty;
+    }
+    return Math.max(confidence, 0);
+  }
+
+  applySignalDecay(signal) {
+    const age = (Date.now() - signal.signalTime) / 60000;
+    const maxAge = config.signals.signalDecayMinutes;
+    
+    if (age > maxAge) {
+      signal.confidence -= config.filters.signalDecayPenalty;
+    }
+    
+    return Math.max(signal.confidence, 0);
+  }
+
+  applySmartMoneyBonus(signal, analysis) {
+    if (
+      analysis.volumeSpike > 2 &&
+      analysis.orderbookImbalance > 1.2 &&
+      analysis.priceAboveVWAP
+    ) {
+      signal.confidence += config.filters.smartMoneyBonus;
+    }
+    
+    return signal.confidence;
+  }
+
+  selectTopSignals() {
+    if (this.signalQueue.length === 0) return null;
+    
+    const maxSignals = config.signals.maxSignalsPerCycle || 3;
+    
+    const ranked = this.signalQueue
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, maxSignals);
+    
+    this.signalQueue = [];
+    
+    return ranked[0];
   }
 
   calculateMetrics(symbol, priceChangePercent, orderbookData = null) {
@@ -228,7 +355,10 @@ class PumpAnalyzer {
     const acceleration = this.calculateAcceleration(recentPrices);
     const ema50 = this.calculateEMA(prices, 50);
     const atrPeriod = config?.riskManagement?.atrPeriod || 14;
-    const atr = this.calculateATR(symbol, atrPeriod) || currentPrice * 0.01;
+    const atr = this.calculateATR(symbol, atrPeriod);
+    const atrMA = this.calculateATRMA(symbol, atrPeriod);
+    const vwap = this.calculateVWAP(symbol, { price: currentPrice });
+    const priceAboveVWAP = currentPrice > vwap;
 
     const { detected: liquiditySweep, reclaimed: sweptReclaimed } = this.checkLiquiditySweep(symbol, currentPrice);
     const breakOfStructure = this.checkBreakOfStructure(symbol);
@@ -243,7 +373,7 @@ class PumpAnalyzer {
     const score = this.calculateScore({
       ema50, currentPrice, liquiditySweep, sweptReclaimed, volumeSpike,
       momentum, acceleration, strongCandle, rsi, volumeTrend, priceChange,
-      orderbookImbalance, spoofingRisk
+      orderbookImbalance, spoofingRisk, breakOfStructure
     });
 
     return {
@@ -255,8 +385,11 @@ class PumpAnalyzer {
       acceleration,
       score,
       atr,
+      atrMA,
       entryPrice: currentPrice,
       ema50,
+      vwap,
+      priceAboveVWAP,
       breakOfStructure,
       liquiditySweep,
       sweptReclaimed,
@@ -266,40 +399,42 @@ class PumpAnalyzer {
       strongCandle,
       orderbookImbalance,
       spoofingRisk,
+      signalTime: Date.now(),
       factors: this.getFactors({
         ema50, currentPrice, breakOfStructure, liquiditySweep, sweptReclaimed,
         volumeSpike, momentum, acceleration, strongCandle, volumeTrend, priceChange,
-        orderbookImbalance
+        orderbookImbalance, atr, atrMA
       })
     };
   }
 
   calculateScore(metrics) {
-    const weights = config?.smartScoring || {};
-    const filters = config?.aiFilters || {};
-    const tunedParams = autoTuner.getParams();
+    const s = config.scoring || {};
     let score = 0;
 
     if (metrics.priceChange >= 0.5) score += Math.min(metrics.priceChange * 4, 35);
     
+    if (metrics.breakOfStructure) score += (s.priceActionWeight || 30) * 0.4;
+    
     if (metrics.ema50 !== null && metrics.currentPrice > metrics.ema50) {
-      score += weights.htfTrendWeight || 10;
+      score += s.trendWeight || 10;
     }
-    if (metrics.breakOfStructure) score += weights.bosWeight || 12;
+    
     if (metrics.liquiditySweep) {
-      if (metrics.sweptReclaimed) score += (weights.liquiditySweepWeight || 12) + 5;
+      if (metrics.sweptReclaimed) score += (s.liquiditySweepWeight || 10) + 5;
       else score += 5;
     }
-    if (metrics.volumeSpike >= 1.2) score += Math.min((metrics.volumeSpike - 1) * 25, weights.volumeSpikeWeight || 18);
-    if (metrics.momentum > 0.1) score += Math.min(metrics.momentum * 3, weights.momentumWeight || 12);
-    else if (metrics.momentum > 0) score += 2;
-    if (metrics.acceleration > 0.01) score += Math.min(metrics.acceleration * 30, weights.accelerationWeight || 8);
-    if (metrics.strongCandle) score += weights.candleStrengthWeight || 6;
+    
+    if (metrics.volumeSpike >= 1.2) score += Math.min((metrics.volumeSpike - 1) * 25, s.volumeWeight || 25);
     if (metrics.volumeTrend) score += 4;
-
-    if (metrics.orderbookImbalance > 1.5) score += 15;
-    if (metrics.orderbookImbalance > 1.8) score += 15;
-    if (metrics.orderbookImbalance > 2.2) score += 10;
+    
+    if (metrics.momentum > 0.1) score += Math.min(metrics.momentum * 3, s.momentumWeight || 15);
+    else if (metrics.momentum > 0) score += 2;
+    if (metrics.acceleration > 0.01) score += Math.min(metrics.acceleration * 30, 8);
+    if (metrics.strongCandle) score += 4;
+    
+    if (metrics.orderbookImbalance > 1.5) score += Math.min((metrics.orderbookImbalance - 1) * 25, s.orderbookWeight || 10);
+    if (metrics.orderbookImbalance > 2.0) score += 5;
     
     if (metrics.spoofingRisk > 30) score -= 20;
     else if (metrics.spoofingRisk > 15) score -= 10;
@@ -322,6 +457,7 @@ class PumpAnalyzer {
     if (metrics.strongCandle) factors.push('Strong Candle');
     if (metrics.volumeTrend) factors.push('Vol Trend Up');
     if (metrics.orderbookImbalance > 1.3) factors.push(`OB Imb: ${metrics.orderbookImbalance.toFixed(2)}`);
+    if (metrics.atr && metrics.atrMA && metrics.atr > metrics.atrMA) factors.push('Vol Expansion');
     if (metrics.spoofingRisk > 15) factors.push(`Spoof: ${metrics.spoofingRisk.toFixed(0)}`);
     return factors;
   }
@@ -338,7 +474,7 @@ class PumpAnalyzer {
       priceChange,
       trend: analysis.currentPrice > analysis.ema50 ? 'UP' : 'DOWN',
       atr: analysis.atr,
-      atrMA: analysis.atr,
+      atrMA: analysis.atrMA,
       marketRegime: this.detectMarketRegime(symbol)
     };
 
@@ -347,23 +483,27 @@ class PumpAnalyzer {
     if (!result.shouldGenerateSignal) return null;
     if (result.isFakePump) return null;
 
-    const qualityEmoji = result.entryQuality === 'EXCELLENT' ? '⭐' : result.entryQuality === 'GOOD' ? '✓' : '⚠️';
-
-    if (result.tier === 'SNIPER' && result.hasConfluence && result.confidence >= 80) {
-      console.log(`🔴 SNIPER ${qualityEmoji} 🔥: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluenceCount}`);
-      return { symbol, type: 'SNIPER', score, ...result, priority: 1, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
+    const tiers = config.signalTiers || {};
+    
+    if (result.tier === 'SNIPER' && result.hasConfluence && result.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {
+      if (priceChange >= (tiers.SNIPER?.priceChangeMin || 2) && priceChange <= (tiers.SNIPER?.priceChangeMax || 8)) {
+        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
+        return { symbol, type: 'SNIPER', score, ...result, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
+      }
     }
 
-    if (result.tier === 'CONFIRMED' && result.hasConfluence && result.confluenceCount >= 3 && result.confidence >= 70) {
-      console.log(`🟢 CONFIRMED ${qualityEmoji} 🔥: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluenceCount}`);
-      return { symbol, type: 'CONFIRMED', score, ...result, priority: 2, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
+    if (result.tier === 'CONFIRMED' && result.hasConfluence && result.confluenceCount >= 3 && result.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 65)) {
+      if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 2) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 10)) {
+        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
+        return { symbol, type: 'CONFIRMED', score, ...result, priority: 2, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
+      }
     }
 
     if (result.tier === 'EARLY' || (result.confidence >= 40 && !result.isFakePump)) {
       const tierType = result.tier === 'EARLY' ? 'EARLY' : (result.confidence >= 50 ? 'EARLY' : null);
-      if (tierType) {
-        console.log(`🟡 EARLY ${qualityEmoji} 👀: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | Confluence=${result.confluenceCount}`);
-        return { symbol, type: 'EARLY', score, ...result, priority: 3, signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
+      if (tierType && priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 6)) {
+        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
+        return { symbol, type: 'EARLY', score, ...result, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
       }
     }
 

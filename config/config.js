@@ -5,18 +5,35 @@ export const config = {
   },
   signals: {
     minVolume: 1000000,
-    cooldownMinutes: 2
+    cooldownMinutes: 2,
+    maxSignalsPerCycle: 3,
+    signalDecayMinutes: 3
   },
   signalTiers: {
-    EARLY: { scoreThreshold: 40, priceChangeThreshold: 1, volumeSpikeThreshold: 1 },
-    CONFIRMED: { scoreThreshold: 45, priceChangeThreshold: 2, volumeSpikeThreshold: 1.5 },
-    SNIPER: { scoreThreshold: 55, priceChangeThreshold: 3, volumeSpikeThreshold: 2 }
+    EARLY: { scoreThreshold: 40, confidenceThreshold: 45, priceChangeMin: 1, priceChangeMax: 6, volumeSpikeThreshold: 1 },
+    CONFIRMED: { scoreThreshold: 50, confidenceThreshold: 65, priceChangeMin: 2, priceChangeMax: 10, volumeSpikeThreshold: 1.5 },
+    SNIPER: { scoreThreshold: 60, confidenceThreshold: 80, priceChangeMin: 2, priceChangeMax: 8, volumeSpikeThreshold: 2 }
+  },
+  scoring: {
+    priceActionWeight: 30,
+    volumeWeight: 25,
+    momentumWeight: 15,
+    orderbookWeight: 10,
+    liquiditySweepWeight: 10,
+    trendWeight: 10
   },
   riskManagement: {
     atrPeriod: 14,
     atrMultiplier: {
       tp1: 0.5, tp2: 1.0, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.2
     }
+  },
+  filters: {
+    volatilityExpansionBonus: 10,
+    entryPrecisionMaxPullback: 0.002,
+    latePumpPenalty: 15,
+    smartMoneyBonus: 15,
+    signalDecayPenalty: 10
   },
   notifications: {
     telegram: {
