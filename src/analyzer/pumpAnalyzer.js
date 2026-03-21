@@ -500,6 +500,8 @@ class PumpAnalyzer {
       marketRegime: this.detectMarketRegime(symbol)
     };
 
+    const result = analyzeSignal(confidenceData);
+    
     let enhancedResult = { ...result };
     
     if (config.advancedFeatures?.orderflow?.enabled || config.advancedFeatures?.openInterest?.enabled) {
