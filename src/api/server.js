@@ -41,7 +41,7 @@ class SignalAPIServer {
 
     if (url === '/' || url === '/dashboard') {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(readFileSync(join(__dirname, '../../dashboard/index.html')));
+      res.end(readFileSync(join(__dirname, '../../frontend/index.html')));
       return;
     }
 
