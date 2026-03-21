@@ -18,6 +18,22 @@ class SignalEngine {
       symbolsMonitored: 0,
       startedAt: null
     };
+    this.startTime = Date.now();
+    this.warmupTime = 60 * 1000;
+  }
+
+  isWarmedUp() {
+    return Date.now() - this.startTime > this.warmupTime;
+  }
+
+  getWarmupStatus() {
+    const elapsed = Date.now() - this.startTime;
+    const remaining = Math.max(0, this.warmupTime - elapsed);
+    return {
+      isWarmedUp: this.isWarmedUp(),
+      elapsed: Math.floor(elapsed / 1000),
+      remaining: Math.floor(remaining / 1000)
+    };
   }
 
   async start() {
@@ -72,9 +88,27 @@ class SignalEngine {
   }
 
   async processTicker(ticker) {
+    if (!this.isWarmedUp()) {
+      const status = this.getWarmupStatus();
+      if (status.remaining % 10 === 0 && status.remaining > 0) {
+        console.log(`⏳ Warming up... ${status.remaining}s remaining`);
+      }
+      return;
+    }
+
     const analysis = pumpAnalyzer.analyze(ticker);
     
     if (analysis && analysis.type) {
+      if (!analysis.atr || isNaN(analysis.atr)) {
+        return;
+      }
+      
+      const of = analysis.orderflow?.ratio || 1;
+      const oi = analysis.openInterest?.change || 0;
+      if (of === 1 && oi === 0 && !analysis.orderflow) {
+        return;
+      }
+      
       if (isSymbolActive(ticker.symbol)) {
         const updatedSignal = signalGenerator.updateSignal(ticker.symbol, ticker.price);
         if (updatedSignal && updatedSignal.status !== 'ACTIVE' && updatedSignal.status !== 'WATCHLIST') {

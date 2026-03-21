@@ -80,6 +80,15 @@ class SignalGenerator {
     const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : '🟡';
     const tierLabel = signal.tier === 'SNIPER' ? 'HIGH ACCURACY' : signal.tier === 'CONFIRMED' ? 'CONFIRMED ENTRY' : 'EARLY WATCH';
     
+    const atrDisplay = signal.atr && !isNaN(signal.atr) ? signal.atr.toFixed(6) : 'N/A';
+    const entryDisplay = signal.entryPrice && !isNaN(signal.entryPrice) ? signal.entryPrice.toFixed(6) : 'N/A';
+    const slDisplay = stopLoss && !isNaN(stopLoss) ? stopLoss.toFixed(6) : 'N/A';
+    const tp1Display = targets?.tp1 && !isNaN(targets.tp1) ? targets.tp1.toFixed(6) : 'N/A';
+    const tp2Display = targets?.tp2 && !isNaN(targets.tp2) ? targets.tp2.toFixed(6) : 'N/A';
+    const tp3Display = targets?.tp3 && !isNaN(targets.tp3) ? targets.tp3.toFixed(6) : 'N/A';
+    const tp4Display = targets?.tp4 && !isNaN(targets.tp4) ? targets.tp4.toFixed(6) : 'N/A';
+    const tp5Display = targets?.tp5 && !isNaN(targets.tp5) ? targets.tp5.toFixed(6) : 'N/A';
+    
     const factors = signal.confluenceReasons || signal.factors || [];
     const factorsList = Array.isArray(factors) ? factors.map(f => `   • ${f}`).join('\n') : `   • ${factors}`;
     
@@ -90,17 +99,17 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
 📊 Symbol: ${signal.symbol}
 🕐 Time: ${new Date(signal.timestamp).toLocaleString()}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💰 ENTRY: ${signal.entryPrice.toFixed(6)}
-📏 ATR: ${signal.atr.toFixed(6)}
+💰 ENTRY: ${entryDisplay}
+📏 ATR: ${atrDisplay}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 TAKE PROFIT LEVELS:
-   TP1: ${targets.tp1.toFixed(6)} | R/R: ${riskReward?.tp1 || 'N/A'}
-   TP2: ${targets.tp2.toFixed(6)} | R/R: ${riskReward?.tp2 || 'N/A'}
-   TP3: ${targets.tp3.toFixed(6)} | R/R: ${riskReward?.tp3 || 'N/A'}
-   TP4: ${targets.tp4.toFixed(6)}
-   TP5: ${targets.tp5.toFixed(6)}
+   TP1: ${tp1Display} | R/R: ${riskReward?.tp1 || 'N/A'}
+   TP2: ${tp2Display} | R/R: ${riskReward?.tp2 || 'N/A'}
+   TP3: ${tp3Display} | R/R: ${riskReward?.tp3 || 'N/A'}
+   TP4: ${tp4Display}
+   TP5: ${tp5Display}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛑 STOP LOSS: ${stopLoss.toFixed(6)}
+🛑 STOP LOSS: ${slDisplay}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📈 METRICS:
    Confidence: ${signal.confidence || 0}
@@ -109,7 +118,7 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
    Momentum: ${metrics?.momentum || 0}
    Score: ${metrics?.score || 0}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 CONF LUENCE (${signal.confluence || 0}):
+📋 CONFLUENCE (${signal.confluence || 0}):
 ${factorsList}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;

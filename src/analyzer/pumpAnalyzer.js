@@ -530,14 +530,18 @@ class PumpAnalyzer {
     
     if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {
       if (priceChange >= (tiers.SNIPER?.priceChangeMin || 2) && priceChange <= (tiers.SNIPER?.priceChangeMax || 8)) {
-        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF:${enhancedResult.orderflow?.ratio?.toFixed(2) || 'N/A'} | OI:${enhancedResult.openInterest?.change?.toFixed(1) || 'N/A'}%`);
+        const ofRatio = enhancedResult.orderflow?.ratio || 1;
+        const oiChange = enhancedResult.openInterest?.change || 0;
+        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
         return { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
       }
     }
 
     if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confluenceCount >= 3 && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 65)) {
       if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 2) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 10)) {
-        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF:${enhancedResult.orderflow?.ratio?.toFixed(2) || 'N/A'} | OI:${enhancedResult.openInterest?.change?.toFixed(1) || 'N/A'}%`);
+        const ofRatio = enhancedResult.orderflow?.ratio || 1;
+        const oiChange = enhancedResult.openInterest?.change || 0;
+        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
         return { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
       }
     }
@@ -545,7 +549,9 @@ class PumpAnalyzer {
     if (enhancedResult.tier === 'EARLY' || (enhancedResult.confidence >= 40 && !enhancedResult.isFakePump)) {
       const tierType = enhancedResult.tier === 'EARLY' ? 'EARLY' : (enhancedResult.confidence >= 50 ? 'EARLY' : null);
       if (tierType && priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 6)) {
-        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF:${enhancedResult.orderflow?.ratio?.toFixed(2) || 'N/A'} | OI:${enhancedResult.openInterest?.change?.toFixed(1) || 'N/A'}%`);
+        const ofRatio = enhancedResult.orderflow?.ratio || 1;
+        const oiChange = enhancedResult.openInterest?.change || 0;
+        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
         return { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
       }
     }
@@ -566,6 +572,7 @@ class PumpAnalyzer {
   }
 
   generateEntryExit(entryPrice, atr, tier) {
+    const fallbackAtr = atr || (entryPrice * 0.005);
     const multipliers = config?.riskManagement?.atrMultiplier || { tp1: 0.5, tp2: 1.0, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.2 };
     const tierMultipliers = tier === 'SNIPER' ? { tp1: 1, tp2: 2, tp3: 3, tp4: 4, tp5: 5, sl: 1.5 } :
                             tier === 'CONFIRMED' ? { tp1: 0.75, tp2: 1.5, tp3: 2.5, tp4: 3.5, tp5: 5, sl: 1.2 } :
@@ -573,13 +580,13 @@ class PumpAnalyzer {
 
     return {
       entry: entryPrice,
-      tp1: entryPrice + (tierMultipliers.tp1 * atr),
-      tp2: entryPrice + (tierMultipliers.tp2 * atr),
-      tp3: entryPrice + (tierMultipliers.tp3 * atr),
-      tp4: entryPrice + (tierMultipliers.tp4 * atr),
-      tp5: entryPrice + (tierMultipliers.tp5 * atr),
-      sl: entryPrice - (tierMultipliers.sl * atr),
-      atr
+      tp1: entryPrice + (tierMultipliers.tp1 * fallbackAtr),
+      tp2: entryPrice + (tierMultipliers.tp2 * fallbackAtr),
+      tp3: entryPrice + (tierMultipliers.tp3 * fallbackAtr),
+      tp4: entryPrice + (tierMultipliers.tp4 * fallbackAtr),
+      tp5: entryPrice + (tierMultipliers.tp5 * fallbackAtr),
+      sl: entryPrice - (tierMultipliers.sl * fallbackAtr),
+      atr: fallbackAtr
     };
   }
 
