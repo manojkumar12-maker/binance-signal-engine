@@ -20,7 +20,10 @@ export const config = {
     momentumWeight: 15,
     orderbookWeight: 10,
     liquiditySweepWeight: 10,
-    trendWeight: 10
+    trendWeight: 10,
+    orderflowWeight: 20,
+    oiWeight: 15,
+    fundingWeight: 10
   },
   riskManagement: {
     atrPeriod: 14,
@@ -33,7 +36,30 @@ export const config = {
     entryPrecisionMaxPullback: 0.002,
     latePumpPenalty: 15,
     smartMoneyBonus: 15,
-    signalDecayPenalty: 10
+    signalDecayPenalty: 10,
+    minOrderflowRatio: 0.8,
+    maxOrderflowRatio: 1.6,
+    minOIChange: -2,
+    maxOIChange: 5,
+    fundingThreshold: 0.01
+  },
+  advancedFeatures: {
+    orderflow: {
+      enabled: true,
+      windowMs: 60000,
+      tradeWeight: true
+    },
+    openInterest: {
+      enabled: true,
+      updateIntervalMs: 60000
+    },
+    fundingRate: {
+      enabled: true,
+      updateIntervalMs: 3600000
+    },
+    liquidationZones: {
+      enabled: true
+    }
   },
   notifications: {
     telegram: {

@@ -5,6 +5,8 @@ import { notifier } from './notifiers/notificationManager.js';
 import { apiServer } from './api/server.js';
 import { autoTuner } from './engine/autoTuner.js';
 import { orderBookAnalyzer } from './engine/orderBookAnalyzer.js';
+import { marketDataTracker } from './engine/marketDataTracker.js';
+import { tradeLogger } from './engine/tradeLogger.js';
 import { initDatabase, closeDatabase, createSignal as dbCreateSignal } from './database/db.js';
 import { state, canTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
 
@@ -39,6 +41,8 @@ class SignalEngine {
     await wsManager.initialize();
     this.stats.symbolsMonitored = wsManager.symbols.length;
 
+    pumpAnalyzer.initialize(wsManager.symbols);
+    marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
 
     setInterval(() => {
@@ -160,6 +164,8 @@ global.engine = engine;
 global.signalGenerator = signalGenerator;
 global.autoTuner = autoTuner;
 global.state = state;
+global.marketDataTracker = marketDataTracker;
+global.tradeLogger = tradeLogger;
 
 process.on('SIGINT', async () => {
   await engine.stop();

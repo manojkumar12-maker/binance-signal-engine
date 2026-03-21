@@ -1,6 +1,8 @@
 import { config } from '../../config/config.js';
 import { autoTuner } from '../engine/autoTuner.js';
 import { orderBookAnalyzer } from '../engine/orderBookAnalyzer.js';
+import { marketDataTracker } from '../engine/marketDataTracker.js';
+import { tradeLogger } from '../engine/tradeLogger.js';
 import { analyzeSignal, getSmartEntry } from '../engine/confidenceEngine.js';
 
 const STABLECOINS = ['USDT', 'BUSD', 'USDC', 'DAI', 'USD', 'UST'];
@@ -20,6 +22,15 @@ class PumpAnalyzer {
     this.lastSignalEmit = 0;
     this.signalQueue = [];
     this.vwapHistory = new Map();
+    this.symbols = [];
+  }
+
+  initialize(symbols) {
+    this.symbols = symbols;
+    if (config.advancedFeatures?.orderflow?.enabled) {
+      marketDataTracker.initialize(symbols);
+    }
+    console.log('📊 Pump Analyzer initialized with advanced features');
   }
 
   isStablecoin(symbol) {
@@ -478,32 +489,51 @@ class PumpAnalyzer {
       marketRegime: this.detectMarketRegime(symbol)
     };
 
-    const result = analyzeSignal(confidenceData);
+    let enhancedResult = { ...result };
+    
+    if (config.advancedFeatures?.orderflow?.enabled || config.advancedFeatures?.openInterest?.enabled) {
+      const enhanced = marketDataTracker.getEnhancedConfidence(result.confidence, symbol, priceChange);
+      enhancedResult = {
+        ...result,
+        confidence: enhanced.confidence,
+        bonuses: enhanced.bonuses,
+        penalties: enhanced.penalties,
+        orderflow: enhanced.orderflow,
+        openInterest: enhanced.openInterest,
+        funding: enhanced.funding,
+        regime: enhanced.regime
+      };
+    }
 
-    if (!result.shouldGenerateSignal) return null;
-    if (result.isFakePump) return null;
+    if (!enhancedResult.shouldGenerateSignal) return null;
+    if (enhancedResult.isFakePump) return null;
 
     const tiers = config.signalTiers || {};
     
-    if (result.tier === 'SNIPER' && result.hasConfluence && result.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {
+    const tradeDecision = tradeLogger.shouldTrade({ ...enhancedResult, symbol, type: enhancedResult.tier });
+    if (!tradeDecision.trade) {
+      return null;
+    }
+    
+    if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {
       if (priceChange >= (tiers.SNIPER?.priceChangeMin || 2) && priceChange <= (tiers.SNIPER?.priceChangeMax || 8)) {
-        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-        return { symbol, type: 'SNIPER', score, ...result, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
+        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF:${enhancedResult.orderflow?.ratio?.toFixed(2) || 'N/A'} | OI:${enhancedResult.openInterest?.change?.toFixed(1) || 'N/A'}%`);
+        return { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
       }
     }
 
-    if (result.tier === 'CONFIRMED' && result.hasConfluence && result.confluenceCount >= 3 && result.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 65)) {
+    if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confluenceCount >= 3 && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 65)) {
       if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 2) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 10)) {
-        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-        return { symbol, type: 'CONFIRMED', score, ...result, priority: 2, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
+        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF:${enhancedResult.orderflow?.ratio?.toFixed(2) || 'N/A'} | OI:${enhancedResult.openInterest?.change?.toFixed(1) || 'N/A'}%`);
+        return { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
       }
     }
 
-    if (result.tier === 'EARLY' || (result.confidence >= 40 && !result.isFakePump)) {
-      const tierType = result.tier === 'EARLY' ? 'EARLY' : (result.confidence >= 50 ? 'EARLY' : null);
+    if (enhancedResult.tier === 'EARLY' || (enhancedResult.confidence >= 40 && !enhancedResult.isFakePump)) {
+      const tierType = enhancedResult.tier === 'EARLY' ? 'EARLY' : (enhancedResult.confidence >= 50 ? 'EARLY' : null);
       if (tierType && priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 6)) {
-        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${result.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x`);
-        return { symbol, type: 'EARLY', score, ...result, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
+        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score.toFixed(0)} | PriceChg=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF:${enhancedResult.orderflow?.ratio?.toFixed(2) || 'N/A'} | OI:${enhancedResult.openInterest?.change?.toFixed(1) || 'N/A'}%`);
+        return { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
       }
     }
 
