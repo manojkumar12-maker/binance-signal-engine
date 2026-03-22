@@ -29,7 +29,17 @@ class SignalGenerator {
       leverage: this.leverage
     });
     
-    const takeProfits = riskManager.calculateTakeProfits(signalEntry, positionCalc?.quantity || 1, this.leverage);
+    const pumpTPs = signals?.tp1 ? {
+      tp1: signals.tp1,
+      tp2: signals.tp2,
+      tp3: signals.tp3,
+      tp4: signals.tp4,
+      tp5: signals.tp5,
+      rr1: signals.rr1,
+      rr2: signals.rr2,
+      rr3: signals.rr3,
+      risk: signals.risk
+    } : null;
     
     const signal = {
       id: `sig_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -43,17 +53,23 @@ class SignalGenerator {
       riskAmount,
       positionSize: positionCalc,
       targets: {
-        tp1: takeProfits[0]?.price || signals?.tp1,
-        tp2: takeProfits[1]?.price || signals?.tp2,
-        tp3: takeProfits[2]?.price || signals?.tp3,
-        tp4: signals?.tp4,
-        tp5: signals?.tp5
+        tp1: signals?.tp1 || signalSL ? signalEntry + (signalEntry - signalSL) * 1 : null,
+        tp2: signals?.tp2 || signalSL ? signalEntry + (signalEntry - signalSL) * 2 : null,
+        tp3: signals?.tp3 || signalSL ? signalEntry + (signalEntry - signalSL) * 3 : null,
+        tp4: signals?.tp4 || signalSL ? signalEntry + (signalEntry - signalSL) * 4 : null,
+        tp5: signals?.tp5 || signalSL ? signalEntry + (signalEntry - signalSL) * 5 : null
       },
       stopLoss: signalSL,
+      risk: signals?.risk || (signalSL ? signalEntry - signalSL : 0),
       riskReward: {
-        tp1: signalSL && signalEntry && takeProfits[0] ? ((takeProfits[0].price - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
-        tp2: signalSL && signalEntry && takeProfits[1] ? ((takeProfits[1].price - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
-        tp3: signalSL && signalEntry && takeProfits[2] ? ((takeProfits[2].price - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0'
+        rr1: signals?.rr1 || (signalSL && signalEntry ? 1 : 0),
+        rr2: signals?.rr2 || (signalSL && signalEntry ? 2 : 0),
+        rr3: signals?.rr3 || (signalSL && signalEntry ? 3 : 0)
+      },
+      trailingStop: {
+        tp1Trailing: signalEntry,
+        tp2Trailing: signalEntry + (signalEntry - signalSL) * 0.5,
+        tp3Trailing: signalEntry + (signalEntry - signalSL) * 1.5
       },
       tradeDetails: {
         quantity: positionCalc?.quantity?.toFixed(4) || 'N/A',
@@ -126,6 +142,10 @@ class SignalGenerator {
     }
     
     const tradeDetails = signal.tradeDetails || {};
+    const trailing = signal.trailingStop || {};
+    const rr1 = signal.riskReward?.rr1 || 0;
+    const rr2 = signal.riskReward?.rr2 || 0;
+    const rr3 = signal.riskReward?.rr3 || 0;
     const riskSection = `
 💎 RISK MANAGEMENT:
    Leverage: ${signal.leverage || 5}x
@@ -133,6 +153,13 @@ class SignalGenerator {
    Position Value: $${tradeDetails.positionValue || 'N/A'}
    Risk Amount: $${signal.riskAmount?.toFixed(2) || 'N/A'}
    Actual Risk: $${tradeDetails.actualRisk || 'N/A'}
+   Risk: ${signal.risk ? signal.risk.toFixed(6) : 'N/A'}
+`;
+    const trailingSection = `
+🔒 TRAILING STOP:
+   After TP1: Move SL to breakeven
+   After TP2: Lock ${rr2.toFixed(1)}R profit
+   After TP3: Let run to ${rr3.toFixed(1)}R
 `;
     
     return `
@@ -141,18 +168,16 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 Symbol: ${signal.symbol}
 🕐 Time: ${new Date(signal.timestamp).toLocaleString()}
-${prePumpSection}${riskSection}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${prePumpSection}${riskSection}${trailingSection}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 ENTRY: ${entryDisplay}
-📏 ATR: ${atrDisplay}
+🛑 STOP LOSS: ${slDisplay}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 TAKE PROFIT LEVELS:
-   TP1: ${tp1Display} | R/R: ${riskReward?.tp1 || 'N/A'}
-   TP2: ${tp2Display} | R/R: ${riskReward?.tp2 || 'N/A'}
-   TP3: ${tp3Display} | R/R: ${riskReward?.tp3 || 'N/A'}
+   TP1: ${tp1Display} | R/R: ${rr1.toFixed(1)}R ✅ (50% close)
+   TP2: ${tp2Display} | R/R: ${rr2.toFixed(1)}R ✅ (30% close)
+   TP3: ${tp3Display} | R/R: ${rr3.toFixed(1)}R ✅ (let run)
    TP4: ${tp4Display}
    TP5: ${tp5Display}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛑 STOP LOSS: ${slDisplay}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📈 METRICS:
    Confidence: ${signal.confidence || 0}

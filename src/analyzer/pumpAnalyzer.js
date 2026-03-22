@@ -533,7 +533,7 @@ class PumpAnalyzer {
     const fundingData = fundingService.getFundingData(symbol);
     const liqData = liquidationEngine.analyze(symbol, analysis.entryPrice || 0);
     const ofRatio = orderflowData?.ratio || 1;
-    const oiChange = oiData?.change || 0;
+    const oiChange = oiData?.change || oiData?.avgChange || 0;
     const fundingRate = fundingData?.rate || 0;
 
     const prePumpData = {
@@ -550,36 +550,27 @@ class PumpAnalyzer {
     let confluence = 0;
     if (volumeSpike > 1.5) confluence++;
     if (ofRatio > 1.1) confluence++;
-    if (oiChange > 1) confluence++;
+    if (oiChange > 0.5) confluence++;
     if (momentum > 0.05) confluence++;
-    if (priceChange > 1) confluence++;
+    if (priceChange > 0.5) confluence++;
     confluence = Math.min(confluence, 5);
 
-    const hasOI = oiChange !== 0;
-    const hasGoodVolume = volumeSpike >= 1.5;
-    const hasGoodOF = ofRatio >= 1.1;
-    const hasConfluence = confluence >= 1;
-    const hasScore = score >= 35;
+    const hasOI = Math.abs(oiChange) > 0.1;
+    const hasGoodVolume = volumeSpike >= 1.0;
+    const hasGoodOF = ofRatio >= 1.0;
+    const hasScore = score >= 25;
 
     if (!hasScore) {
-      console.log(`❌ ${symbol} KILL: Score=${(score || 0).toFixed(1)} < 35`);
+      if (Math.random() < 0.01) console.log(`❌ ${symbol} KILL: Score=${(score || 0).toFixed(1)} < 25`);
       return null;
     }
 
-    if (!hasOI && !hasGoodVolume && !hasGoodOF) {
-      console.log(`❌ ${symbol} KILL: No OI + No Vol(${volumeSpike.toFixed(1)}x) + No OF(${ofRatio.toFixed(2)}) = all weak`);
-      return null;
-    }
+    const overallStrength = (score || 0) + (confluence * 5) + (hasGoodVolume ? 10 : 0) + (hasGoodOF ? 5 : 0) + (hasOI ? 5 : 0);
 
-    if (score === undefined || score === null || isNaN(score)) {
-      score = 0;
-    }
-
-    const oiPass = hasOI || hasGoodVolume || hasGoodOF;
-    const overallStrength = (score || 0) + (confluence * 5) + (hasGoodVolume ? 10 : 0) + (hasGoodOF ? 5 : 0);
-
-    if (overallStrength < 35) {
-      console.log(`❌ ${symbol} KILL: Strength=${(overallStrength || 0).toFixed(0)} (Score=${(score || 0).toFixed(0)} Conf=${confluence} Vol=${(volumeSpike || 0).toFixed(1)}x OF=${(ofRatio || 1).toFixed(2)} OI=${(oiChange || 0).toFixed(1)}%)`);
+    if (overallStrength < 30) {
+      if (Math.random() < 0.01) {
+        console.log(`❌ ${symbol} KILL: Strength=${(overallStrength || 0).toFixed(0)} (Score=${(score || 0).toFixed(0)} Conf=${confluence} Vol=${(volumeSpike || 0).toFixed(1)}x OF=${(ofRatio || 1).toFixed(2)} OI=${(oiChange || 0).toFixed(1)}%)`);
+      }
       return null;
     }
 
@@ -643,9 +634,18 @@ class PumpAnalyzer {
     if (!tradeDecision.trade) {
       return null;
     }
-    
+
+    const checkRR = (entry, atr, tier) => {
+      const ex = this.generateEntryExit(entry, atr, tier);
+      return this.validateRiskReward(ex.entry, ex.sl, ex.tp1);
+    };
+
     if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 2) {
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x | Fund:${(fundingRate * 100).toFixed(3)}%`);
+      if (!checkRR(analysis.entryPrice, analysis.atr, 'PRE_PUMP')) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} PRE_PUMP rejected: R:R < 1.0`);
+        return null;
+      }
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x`);
       console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
       const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'PRE_PUMP') };
       this.signalCounts.PRE_PUMP++;
@@ -653,28 +653,43 @@ class PumpAnalyzer {
       return signal;
     }
     
-    if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {
-      if (priceChange >= (tiers.SNIPER?.priceChangeMin || 2) && priceChange <= (tiers.SNIPER?.priceChangeMax || 8)) {
-        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Fund:${(fundingRate * 100).toFixed(3)}%`);
-        const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
+    if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 70)) {
+      if (priceChange >= (tiers.SNIPER?.priceChangeMin || 1.5) && priceChange <= (tiers.SNIPER?.priceChangeMax || 10)) {
+        if (!checkRR(analysis.entryPrice, analysis.atr, 'SNIPER')) {
+          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER rejected: R:R < 1.0`);
+          return null;
+        }
+        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER');
+        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | R:R=${ex.rr1?.toFixed(1)}`);
+        const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: ex };
         incrementSignalCount();
         return signal;
       }
     }
 
-    if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confluenceCount >= 3 && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 65)) {
-      if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 2) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 10)) {
-        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
-        const signal = { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
+    if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 55)) {
+      if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 1) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 12)) {
+        if (!checkRR(analysis.entryPrice, analysis.atr, 'CONFIRMED')) {
+          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED rejected: R:R < 1.0`);
+          return null;
+        }
+        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED');
+        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | R:R=${ex.rr1?.toFixed(1)}`);
+        const signal = { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: ex };
         incrementSignalCount();
         return signal;
       }
     }
 
-    if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 45) && !enhancedResult.isFakePump) {
-      if (priceChange >= (tiers.EARLY?.priceChangeMin || 0.5) && priceChange <= (tiers.EARLY?.priceChangeMax || 10)) {
-        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
-        const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
+    if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 35) && !enhancedResult.isFakePump) {
+      if (priceChange >= (tiers.EARLY?.priceChangeMin || 0.5) && priceChange <= (tiers.EARLY?.priceChangeMax || 12)) {
+        if (!checkRR(analysis.entryPrice, analysis.atr, 'EARLY')) {
+          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} EARLY rejected: R:R < 1.0`);
+          return null;
+        }
+        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY');
+        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | R:R=${ex.rr1?.toFixed(1)}`);
+        const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: ex };
         incrementSignalCount();
         return signal;
       }
@@ -696,22 +711,47 @@ class PumpAnalyzer {
   }
 
   generateEntryExit(entryPrice, atr, tier) {
-    const fallbackAtr = atr || (entryPrice * 0.005);
-    const multipliers = config?.riskManagement?.atrMultiplier || { tp1: 0.5, tp2: 1.0, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.2 };
-    const tierMultipliers = tier === 'SNIPER' ? { tp1: 1, tp2: 2, tp3: 3, tp4: 4, tp5: 5, sl: 1.5 } :
-                            tier === 'CONFIRMED' ? { tp1: 0.75, tp2: 1.5, tp3: 2.5, tp4: 3.5, tp5: 5, sl: 1.2 } :
-                            { tp1: 0.5, tp2: 1, tp3: 1.5, tp4: 2.5, tp5: 3.5, sl: 1.0 };
+    const fallbackAtr = atr || (entryPrice * 0.01);
+    const slMultiplier = tier === 'PRE_PUMP' ? 1.0 : tier === 'SNIPER' ? 1.5 : tier === 'CONFIRMED' ? 1.2 : 1.0;
+    const risk = fallbackAtr * slMultiplier;
+    const sl = entryPrice - risk;
+
+    const tp1 = entryPrice + (risk * 1.0);
+    const tp2 = entryPrice + (risk * 2.0);
+    const tp3 = entryPrice + (risk * 3.0);
+    const tp4 = entryPrice + (risk * 4.0);
+    const tp5 = entryPrice + (risk * 5.0);
+
+    const rr1 = (tp1 - entryPrice) / risk;
+    const rr2 = (tp2 - entryPrice) / risk;
+    const rr3 = (tp3 - entryPrice) / risk;
 
     return {
       entry: entryPrice,
-      tp1: entryPrice + (tierMultipliers.tp1 * fallbackAtr),
-      tp2: entryPrice + (tierMultipliers.tp2 * fallbackAtr),
-      tp3: entryPrice + (tierMultipliers.tp3 * fallbackAtr),
-      tp4: entryPrice + (tierMultipliers.tp4 * fallbackAtr),
-      tp5: entryPrice + (tierMultipliers.tp5 * fallbackAtr),
-      sl: entryPrice - (tierMultipliers.sl * fallbackAtr),
-      atr: fallbackAtr
+      tp1,
+      tp2,
+      tp3,
+      tp4,
+      tp5,
+      sl,
+      atr: fallbackAtr,
+      risk,
+      rr1,
+      rr2,
+      rr3,
+      partialExits: {
+        tp1Percent: 0,
+        tp2Percent: 0,
+        tp3Percent: 0
+      }
     };
+  }
+
+  validateRiskReward(entryPrice, sl, tp1) {
+    const risk = entryPrice - sl;
+    const reward = tp1 - entryPrice;
+    const rr = risk > 0 ? reward / risk : 0;
+    return rr >= 1.0;
   }
 
   calculateMomentum(prices, priceChangePercent) {

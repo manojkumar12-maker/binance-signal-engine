@@ -6,8 +6,10 @@ export class OrderflowTracker {
 
   handleTrade(trade) {
     const symbol = trade.symbol;
+    if (!symbol) return;
+    
     const qty = parseFloat(trade.quantity) || parseFloat(trade.q) || 0;
-    if (!qty || !symbol) return;
+    if (!qty) return;
 
     if (!this.data.has(symbol)) {
       this.data.set(symbol, {
@@ -29,8 +31,8 @@ export class OrderflowTracker {
     d.trades.push({ qty, isBuyerMaker: trade.isBuyerMaker || trade.m, time: Date.now() });
     d.lastUpdate = Date.now();
 
-    if (d.trades.length > 200) {
-      d.trades = d.trades.slice(-200);
+    if (d.trades.length > 500) {
+      d.trades = d.trades.slice(-500);
     }
   }
 

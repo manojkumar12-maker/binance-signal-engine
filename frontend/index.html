@@ -536,7 +536,6 @@
                     return;
                 }
 
-                const tpPercents = [0.5, 1.0, 1.5, 2.5, 3.5];
                 
                 grid.innerHTML = filtered.map(signal => `
                     <div class="signal-card">
@@ -558,13 +557,15 @@
                             <div class="tp-levels">
                                 <div class="tp-levels-title">Take Profit Levels</div>
                                 <div class="tp-grid">
-                                    ${[1,2,3,4,5].map(i => `
+                                    ${[1,2,3,4,5].map(i => {
+                                        const rr = signal.riskReward?.[`rr${i}`] || i;
+                                        return `
                                         <div class="tp-item">
                                             <div class="tp-label">TP${i}</div>
                                             <div class="tp-value">${(signal.targets?.[`tp${i}`] || 0).toFixed(4)}</div>
-                                            <div class="tp-percent">+${tpPercents[i-1]}%</div>
+                                            <div class="tp-percent">${rr.toFixed(1)}R</div>
                                         </div>
-                                    `).join('')}
+                                    `}).join('')}
                                 </div>
                             </div>
                             <div class="signal-footer">
