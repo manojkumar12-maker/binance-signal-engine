@@ -9,6 +9,7 @@ import { marketDataTracker } from './engine/marketDataTracker.js';
 import { tradeLogger } from './engine/tradeLogger.js';
 import { initDatabase, closeDatabase, createSignal as dbCreateSignal } from './database/db.js';
 import { state, canTrigger, strongCanTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
+import { updateAdaptiveThresholds } from './engine/adaptiveFilter.js';
 
 class SignalEngine {
   constructor() {
@@ -71,6 +72,11 @@ class SignalEngine {
         await marketDataTracker.updateOpenInterest(symbol);
       }
     }, 60000);
+
+    setInterval(() => {
+      this.processCycleSignals();
+      updateAdaptiveThresholds();
+    }, 5000);
 
     setInterval(() => {
       this.showStats();
@@ -187,6 +193,32 @@ class SignalEngine {
         console.log(`  ${tierEmoji} ${s.symbol} | Entry: ${s.entryPrice.toFixed(6)} | PnL: ${s.update?.unrealizedPnL || 0}%`);
       });
       console.log('');
+    }
+  }
+
+  async processCycleSignals() {
+    const signals = pumpAnalyzer.getCycleSignals();
+    
+    if (signals.length === 0) return;
+    
+    console.log(`\n🚀 Processing Top ${signals.length} signals:\n`);
+    
+    for (const analysis of signals) {
+      if (!canTrigger(analysis.symbol, 5 * 60 * 1000)) {
+        continue;
+      }
+      
+      const signal = await signalGenerator.generateSignal(analysis.symbol, analysis);
+      
+      if (signal) {
+        addSignal(signal);
+        this.stats.signalsGenerated++;
+        this.stats.signalsByTier[signal.tier]++;
+        
+        console.log(signalGenerator.formatSignal(signal));
+        await notifier.sendSignal(signal);
+        await apiServer.addSignal(signal);
+      }
     }
   }
 

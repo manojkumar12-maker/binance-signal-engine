@@ -4,6 +4,7 @@ import { orderBookAnalyzer } from '../engine/orderBookAnalyzer.js';
 import { marketDataTracker } from '../engine/marketDataTracker.js';
 import { tradeLogger } from '../engine/tradeLogger.js';
 import { analyzeSignal, getSmartEntry } from '../engine/confidenceEngine.js';
+import { adaptiveState, passesAdaptiveFilter, getRejectionReason, incrementSignalCount } from '../engine/adaptiveFilter.js';
 
 const STABLECOINS = ['USDT', 'BUSD', 'USDC', 'DAI', 'USD', 'UST'];
 
@@ -23,6 +24,8 @@ class PumpAnalyzer {
     this.signalQueue = [];
     this.vwapHistory = new Map();
     this.symbols = [];
+    this.cycleSignals = [];
+    this.lastCycleProcess = Date.now();
   }
 
   initialize(symbols) {
@@ -333,15 +336,33 @@ class PumpAnalyzer {
   selectTopSignals() {
     if (this.signalQueue.length === 0) return null;
     
-    const maxSignals = config.signals.maxSignalsPerCycle || 3;
-    
-    const ranked = this.signalQueue
-      .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, maxSignals);
-    
+    this.cycleSignals.push(...this.signalQueue);
     this.signalQueue = [];
     
-    return ranked[0];
+    return null;
+  }
+
+  getCycleSignals() {
+    const now = Date.now();
+    
+    if (this.cycleSignals.length === 0) return [];
+    
+    if (now - this.lastCycleProcess < 5000 && this.cycleSignals.length < 10) {
+      return [];
+    }
+    
+    const ranked = this.cycleSignals
+      .sort((a, b) => {
+        const scoreA = (a.confidence || 0) + (a.score || 0);
+        const scoreB = (b.confidence || 0) + (b.score || 0);
+        return scoreB - scoreA;
+      })
+      .slice(0, 5);
+    
+    this.cycleSignals = [];
+    this.lastCycleProcess = now;
+    
+    return ranked;
   }
 
   calculateMetrics(symbol, priceChangePercent, orderbookData = null) {
@@ -541,10 +562,22 @@ class PumpAnalyzer {
       };
     }
 
-    if (!enhancedResult.shouldGenerateSignal) return null;
+    if (!enhancedResult.shouldGenerateSignal) {
+      const reasons = getRejectionReason({ score, confidence: enhancedResult.confidence, confluence, orderflow: ofRatio, oiChange, volumeSpike });
+      if (reasons.length > 0) {
+        console.log(`❌ ${symbol} → ${reasons.join(' | ')}`);
+      }
+      return null;
+    }
     if (enhancedResult.isFakePump) return null;
 
-    if (enhancedResult.confidence < 65) return null;
+    const filterData = { score, confidence: enhancedResult.confidence, confluence, orderflow: ofRatio, oiChange, volumeSpike };
+    
+    if (!passesAdaptiveFilter(filterData)) {
+      const reasons = getRejectionReason(filterData);
+      console.log(`❌ ${symbol} → ${reasons.join(' | ')}`);
+      return null;
+    }
 
     const tiers = config.signalTiers || {};
     
@@ -556,21 +589,27 @@ class PumpAnalyzer {
     if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {
       if (priceChange >= (tiers.SNIPER?.priceChangeMin || 2) && priceChange <= (tiers.SNIPER?.priceChangeMax || 8)) {
         console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
-        return { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
+        const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
+        incrementSignalCount();
+        return signal;
       }
     }
 
     if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confluenceCount >= 3 && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 65)) {
       if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 2) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 10)) {
         console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
-        return { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
+        const signal = { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
+        incrementSignalCount();
+        return signal;
       }
     }
 
     if (enhancedResult.tier === 'EARLY' && enhancedResult.confidence >= 65 && !enhancedResult.isFakePump) {
       if (priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 6)) {
         console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
-        return { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
+        const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
+        incrementSignalCount();
+        return signal;
       }
     }
 
