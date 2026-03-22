@@ -28,7 +28,7 @@ function loadData() {
     }
   } catch (e) {
     signals = [];
-    stats = { total: 0, early: 0, confirmed: 0, sniper: 0, active: 0 };
+    stats = { total: 0, early: 0, confirmed: 0, sniper: 0, prePump: 0, active: 0 };
   }
 }
 
@@ -120,7 +120,8 @@ export async function getSignalStats() {
     tierCounts: {
       SNIPER: stats.sniper,
       CONFIRMED: stats.confirmed,
-      EARLY: stats.early
+      EARLY: stats.early,
+      PRE_PUMP: stats.prePump
     }
   };
 }

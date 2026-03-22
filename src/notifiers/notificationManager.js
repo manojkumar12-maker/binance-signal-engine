@@ -11,6 +11,11 @@ class NotificationManager {
     
     console.log(message);
 
+    if (signal.tier === 'EARLY') {
+      console.log(`🟡 EARLY signal logged (no Telegram)`);
+      return;
+    }
+
     if (config?.notifications?.telegram?.enabled && config?.notifications?.telegram?.botToken && config?.notifications?.telegram?.chatId) {
       await this.sendTelegram(signal);
     }
@@ -19,7 +24,7 @@ class NotificationManager {
   formatSignalMessage(signal) {
     const { targets, stopLoss, metrics } = signal;
     
-    const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : '🟡';
+    const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : signal.tier === 'PRE_PUMP' ? '🟣' : '🟡';
     
     return `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -45,6 +50,7 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id}
   }
 
   async sendTelegram(signal) {
+    if (signal.tier === 'EARLY') return;
     const text = this.formatTelegramMessage(signal);
     
     try {
@@ -65,7 +71,7 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id}
   formatTelegramMessage(signal) {
     const { targets, stopLoss, metrics } = signal;
     
-    const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : '🟡';
+    const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : signal.tier === 'PRE_PUMP' ? '🟣' : '🟡';
     
     return `
 ${tierEmoji} <b>${signal.tier} SIGNAL - ${signal.symbol}</b>

@@ -118,6 +118,15 @@
             border-color: #8b5cf6;
         }
 
+        .filter-btn.early {
+            border-color: #eab308;
+        }
+        .filter-btn.early:hover, .filter-btn.early.active {
+            background: #eab308;
+            color: #000;
+            border-color: #eab308;
+        }
+
         .filter-btn {
             padding: 10px 20px;
             background: #1e293b;
@@ -397,13 +406,13 @@
                     <div class="stat-value" id="confirmedSignals">0</div>
                     <div class="stat-label">🟢 Confirmed</div>
                 </div>
-                <div class="stat-item" style="color: #f59e0b;">
-                    <div class="stat-value" id="earlySignals">0</div>
-                    <div class="stat-label">🟡 Early</div>
-                </div>
                 <div class="stat-item" style="color: #8b5cf6;">
                     <div class="stat-value" id="prePumpSignals">0</div>
                     <div class="stat-label">🟣 Pre-Pump</div>
+                </div>
+                <div class="stat-item" style="color: #eab308;">
+                    <div class="stat-value" id="earlySignals">0</div>
+                    <div class="stat-label">🟡 Early</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-value" id="activeSignals">0</div>
@@ -422,8 +431,8 @@
             <button class="filter-btn active" data-filter="all">All Signals</button>
             <button class="filter-btn" data-filter="sniper">🔴 Sniper</button>
             <button class="filter-btn" data-filter="confirmed">🟢 Confirmed</button>
-            <button class="filter-btn" data-filter="early">🟡 Early</button>
             <button class="filter-btn pre-pump" data-filter="pre-pump">🟣 Pre-Pump</button>
+            <button class="filter-btn" data-filter="early">🟡 Early</button>
         </div>
         <div class="signals-grid" id="signalsGrid">
             <div class="empty-state">
@@ -444,7 +453,6 @@
                     active: 0,
                     sniper: 0,
                     confirmed: 0,
-                    early: 0,
                     prePump: 0
                 };
 
@@ -460,13 +468,12 @@
                     if (response.ok) {
                         const data = await response.json();
                         this.stats.total = data.signalsGenerated || 0;
-                        this.stats.active = data.state?.active || data.activeSignals || 0;
-                        if (data.state) {
-                            this.stats.sniper = data.state.sniper || 0;
-                            this.stats.confirmed = data.state.confirmed || 0;
-                            this.stats.early = data.state.early || 0;
-                            this.stats.prePump = data.state.prePump || 0;
-                        }
+                        this.stats.active = data.activeSignals || 0;
+                        const tiers = data.signalsByTier || {};
+                        this.stats.sniper = tiers.SNIPER || 0;
+                        this.stats.confirmed = tiers.CONFIRMED || 0;
+                        this.stats.prePump = tiers.PRE_PUMP || 0;
+                        this.stats.early = tiers.EARLY || 0;
                         this.updateStats();
                     }
                 } catch (error) {
@@ -516,10 +523,10 @@
                         return this.signals.filter(s => s.tier === 'SNIPER');
                     case 'confirmed':
                         return this.signals.filter(s => s.tier === 'CONFIRMED');
-                    case 'early':
-                        return this.signals.filter(s => s.tier === 'EARLY');
                     case 'pre-pump':
                         return this.signals.filter(s => s.tier === 'PRE_PUMP');
+                    case 'early':
+                        return this.signals.filter(s => s.tier === 'EARLY');
                     default:
                         return this.signals;
                 }
@@ -533,8 +540,8 @@
                     const messages = {
                         sniper: 'No Sniper signals yet',
                         confirmed: 'No Confirmed signals yet',
-                        early: 'No Early signals yet',
                         'pre-pump': 'No Pre-Pump signals yet',
+                        early: 'No Early signals yet',
                         all: 'No signals found'
                     };
                     grid.innerHTML = `
@@ -552,7 +559,7 @@
                     <div class="signal-card">
                         <div class="signal-header">
                             <span class="signal-symbol">${signal.symbol}</span>
-                            <span class="signal-badge">${signal.tier} ${signal.status}</span>
+                            <span class="signal-badge" style="background: ${signal.tier === 'SNIPER' ? '#ef4444' : signal.tier === 'CONFIRMED' ? '#10b981' : signal.tier === 'EARLY' ? '#eab308' : '#8b5cf6'}; color: ${signal.tier === 'EARLY' ? '#000' : '#fff'};">${signal.tier} ${signal.status}</span>
                         </div>
                         <div class="signal-body">
                             <div class="signal-price">
@@ -600,8 +607,8 @@
                 document.getElementById('activeSignals').textContent = this.stats.active;
                 document.getElementById('sniperSignals').textContent = this.stats.sniper;
                 document.getElementById('confirmedSignals').textContent = this.stats.confirmed;
-                document.getElementById('earlySignals').textContent = this.stats.early;
                 document.getElementById('prePumpSignals').textContent = this.stats.prePump;
+                document.getElementById('earlySignals').textContent = this.stats.early || 0;
             }
 
             async saveSignals() {

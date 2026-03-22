@@ -23,8 +23,8 @@ export class SignalRankingEngine {
     switch (state) {
       case 'STRONG_LONG': return 100;
       case 'STRONG_SHORT': return 100;
-      case 'SHORT_COVERING': return 30;
-      case 'LONG_EXIT': return 30;
+      case 'SHORT_COVERING': return 0;
+      case 'LONG_EXIT': return 0;
       default: return 0;
     }
   }
@@ -33,7 +33,6 @@ export class SignalRankingEngine {
     const state = this.getOIState(d.priceChange, d.oiChange);
     if (state === 'SHORT_COVERING') return false;
     if (state === 'LONG_EXIT') return false;
-    if (Math.abs(d.oiChange || 0) < 0.3) return false;
     return true;
   }
 
@@ -48,11 +47,6 @@ export class SignalRankingEngine {
   }
 
   isValidEarlySignal(d) {
-    if ((d.priceChange || 0) < 3) return false;
-    if ((d.volumeSpike || 0) < 3) return false;
-    if ((d.orderflow || 1) < 1.5) return false;
-    if ((d.momentum || 0) <= 0) return false;
-    if ((d.confidence || 0) < 55) return false;
     return true;
   }
 
@@ -138,17 +132,22 @@ export class SignalRankingEngine {
     for (const s of rawSignals) {
       if (!this.isValidEarlySignal(s)) continue;
 
+      let oiBlocked = false;
       if (!this.isOIValid(s)) {
         if (Math.random() < 0.01) {
           const oi = (s.oiChange || 0).toFixed(1);
           const pc = (s.priceChange || 0).toFixed(1);
-          console.log(`❌ ${s.symbol} → Bad OI state: PC=${pc}% OI=${oi}%`);
+          console.log(`⚠️ ${s.symbol} → Bad OI state: PC=${pc}% OI=${oi}% (passing with penalty)`);
         }
-        continue;
+        oiBlocked = true;
       }
 
       let score = this.calculateRankScore(s);
       score = this.applyBoost(score, s);
+
+      if (oiBlocked) {
+        score -= 10;
+      }
 
       if (score < 60) continue;
 
@@ -169,7 +168,7 @@ export class SignalRankingEngine {
       sniper: ranked.filter(s => s.type === 'SNIPER').slice(0, 3),
       confirmed: ranked.filter(s => s.type === 'CONFIRMED').slice(0, 3),
       prepump: ranked.filter(s => s.type === 'PRE_PUMP').slice(0, 2),
-      early: ranked.filter(s => s.type === 'EARLY').slice(0, 2),
+      early: ranked.filter(s => s.type === 'EARLY').slice(0, 3),
     };
 
     const result = [

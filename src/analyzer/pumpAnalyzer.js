@@ -11,6 +11,7 @@ import { signalRankingEngine } from '../engine/signalRankingEngine.js';
 import { oiTracker } from '../engine/oiTracker.js';
 import { fundingService } from '../engine/fundingService.js';
 import { liquidationEngine } from '../engine/liquidationEngine.js';
+import { oiCache } from '../engine/oiCache.js';
 
 const prePumpDetector = new PrePumpDetector();
 const liquidationService = new LiquidationService();
@@ -37,65 +38,12 @@ class PumpAnalyzer {
     this.symbols = [];
     this.cycleSignals = [];
     this.lastCycleProcess = Date.now();
-    this.pendingOIQueue = new Map();
-    this.pendingOIInterval = null;
-    this.maxPendingSeconds = 120;
-  }
-
-  startPendingOIChecker() {
-    if (this.pendingOIInterval) return;
-    this.pendingOIInterval = setInterval(() => {
-      this.checkPendingOI();
-    }, 12000);
-  }
-
-  checkPendingOI() {
-    if (this.pendingOIQueue.size === 0) return;
-
-    for (const [symbol, pending] of this.pendingOIQueue) {
-      const oiData = oiTracker.getOIData(symbol);
-      const oiChange = oiData?.avgChange || oiData?.change || 0;
-      const priceNow = this.priceHistory.get(symbol);
-      const currentPrice = priceNow ? priceNow[priceNow.length - 1]?.price : null;
-
-      if (!oiChange || Math.abs(oiChange) < 0.1) {
-        if (Date.now() - pending.addedAt > this.maxPendingSeconds * 1000) {
-          console.log(`⏱️ ${symbol} OI timeout (${this.maxPendingSeconds}s), discarding`);
-          this.pendingOIQueue.delete(symbol);
-        }
-        continue;
-      }
-
-      const oiStateLabel = this.getOIStateLabel(currentPrice || pending.priceChange, oiChange);
-
-      if (oiStateLabel === '⚠️ SHORT_CVR' || oiStateLabel === '⚠️ LONG_EXT' || oiStateLabel === '⚪ NO_OI') {
-        console.log(`❌ ${symbol} OI arrived but state=${oiStateLabel}, discarding`);
-        this.pendingOIQueue.delete(symbol);
-        continue;
-      }
-
-      pending.oiChange = oiChange;
-      pending.oiState = oiStateLabel;
-
-      const score = this.calculatePendingRankScore(pending);
-      if (score < 60) {
-        console.log(`❌ ${symbol} OI valid but rankScore=${score.toFixed(0)} < 60, discarding`);
-        this.pendingOIQueue.delete(symbol);
-        continue;
-      }
-
-      pending.rankScore = score;
-      pending.oiState = oiStateLabel;
-
-      this.signalQueue.push(pending);
-      console.log(`✅ ${symbol} OI arrived: ${oiChange.toFixed(1)}% [${oiStateLabel}] rank=${score.toFixed(0)}, queued for emission`);
-      this.pendingOIQueue.delete(symbol);
-    }
   }
 
   getOIStateLabel(priceChange, oiChange) {
     const pc = priceChange || 0;
     const oi = oiChange || 0;
+    if (Math.abs(oi) < 0.1) return '⚪ NO_OI';
     if (pc > 0 && oi > 0.3) return '🚀 LONG';
     if (pc > 0 && oi < -0.3) return '⚠️ SHORT_CVR';
     if (pc < 0 && oi > 0.3) return '🔻 SHORT';
@@ -114,7 +62,8 @@ class PumpAnalyzer {
     let oiScore = 0;
     const oi = d.oiChange || 0;
     const pc = d.priceChange || 0;
-    if (pc > 0 && oi > 0.3) oiScore = 100;
+    if (Math.abs(oi) < 0.1) oiScore = 0;
+    else if (pc > 0 && oi > 0.3) oiScore = 100;
     else if (pc < 0 && oi > 0.3) oiScore = 100;
     else if (pc > 0 && oi < -0.3) oiScore = 30;
     else if (pc < 0 && oi < -0.3) oiScore = 30;
@@ -125,14 +74,8 @@ class PumpAnalyzer {
     ));
   }
 
-  addToPendingQueue(signal) {
-    this.pendingOIQueue.set(signal.symbol, { ...signal, addedAt: Date.now() });
-    console.log(`⏳ ${signal.symbol} queued for OI check (pending: ${this.pendingOIQueue.size})`);
-  }
-
   initialize(symbols) {
     this.symbols = symbols;
-    this.startPendingOIChecker();
     if (config.advancedFeatures?.orderflow?.enabled) {
       marketDataTracker.initialize(symbols);
     }
@@ -649,7 +592,8 @@ class PumpAnalyzer {
     const fundingData = fundingService.getFundingData(symbol);
     const liqData = liquidationEngine.analyze(symbol, analysis.entryPrice || 0);
     const ofRatio = orderflowData?.ratio || 1;
-    const oiChange = oiData?.change || oiData?.avgChange || 0;
+    const cachedOI = oiCache.getOIChange(symbol);
+    const oiChange = cachedOI ?? oiData?.change ?? oiData?.avgChange ?? 0;
     const fundingRate = fundingData?.rate || 0;
 
     const prePumpData = {
@@ -736,33 +680,37 @@ class PumpAnalyzer {
     const isGoodOIState = oiStateLabel === '🚀 LONG' || oiStateLabel === '🔻 SHORT';
 
     const buildSignal = (type, ex) => {
-      return { symbol, type, score, ...enhancedResult, oiChange, priority: type === 'SNIPER' ? 1 : type === 'CONFIRMED' ? 2 : type === 'EARLY' ? 3 : 0, signalTime: Date.now(), signals: ex };
+      if (score > 45 || volumeSpike > 3) {
+        oiCache.addPriority(symbol);
+      }
+      return { symbol, type, score, ...enhancedResult, oiChange, priority: type === 'SNIPER' ? 1 : type === 'CONFIRMED' ? 2 : 0, signalTime: Date.now(), signals: ex };
     };
 
     const tryEmit = (type, ex, minScore = 55) => {
-      if (!hasOI || isBadOIState) {
-        const rawScore = this.calculatePendingRankScore({ ...enhancedResult, priceChange, volumeSpike, orderflow: ofRatio, momentum: enhancedResult.momentum, oiChange, confidence: enhancedResult.confidence, confluence });
-        if (rawScore >= minScore) {
-          const signal = buildSignal(type, ex);
-          this.addToPendingQueue(signal);
-          return null;
-        } else {
-          if (Math.random() < 0.01) console.log(`❌ ${symbol} ${type}: low score ${rawScore.toFixed(0)} + no OI, skipping`);
-          return null;
-        }
-      }
-      console.log(`${type === 'SNIPER' ? '🔴' : type === 'CONFIRMED' ? '🟢' : type === 'EARLY' ? '🟡' : '🟣'} ${type} ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}] | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
-      const signal = buildSignal(type, ex);
-      this.signalCounts[type]++;
-      incrementSignalCount();
-      return signal;
-    };
+      const rawScore = this.calculatePendingRankScore({ ...enhancedResult, priceChange, volumeSpike, orderflow: ofRatio, momentum: enhancedResult.momentum, oiChange: hasOI && !isBadOIState ? oiChange : 0, confidence: enhancedResult.confidence, confluence });
 
-    if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
-      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) return null;
-      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED');
-      return tryEmit('CONFIRMED', ex, 55);
-    }
+      if (hasOI && !isBadOIState) {
+        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}] | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+        const signal = buildSignal(type, ex);
+        this.signalCounts[type]++;
+        incrementSignalCount();
+        return signal;
+      }
+
+      if (rawScore >= minScore) {
+        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⚠️ NO_OI: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OI=N/A | Conf=${enhancedResult.confidence} (downgraded)`);
+        const signal = buildSignal(type, ex);
+        signal.confidence -= 10;
+        signal.flags = signal.flags || [];
+        signal.flags.push('NO_OI');
+        this.signalCounts[type]++;
+        incrementSignalCount();
+        return signal;
+      }
+
+      if (Math.random() < 0.01) console.log(`❌ ${symbol} ${type}: low score ${rawScore.toFixed(0)} + no OI, skipping`);
+      return null;
+    };
 
     if (priceChange >= 5 && volumeSpike >= 3 && ofRatio >= 1.5 && priceChange <= 15) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) return null;
@@ -770,23 +718,29 @@ class PumpAnalyzer {
       return tryEmit('SNIPER', ex, 55);
     }
 
-    if (priceChange >= 2 && volumeSpike >= 2 && priceChange <= 15) {
-      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) return null;
-      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
-      return tryEmit('EARLY', ex, 55);
+    if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
+      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) return null;
+      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED');
+      return tryEmit('CONFIRMED', ex, 55);
     }
 
     if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
-      const signal = buildSignal('PRE_PUMP', ex);
-      if (!hasOI || isBadOIState) {
-        this.addToPendingQueue(signal);
-        return null;
-      }
       console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}]`);
       console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
+      const signal = buildSignal('PRE_PUMP', ex);
       this.signalCounts.PRE_PUMP++;
+      incrementSignalCount();
+      return signal;
+    }
+
+    if (priceChange >= 1.5 && volumeSpike >= 2.0 && ofRatio >= 1.2 && momentum > 0 && enhancedResult.confidence >= 45 && priceChange <= 15) {
+      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) return null;
+      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
+      console.log(`🟡 EARLY 🔎: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}] | Conf=${enhancedResult.confidence}`);
+      const signal = buildSignal('EARLY', ex);
+      this.signalCounts.EARLY++;
       incrementSignalCount();
       return signal;
     }

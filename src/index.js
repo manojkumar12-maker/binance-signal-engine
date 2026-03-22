@@ -13,6 +13,7 @@ import { updateAdaptiveThresholds } from './engine/adaptiveFilter.js';
 import { orderflowTracker } from './engine/orderflowTracker.js';
 import { oiTracker } from './engine/oiTracker.js';
 import { fundingService } from './engine/fundingService.js';
+import { oiCache } from './engine/oiCache.js';
 
 process.on('uncaughtException', (err) => {
   console.error('🔥 UNCAUGHT EXCEPTION:', err.message);
@@ -79,6 +80,7 @@ class SignalEngine {
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
+    oiCache.start(wsManager.symbols);
 
     setInterval(() => {
       orderflowTracker.reset();
@@ -116,8 +118,9 @@ class SignalEngine {
         return `${sym}:OF=${of.toFixed(2)}(b=${ofData.buyVolume.toFixed(0)}s=${ofData.sellVolume.toFixed(0)})|OI=${oi.toFixed(1)}%(${oiData.trend})`;
       }).join(' | ');
       const oiStats = oiTracker.getStats();
+      const cacheStats = oiCache.getStats();
       console.log(`📊 DATA CHECK: ${samples}`);
-      console.log(`📊 OI: tracked=${oiStats.tracked} pos=${oiStats.positive} neg=${oiStats.negative} | OF: active=${orderflowTracker.getStats().activeSymbols}`);
+      console.log(`📊 OI Cache: total=${cacheStats.total} withData=${cacheStats.withData} priority=${cacheStats.priorityCount} | OI Tracker: tracked=${oiStats.tracked} pos=${oiStats.positive} neg=${oiStats.negative} | OF: active=${orderflowTracker.getStats().activeSymbols}`);
     }, 20000);
 
     console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
@@ -271,6 +274,7 @@ class SignalEngine {
     console.log('\n🛑 Stopping Signal Engine...');
     wsManager.disconnect();
     orderBookAnalyzer.stop();
+    oiCache.stop();
     await closeDatabase();
     console.log('✅ Engine stopped');
   }
@@ -284,6 +288,7 @@ global.autoTuner = autoTuner;
 global.state = state;
 global.marketDataTracker = marketDataTracker;
 global.tradeLogger = tradeLogger;
+global.oiCache = oiCache;
 
 process.on('SIGINT', async () => {
   await engine.stop();
