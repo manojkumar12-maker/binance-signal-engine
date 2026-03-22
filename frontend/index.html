@@ -109,6 +109,15 @@
             flex-wrap: wrap;
         }
 
+        .filter-btn.pre-pump {
+            border-color: #8b5cf6;
+        }
+        .filter-btn.pre-pump:hover, .filter-btn.pre-pump.active {
+            background: #8b5cf6;
+            color: #fff;
+            border-color: #8b5cf6;
+        }
+
         .filter-btn {
             padding: 10px 20px;
             background: #1e293b;
@@ -381,6 +390,10 @@
                     <div class="stat-value" id="earlySignals">0</div>
                     <div class="stat-label">🟡 Early</div>
                 </div>
+                <div class="stat-item" style="color: #8b5cf6;">
+                    <div class="stat-value" id="prePumpSignals">0</div>
+                    <div class="stat-label">🟣 Pre-Pump</div>
+                </div>
                 <div class="stat-item">
                     <div class="stat-value" id="activeSignals">0</div>
                     <div class="stat-label">Active</div>
@@ -399,6 +412,7 @@
             <button class="filter-btn" data-filter="sniper">🔴 Sniper</button>
             <button class="filter-btn" data-filter="confirmed">🟢 Confirmed</button>
             <button class="filter-btn" data-filter="early">🟡 Early</button>
+            <button class="filter-btn pre-pump" data-filter="pre-pump">🟣 Pre-Pump</button>
         </div>
         <div class="signals-grid" id="signalsGrid">
             <div class="empty-state">
@@ -419,7 +433,8 @@
                     active: 0,
                     sniper: 0,
                     confirmed: 0,
-                    early: 0
+                    early: 0,
+                    prePump: 0
                 };
 
                 this.apiBase = 'https://binance-signal-engine.onrender.com';
@@ -439,6 +454,7 @@
                             this.stats.sniper = data.state.sniper || 0;
                             this.stats.confirmed = data.state.confirmed || 0;
                             this.stats.early = data.state.early || 0;
+                            this.stats.prePump = data.state.prePump || 0;
                         }
                         this.updateStats();
                     }
@@ -491,6 +507,8 @@
                         return this.signals.filter(s => s.tier === 'CONFIRMED');
                     case 'early':
                         return this.signals.filter(s => s.tier === 'EARLY');
+                    case 'pre-pump':
+                        return this.signals.filter(s => s.tier === 'PRE_PUMP');
                     default:
                         return this.signals;
                 }
@@ -505,6 +523,7 @@
                         sniper: 'No Sniper signals yet',
                         confirmed: 'No Confirmed signals yet',
                         early: 'No Early signals yet',
+                        'pre-pump': 'No Pre-Pump signals yet',
                         all: 'No signals found'
                     };
                     grid.innerHTML = `
@@ -568,6 +587,7 @@
                 document.getElementById('sniperSignals').textContent = this.stats.sniper;
                 document.getElementById('confirmedSignals').textContent = this.stats.confirmed;
                 document.getElementById('earlySignals').textContent = this.stats.early;
+                document.getElementById('prePumpSignals').textContent = this.stats.prePump;
             }
 
             async saveSignals() {

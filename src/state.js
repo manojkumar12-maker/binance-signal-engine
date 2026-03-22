@@ -8,6 +8,7 @@ export const state = {
     early: 0,
     confirmed: 0,
     sniper: 0,
+    prePump: 0,
     active: 0
   }
 };
@@ -60,6 +61,7 @@ export function addSignal(signal) {
   if (signal.tier === 'EARLY') state.stats.early++;
   if (signal.tier === 'CONFIRMED') state.stats.confirmed++;
   if (signal.tier === 'SNIPER') state.stats.sniper++;
+  if (signal.tier === 'PRE_PUMP') state.stats.prePump++;
   
   return signal;
 }

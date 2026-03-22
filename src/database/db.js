@@ -8,7 +8,7 @@ const SIGNALS_FILE = join(DATA_DIR, 'signals.json');
 const STATS_FILE = join(DATA_DIR, 'stats.json');
 
 let signals = [];
-let stats = { total: 0, early: 0, confirmed: 0, sniper: 0, active: 0 };
+let stats = { total: 0, early: 0, confirmed: 0, sniper: 0, prePump: 0, active: 0 };
 let initialized = false;
 
 function ensureDataDir() {
@@ -79,6 +79,7 @@ export async function createSignal(data) {
   if (data.tier === 'EARLY') stats.early++;
   if (data.tier === 'CONFIRMED') stats.confirmed++;
   if (data.tier === 'SNIPER') stats.sniper++;
+  if (data.tier === 'PRE_PUMP') stats.prePump++;
   
   if (initialized) saveData();
   return signal;
