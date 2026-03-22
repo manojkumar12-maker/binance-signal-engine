@@ -7,6 +7,10 @@ import { analyzeSignal, getSmartEntry } from '../engine/confidenceEngine.js';
 import { adaptiveState, passesAdaptiveFilter, getRejectionReason, incrementSignalCount } from '../engine/adaptiveFilter.js';
 import { PrePumpDetector } from '../engine/prePumpDetector.js';
 import { LiquidationService } from '../engine/liquidationService.js';
+import { orderflowTracker } from '../engine/orderflowTracker.js';
+import { oiTracker } from '../engine/oiTracker.js';
+import { fundingService } from '../engine/fundingService.js';
+import { liquidationEngine } from '../engine/liquidationEngine.js';
 
 const prePumpDetector = new PrePumpDetector();
 const liquidationService = new LiquidationService();
@@ -513,11 +517,12 @@ class PumpAnalyzer {
   determineTier(symbol, analysis) {
     let { score, priceChange, volumeSpike, momentum, orderbookImbalance } = analysis;
 
-    const orderflowData = marketDataTracker.getOrderflowData(symbol);
-    const oiData = marketDataTracker.getOpenInterestData(symbol);
-    const fundingData = marketDataTracker.getFundingRateData(symbol);
-    const ofRatio = orderflowData.ratio || 1;
-    const oiChange = oiData.change || 0;
+    const orderflowData = orderflowTracker.getOrderflowData(symbol);
+    const oiData = oiTracker.getOIData(symbol);
+    const fundingData = fundingService.getFundingData(symbol);
+    const liqData = liquidationEngine.analyze(symbol, analysis.entryPrice);
+    const ofRatio = orderflowData?.ratio || 1;
+    const oiChange = oiData?.change || 0;
     const fundingRate = fundingData?.rate || 0;
 
     const prePumpData = {
@@ -540,16 +545,15 @@ class PumpAnalyzer {
     confluence = Math.min(confluence, 5);
 
     if (
-      ofRatio < 1.2 ||
-      oiChange < 2 ||
-      volumeSpike < 2 ||
+      ofRatio < 1.1 ||
+      oiChange < 1.5 ||
+      volumeSpike < 1.5 ||
       confluence < 2
     ) {
       return null;
     }
 
-    if (score < 55) return null;
-    if (confluence < 3) return null;
+    if (score < 45) return null;
 
     const confidenceData = {
       score,
@@ -560,19 +564,32 @@ class PumpAnalyzer {
       priceChange,
       orderflow: ofRatio,
       oiChange: oiChange,
+      fundingRate,
       trend: analysis.currentPrice > analysis.ema50 ? 'UP' : 'DOWN',
       atr: analysis.atr,
       atrMA: analysis.atrMA,
-      marketRegime: this.detectMarketRegime(symbol)
+      marketRegime: this.detectMarketRegime(symbol),
+      liquidationSignal: liqData.signal,
+      liquidationDirection: liqData.direction
     };
 
     const result = analyzeSignal(confidenceData);
     
     let enhancedResult = { ...result, confluence, prePump: prePumpResult };
     
-    if (config.advancedFeatures?.orderflow?.enabled || config.advancedFeatures?.openInterest?.enabled) {
-      const enhanced = marketDataTracker.getEnhancedConfidence(result.confidence, symbol, priceChange);
-      enhancedResult = {
+    if (liqData.signal && liqData.direction === 'UP') {
+      enhancedResult.confidence += 10;
+      enhancedResult.confidence = Math.min(enhancedResult.confidence, 100);
+    }
+    
+    if (fundingData.signal === 'SHORT_SQUEEZE' && priceChange > 0) {
+      enhancedResult.confidence += 12;
+      enhancedResult.confidence = Math.min(enhancedResult.confidence, 100);
+    }
+    
+    if (fundingData.signal === 'RISKY_LONG') {
+      enhancedResult.confidence -= 8;
+    }
         ...result,
         ...enhanced,
         confluence,
@@ -594,7 +611,9 @@ class PumpAnalyzer {
     
     if (!passesAdaptiveFilter(filterData)) {
       const reasons = getRejectionReason(filterData);
-      console.log(`❌ ${symbol} → ${reasons.join(' | ')}`);
+      if (adaptiveState.mode === 'RELAXED' || Math.random() < 0.05) {
+        console.log(`❌ ${symbol} → ${reasons.join(' | ')}`);
+      }
       return null;
     }
 
@@ -606,8 +625,8 @@ class PumpAnalyzer {
     }
     
     if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 3) {
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | Score=${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x | Funding:${(fundingRate * 100).toFixed(3)}%`);
-      console.log(`   Reasons: ${prePumpResult.reasons.join(' | ')}`);
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x | Fund:${(fundingRate * 100).toFixed(3)}%`);
+      console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
       const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'PRE_PUMP') };
       incrementSignalCount();
       return signal;
@@ -615,7 +634,7 @@ class PumpAnalyzer {
     
     if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {
       if (priceChange >= (tiers.SNIPER?.priceChangeMin || 2) && priceChange <= (tiers.SNIPER?.priceChangeMax || 8)) {
-        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
+        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Fund:${(fundingRate * 100).toFixed(3)}%`);
         const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
         incrementSignalCount();
         return signal;
@@ -633,7 +652,7 @@ class PumpAnalyzer {
 
     if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 50) && !enhancedResult.isFakePump) {
       if (priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 8)) {
-        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
+        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
         const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
         incrementSignalCount();
         return signal;

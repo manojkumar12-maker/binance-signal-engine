@@ -10,6 +10,9 @@ import { tradeLogger } from './engine/tradeLogger.js';
 import { initDatabase, closeDatabase, createSignal as dbCreateSignal } from './database/db.js';
 import { state, canTrigger, strongCanTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
 import { updateAdaptiveThresholds } from './engine/adaptiveFilter.js';
+import { orderflowTracker } from './engine/orderflowTracker.js';
+import { oiTracker } from './engine/oiTracker.js';
+import { fundingService } from './engine/fundingService.js';
 
 class SignalEngine {
   constructor() {
@@ -58,6 +61,7 @@ class SignalEngine {
 
     wsManager.onTrade((trade) => {
       marketDataTracker.handleTrade(trade);
+      orderflowTracker.handleTrade(trade);
     });
 
     await wsManager.initialize();
@@ -66,6 +70,18 @@ class SignalEngine {
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
+
+    setInterval(() => {
+      orderflowTracker.reset();
+    }, 4000);
+
+    setInterval(async () => {
+      const topSymbols = wsManager.symbols.slice(0, 50);
+      for (const symbol of topSymbols) {
+        await oiTracker.fetch(symbol);
+        await fundingService.fetch(symbol);
+      }
+    }, 15000);
 
     setInterval(async () => {
       for (const symbol of wsManager.symbols.slice(0, 50)) {
