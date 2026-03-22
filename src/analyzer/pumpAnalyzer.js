@@ -24,6 +24,8 @@ class PumpAnalyzer {
     this.candleHistory = new Map();
     this.highPrices = new Map();
     this.lowPrices = new Map();
+    this.intraDayHigh = new Map();
+    this.intraDayLow = new Map();
     this.lastSignalTime = new Map();
     this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, PRE_PUMP: 0, lastReset: Date.now() };
     this.volumeRateHistory = new Map();
@@ -83,39 +85,45 @@ class PumpAnalyzer {
   }
 
   calculateATR(symbol, period = 14) {
-    const candles = this.candleHistory.get(symbol);
-    if (!candles || candles.length < period + 1) return null;
+    const prices = this.priceHistory.get(symbol);
+    if (!prices || prices.length < period + 1) return null;
 
     const trueRanges = [];
-    for (let i = 1; i < candles.length; i++) {
-      const tr = Math.max(
-        candles[i].high - candles[i].low,
-        Math.abs(candles[i].high - candles[i - 1].close),
-        Math.abs(candles[i].low - candles[i - 1].close)
-      );
+    for (let i = Math.max(1, prices.length - 50); i < prices.length; i++) {
+      const curr = prices[i].price;
+      const prev = prices[i - 1].price;
+      const tr = Math.abs(curr - prev);
       trueRanges.push(tr);
     }
-    return trueRanges.slice(-period).reduce((a, b) => a + b, 0) / period;
+
+    if (trueRanges.length < period) return null;
+
+    const atr = trueRanges.slice(-period).reduce((a, b) => a + b, 0) / period;
+    return atr;
+  }
+
+  calculateATRPercent(symbol, period = 14) {
+    const atr = this.calculateATR(symbol, period);
+    const prices = this.priceHistory.get(symbol);
+    if (!atr || !prices || prices.length < 2) return 0;
+    const currentPrice = prices[prices.length - 1].price;
+    return currentPrice > 0 ? (atr / currentPrice) * 100 : 0;
   }
 
   calculateATRMA(symbol, period = 14) {
+    const prices = this.priceHistory.get(symbol);
+    if (!prices || prices.length < period * 3) return null;
+
     const atrHistory = [];
-    const candles = this.candleHistory.get(symbol);
-    if (!candles || candles.length < period * 2) return null;
-    
-    for (let i = period; i < candles.length; i++) {
+    for (let i = period; i < prices.length; i++) {
       const trs = [];
       for (let j = i - period + 1; j <= i; j++) {
-        const tr = Math.max(
-          candles[j].high - candles[j].low,
-          Math.abs(candles[j].high - candles[j - 1].close),
-          Math.abs(candles[j].low - candles[j - 1].close)
-        );
-        trs.push(tr);
+        trs.push(Math.abs(prices[j].price - prices[j - 1].price));
       }
       atrHistory.push(trs.reduce((a, b) => a + b, 0) / period);
     }
-    
+
+    if (atrHistory.length < 3) return null;
     return atrHistory.slice(-5).reduce((a, b) => a + b, 0) / Math.min(atrHistory.length, 5);
   }
 
@@ -179,19 +187,25 @@ class PumpAnalyzer {
       this.lowPrices.set(symbol, []);
       this.volumeRateHistory.set(symbol, []);
       this.quoteVolumeHistory.set(symbol, []);
+      this.intraDayHigh.set(symbol, price);
+      this.intraDayLow.set(symbol, price);
     }
 
     const prices = this.priceHistory.get(symbol);
     const volumes = this.volumeHistory.get(symbol);
     const candles = this.candleHistory.get(symbol);
     const highs = this.highPrices.get(symbol);
-    const lows = this.lowPrices.get(symbol);
     const volumeRates = this.volumeRateHistory.get(symbol);
     const quoteVolHistory = this.quoteVolumeHistory.get(symbol);
+    const intraHigh = this.intraDayHigh.get(symbol);
+    const intraLow = this.intraDayLow.get(symbol);
 
     prices.push({ price, timestamp: now });
     highs.push(high || price);
-    lows.push(low || price);
+    const currentIntraHigh = Math.max(intraHigh, price);
+    const currentIntraLow = Math.min(intraLow, price);
+    this.intraDayHigh.set(symbol, currentIntraHigh);
+    this.intraDayLow.set(symbol, currentIntraLow);
 
     const prevQuoteVol = quoteVolHistory.length > 0 ? quoteVolHistory[quoteVolHistory.length - 1].volume : quoteVolume;
     const prevTimestamp = quoteVolHistory.length > 0 ? quoteVolHistory[quoteVolHistory.length - 1].timestamp : now;
@@ -206,11 +220,11 @@ class PumpAnalyzer {
     volumes.push({ volume: quoteVolume, volumeRate, volumeSpikeRatio, timestamp: now });
 
     if (candles.length === 0 || now - candles[candles.length - 1].timestamp > 60000) {
-      candles.push({ high: high || price, low: low || price, close: price, open: price, timestamp: now });
+      candles.push({ high: price, low: price, close: price, open: price, timestamp: now });
     } else {
       const last = candles[candles.length - 1];
-      last.high = Math.max(last.high, high || price);
-      last.low = Math.min(last.low, low || price);
+      last.high = Math.max(last.high, price);
+      last.low = Math.min(last.low, price);
       last.close = price;
     }
 
@@ -422,6 +436,7 @@ class PumpAnalyzer {
     const imbalance = this.calculateImbalance(symbol);
     const rsi = this.calculateRSI(symbol);
     const strongCandle = this.analyzeCandleStrength(candles);
+    const atrPercent = this.calculateATRPercent(symbol, atrPeriod);
 
     const orderbookImbalance = orderbookData?.imbalance || 1;
     const spoofingRisk = orderbookData?.spoofingRisk || 0;
@@ -442,6 +457,7 @@ class PumpAnalyzer {
       score,
       atr,
       atrMA,
+      atrPercent,
       entryPrice: currentPrice,
       ema50,
       vwap,
@@ -521,6 +537,9 @@ class PumpAnalyzer {
   determineTier(symbol, analysis) {
     if (!analysis) return null;
     let { score, priceChange, volumeSpike, momentum, orderbookImbalance } = analysis;
+
+    const NO_PUMP_SYMBOLS = ['BTCUSDT', 'ETHUSDT'];
+    const isFilteredSymbol = NO_PUMP_SYMBOLS.includes(symbol);
 
     if (score === undefined || score === null || isNaN(score)) score = 0;
     if (priceChange === undefined || priceChange === null) priceChange = 0;
@@ -635,19 +654,19 @@ class PumpAnalyzer {
       return null;
     }
 
-    const checkRR = (entry, atr, tier) => {
-      const ex = this.generateEntryExit(entry, atr, tier);
-      return this.validateRiskReward(ex.entry, ex.sl, ex.tp1);
+    const checkRR = (entry, atr, atrPct, tier) => {
+      const ex = this.generateEntryExit(entry, atr, atrPct, tier);
+      return this.validateRiskReward(ex.entry, ex.sl, ex.tp1) && this.validateMinimumMove(ex.entry, ex.tp3);
     };
 
-    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 2) {
-      if (!checkRR(analysis.entryPrice, analysis.atr, 'PRE_PUMP')) {
-        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} PRE_PUMP rejected: R:R < 1.0`);
+    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 2 && !isFilteredSymbol) {
+      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} PRE_PUMP rejected: R:R < 1.0 or move < 0.5%`);
         return null;
       }
       console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x`);
       console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
-      const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'PRE_PUMP') };
+      const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP') };
       this.signalCounts.PRE_PUMP++;
       incrementSignalCount();
       return signal;
@@ -655,12 +674,13 @@ class PumpAnalyzer {
     
     if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 70)) {
       if (priceChange >= (tiers.SNIPER?.priceChangeMin || 1.5) && priceChange <= (tiers.SNIPER?.priceChangeMax || 10)) {
-        if (!checkRR(analysis.entryPrice, analysis.atr, 'SNIPER')) {
-          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER rejected: R:R < 1.0`);
+        if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) {
+          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER rejected: R:R < 1.0 or move < 0.5%`);
           return null;
         }
-        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER');
-        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | R:R=${ex.rr1?.toFixed(1)}`);
+        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER');
+        const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
+        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | Move:${movePercent}% | R:R=${ex.rr1?.toFixed(1)}`);
         const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: ex };
         incrementSignalCount();
         return signal;
@@ -669,12 +689,13 @@ class PumpAnalyzer {
 
     if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 55)) {
       if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 1) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 12)) {
-        if (!checkRR(analysis.entryPrice, analysis.atr, 'CONFIRMED')) {
-          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED rejected: R:R < 1.0`);
+        if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) {
+          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED rejected: R:R < 1.0 or move < 0.5%`);
           return null;
         }
-        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED');
-        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | R:R=${ex.rr1?.toFixed(1)}`);
+        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED');
+        const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
+        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | Move:${movePercent}% | R:R=${ex.rr1?.toFixed(1)}`);
         const signal = { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: ex };
         incrementSignalCount();
         return signal;
@@ -683,12 +704,13 @@ class PumpAnalyzer {
 
     if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 35) && !enhancedResult.isFakePump) {
       if (priceChange >= (tiers.EARLY?.priceChangeMin || 0.5) && priceChange <= (tiers.EARLY?.priceChangeMax || 12)) {
-        if (!checkRR(analysis.entryPrice, analysis.atr, 'EARLY')) {
-          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} EARLY rejected: R:R < 1.0`);
+        if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) {
+          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} EARLY rejected: R:R < 1.0 or move < 0.5%`);
           return null;
         }
-        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY');
-        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | R:R=${ex.rr1?.toFixed(1)}`);
+        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
+        const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
+        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | Move:${movePercent}% | R:R=${ex.rr1?.toFixed(1)}`);
         const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: ex };
         incrementSignalCount();
         return signal;
@@ -710,21 +732,34 @@ class PumpAnalyzer {
     return cv > 0.5 ? 'SIDEWAYS' : 'TRENDING';
   }
 
-  generateEntryExit(entryPrice, atr, tier) {
-    const fallbackAtr = atr || (entryPrice * 0.01);
-    const slMultiplier = tier === 'PRE_PUMP' ? 1.0 : tier === 'SNIPER' ? 1.5 : tier === 'CONFIRMED' ? 1.2 : 1.0;
-    const risk = fallbackAtr * slMultiplier;
-    const sl = entryPrice - risk;
+  generateEntryExit(entryPrice, atr, atrPercent, tier) {
+    const MIN_ATR_PERCENT = 0.1;
+    const useAtrPercent = Math.max(atrPercent || 0, MIN_ATR_PERCENT);
+    const atrValue = atr || (entryPrice * useAtrPercent / 100);
 
-    const tp1 = entryPrice + (risk * 1.0);
-    const tp2 = entryPrice + (risk * 2.0);
-    const tp3 = entryPrice + (risk * 3.0);
-    const tp4 = entryPrice + (risk * 4.0);
-    const tp5 = entryPrice + (risk * 5.0);
+    const slPercent = tier === 'PRE_PUMP' ? 0.5 : tier === 'SNIPER' ? 1.0 : tier === 'CONFIRMED' ? 0.8 : 0.6;
+    const sl = entryPrice * (1 - slPercent / 100);
+    const risk = entryPrice - sl;
 
-    const rr1 = (tp1 - entryPrice) / risk;
-    const rr2 = (tp2 - entryPrice) / risk;
-    const rr3 = (tp3 - entryPrice) / risk;
+    const tpPercents = {
+      PRE_PUMP: [1.0, 2.0, 3.0, 5.0, 8.0],
+      EARLY:    [1.0, 2.0, 3.5, 5.0, 8.0],
+      CONFIRMED:[1.5, 3.0, 5.0, 7.5, 10.0],
+      SNIPER:   [2.0, 4.0, 6.0, 9.0, 12.0]
+    };
+
+    const tiers = config.signalTiers || {};
+    const multipliers = tpPercents[tier] || tpPercents.EARLY;
+
+    const tp1 = entryPrice * (1 + multipliers[0] / 100);
+    const tp2 = entryPrice * (1 + multipliers[1] / 100);
+    const tp3 = entryPrice * (1 + multipliers[2] / 100);
+    const tp4 = entryPrice * (1 + multipliers[3] / 100);
+    const tp5 = entryPrice * (1 + multipliers[4] / 100);
+
+    const rr1 = multipliers[0];
+    const rr2 = multipliers[1];
+    const rr3 = multipliers[2];
 
     return {
       entry: entryPrice,
@@ -734,7 +769,8 @@ class PumpAnalyzer {
       tp4,
       tp5,
       sl,
-      atr: fallbackAtr,
+      atr: atrValue,
+      atrPercent: useAtrPercent,
       risk,
       rr1,
       rr2,
@@ -752,6 +788,11 @@ class PumpAnalyzer {
     const reward = tp1 - entryPrice;
     const rr = risk > 0 ? reward / risk : 0;
     return rr >= 1.0;
+  }
+
+  validateMinimumMove(entryPrice, tp3) {
+    const movePercent = ((tp3 - entryPrice) / entryPrice) * 100;
+    return movePercent >= 0.5;
   }
 
   calculateMomentum(prices, priceChangePercent) {
@@ -823,6 +864,8 @@ class PumpAnalyzer {
     this.lowPrices.delete(symbol);
     this.volumeRateHistory.delete(symbol);
     this.quoteVolumeHistory.delete(symbol);
+    this.intraDayHigh.delete(symbol);
+    this.intraDayLow.delete(symbol);
   }
 }
 
