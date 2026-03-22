@@ -5,6 +5,11 @@ import { marketDataTracker } from '../engine/marketDataTracker.js';
 import { tradeLogger } from '../engine/tradeLogger.js';
 import { analyzeSignal, getSmartEntry } from '../engine/confidenceEngine.js';
 import { adaptiveState, passesAdaptiveFilter, getRejectionReason, incrementSignalCount } from '../engine/adaptiveFilter.js';
+import { PrePumpDetector } from '../engine/prePumpDetector.js';
+import { LiquidationService } from '../engine/liquidationService.js';
+
+const prePumpDetector = new PrePumpDetector();
+const liquidationService = new LiquidationService();
 
 const STABLECOINS = ['USDT', 'BUSD', 'USDC', 'DAI', 'USD', 'UST'];
 
@@ -510,8 +515,21 @@ class PumpAnalyzer {
 
     const orderflowData = marketDataTracker.getOrderflowData(symbol);
     const oiData = marketDataTracker.getOpenInterestData(symbol);
+    const fundingData = marketDataTracker.getFundingRateData(symbol);
     const ofRatio = orderflowData.ratio || 1;
     const oiChange = oiData.change || 0;
+    const fundingRate = fundingData?.rate || 0;
+
+    const prePumpData = {
+      priceChange,
+      volumeSpike,
+      orderflow: ofRatio,
+      oiChange,
+      fundingRate,
+      imbalance: orderbookImbalance,
+      momentum
+    };
+    const prePumpResult = prePumpDetector.analyze(symbol, prePumpData);
 
     let confluence = 0;
     if (volumeSpike > 2) confluence++;
@@ -550,7 +568,7 @@ class PumpAnalyzer {
 
     const result = analyzeSignal(confidenceData);
     
-    let enhancedResult = { ...result, confluence };
+    let enhancedResult = { ...result, confluence, prePump: prePumpResult };
     
     if (config.advancedFeatures?.orderflow?.enabled || config.advancedFeatures?.openInterest?.enabled) {
       const enhanced = marketDataTracker.getEnhancedConfidence(result.confidence, symbol, priceChange);
@@ -558,7 +576,8 @@ class PumpAnalyzer {
         ...result,
         ...enhanced,
         confluence,
-        confidence: enhanced.confidence
+        confidence: enhanced.confidence,
+        prePump: prePumpResult
       };
     }
 
@@ -584,6 +603,14 @@ class PumpAnalyzer {
     const tradeDecision = tradeLogger.shouldTrade({ ...enhancedResult, symbol, type: enhancedResult.tier });
     if (!tradeDecision.trade) {
       return null;
+    }
+    
+    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4) {
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | Score=${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x | Funding:${(fundingRate * 100).toFixed(3)}%`);
+      console.log(`   Reasons: ${prePumpResult.reasons.join(' | ')}`);
+      const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'PRE_PUMP') };
+      incrementSignalCount();
+      return signal;
     }
     
     if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {

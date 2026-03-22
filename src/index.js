@@ -15,7 +15,7 @@ class SignalEngine {
   constructor() {
     this.stats = {
       signalsGenerated: 0,
-      signalsByTier: { EARLY: 0, CONFIRMED: 0, SNIPER: 0 },
+      signalsByTier: { PRE_PUMP: 0, EARLY: 0, CONFIRMED: 0, SNIPER: 0 },
       symbolsMonitored: 0,
       startedAt: null
     };
@@ -176,7 +176,7 @@ class SignalEngine {
 ║  Uptime: ${this.formatUptime(uptime)}
 ║  Symbols: ${this.stats.symbolsMonitored}
 ║  Total Signals: ${this.stats.signalsGenerated}
-║  🔴 SNIPER: ${this.stats.signalsByTier.SNIPER}  🟢 CONFIRMED: ${this.stats.signalsByTier.CONFIRMED}  🟡 EARLY: ${this.stats.signalsByTier.EARLY}
+║  🟣 PRE_PUMP: ${this.stats.signalsByTier.PRE_PUMP}  🔴 SNIPER: ${this.stats.signalsByTier.SNIPER}  🟢 CONFIRMED: ${this.stats.signalsByTier.CONFIRMED}  🟡 EARLY: ${this.stats.signalsByTier.EARLY}
 ║  Active: ${activeSignals.length}
 ╠══════════════════════════════════════════════════════════════════╣
 ║  🧠 AUTO-TUNER                                                    ║
@@ -189,7 +189,7 @@ class SignalEngine {
     if (activeSignals.length > 0) {
       console.log('📈 ACTIVE SIGNALS:\n');
       activeSignals.forEach(s => {
-        const tierEmoji = s.tier === 'SNIPER' ? '🔴' : s.tier === 'CONFIRMED' ? '🟢' : '🟡';
+        const tierEmoji = s.tier === 'SNIPER' ? '🔴' : s.tier === 'CONFIRMED' ? '🟢' : s.tier === 'PRE_PUMP' ? '🟣' : '🟡';
         console.log(`  ${tierEmoji} ${s.symbol} | Entry: ${s.entryPrice.toFixed(6)} | PnL: ${s.update?.unrealizedPnL || 0}%`);
       });
       console.log('');

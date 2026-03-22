@@ -53,7 +53,8 @@ class SignalGenerator {
       entryQuality: analysis.entryQuality || 'N/A',
       action: analysis.action || 'UNKNOWN',
       shouldTrade: analysis.shouldTrade || false,
-      status: type === 'SNIPER' ? 'HOT' : type === 'CONFIRMED' ? 'ACTIVE' : 'WATCHLIST',
+      status: type === 'SNIPER' ? 'HOT' : type === 'PRE_PUMP' ? 'BUILDING' : type === 'CONFIRMED' ? 'ACTIVE' : 'WATCHLIST',
+      prePump: analysis.prePump || null,
       management: {
         slMovedToBreakeven: false,
         trailingActive: false,
@@ -77,8 +78,8 @@ class SignalGenerator {
   formatSignal(signal) {
     const { targets, stopLoss, metrics, riskReward } = signal;
     
-    const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : '🟡';
-    const tierLabel = signal.tier === 'SNIPER' ? 'HIGH ACCURACY' : signal.tier === 'CONFIRMED' ? 'CONFIRMED ENTRY' : 'EARLY WATCH';
+    const tierEmoji = signal.tier === 'SNIPER' ? '🔴' : signal.tier === 'CONFIRMED' ? '🟢' : signal.tier === 'PRE_PUMP' ? '🟣' : '🟡';
+    const tierLabel = signal.tier === 'SNIPER' ? 'HIGH ACCURACY' : signal.tier === 'CONFIRMED' ? 'CONFIRMED ENTRY' : signal.tier === 'PRE_PUMP' ? 'PRE-PUMP BUILDING' : 'EARLY WATCH';
     
     const atrDisplay = signal.atr && !isNaN(signal.atr) ? signal.atr.toFixed(6) : 'N/A';
     const entryDisplay = signal.entryPrice && !isNaN(signal.entryPrice) ? signal.entryPrice.toFixed(6) : 'N/A';
@@ -92,13 +93,24 @@ class SignalGenerator {
     const factors = signal.confluenceReasons || signal.factors || [];
     const factorsList = Array.isArray(factors) ? factors.map(f => `   • ${f}`).join('\n') : `   • ${factors}`;
     
+    let prePumpSection = '';
+    if (signal.prePump && signal.tier === 'PRE_PUMP') {
+      prePumpSection = `
+⚠️ PRE-PUMP INDICATORS:
+   Score: ${signal.prePump.prePumpScore || 0}
+   Direction: ${signal.prePump.direction || 'NEUTRAL'}
+   Reasons: ${(signal.prePump.reasons || []).join(', ')}
+⏱️ Expect move in 5-10 minutes
+`;
+    }
+    
     return `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 Symbol: ${signal.symbol}
 🕐 Time: ${new Date(signal.timestamp).toLocaleString()}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${prePumpSection}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 ENTRY: ${entryDisplay}
 📏 ATR: ${atrDisplay}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

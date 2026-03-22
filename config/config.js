@@ -11,6 +11,7 @@ export const config = {
     rollingWindowSize: 50
   },
   signalTiers: {
+    PRE_PUMP: { scoreThreshold: 0, confidenceThreshold: 0, priceChangeMin: 0, priceChangeMax: 2, volumeSpikeThreshold: 1.5 },
     EARLY: { scoreThreshold: 50, confidenceThreshold: 50, priceChangeMin: 1, priceChangeMax: 6, volumeSpikeThreshold: 1.5 },
     CONFIRMED: { scoreThreshold: 60, confidenceThreshold: 65, priceChangeMin: 2, priceChangeMax: 10, volumeSpikeThreshold: 2 },
     SNIPER: { scoreThreshold: 55, confidenceThreshold: 80, priceChangeMin: 2.5, priceChangeMax: 10, volumeSpikeThreshold: 2.5 }
