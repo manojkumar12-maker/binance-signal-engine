@@ -191,17 +191,19 @@ class PumpAnalyzer {
       this.intraDayLow.set(symbol, price);
     }
 
-    const prices = this.priceHistory.get(symbol);
-    const volumes = this.volumeHistory.get(symbol);
-    const candles = this.candleHistory.get(symbol);
-    const highs = this.highPrices.get(symbol);
-    const volumeRates = this.volumeRateHistory.get(symbol);
-    const quoteVolHistory = this.quoteVolumeHistory.get(symbol);
-    const intraHigh = this.intraDayHigh.get(symbol);
-    const intraLow = this.intraDayLow.get(symbol);
+    const prices = this.priceHistory.get(symbol) || [];
+    const volumes = this.volumeHistory.get(symbol) || [];
+    const candles = this.candleHistory.get(symbol) || [];
+    const highs = this.highPrices.get(symbol) || [];
+    const lows = this.lowPrices.get(symbol) || [];
+    const volumeRates = this.volumeRateHistory.get(symbol) || [];
+    const quoteVolHistory = this.quoteVolumeHistory.get(symbol) || [];
+    const intraHigh = this.intraDayHigh.get(symbol) || 0;
+    const intraLow = this.intraDayLow.get(symbol) || 0;
 
     prices.push({ price, timestamp: now });
     highs.push(high || price);
+    lows.push(low || price);
     const currentIntraHigh = Math.max(intraHigh, price);
     const currentIntraLow = Math.min(intraLow, price);
     this.intraDayHigh.set(symbol, currentIntraHigh);
@@ -231,10 +233,10 @@ class PumpAnalyzer {
     if (prices.length > 100) prices.shift();
     if (volumes.length > 100) volumes.shift();
     if (candles.length > 100) candles.shift();
-    if (highs.length > 100) highs.shift();
-    if (lows.length > 100) lows.shift();
-    if (volumeRates.length > 100) volumeRates.shift();
-    if (quoteVolHistory.length > 100) quoteVolHistory.shift();
+    if (highs && highs.length > 100) highs.shift();
+    if (lows && lows.length > 100) lows.shift();
+    if (volumeRates && volumeRates.length > 100) volumeRates.shift();
+    if (quoteVolHistory && quoteVolHistory.length > 100) quoteVolHistory.shift();
   }
 
   checkCooldown(symbol) {
