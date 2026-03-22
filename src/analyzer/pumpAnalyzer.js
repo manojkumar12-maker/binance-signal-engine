@@ -697,6 +697,10 @@ class PumpAnalyzer {
     }
 
     if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
+      if (oiStateLabel === '⚠️ SHORT_CVR' || oiStateLabel === '⚠️ LONG_EXT') {
+        if (Math.random() < 0.01) console.log(`❌ ${symbol} PRE_PUMP blocked: OI state ${oiStateLabel}`);
+        return null;
+      }
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
       console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}]`);
