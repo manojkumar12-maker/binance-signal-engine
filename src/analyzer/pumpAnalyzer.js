@@ -501,16 +501,16 @@ class PumpAnalyzer {
     confluence = Math.min(confluence, 5);
 
     if (
-      ofRatio < 1.2 &&
-      oiChange < 2 &&
-      volumeSpike < 2 &&
+      ofRatio < 1.2 ||
+      oiChange < 2 ||
+      volumeSpike < 2 ||
       confluence < 2
     ) {
       return null;
     }
 
-    if (score < 50) return null;
-    if (confluence < 2) return null;
+    if (score < 55) return null;
+    if (confluence < 3) return null;
 
     const confidenceData = {
       score,
@@ -519,6 +519,8 @@ class PumpAnalyzer {
       imbalance: orderbookImbalance,
       orderbookImbalance,
       priceChange,
+      orderflow: ofRatio,
+      oiChange: oiChange,
       trend: analysis.currentPrice > analysis.ema50 ? 'UP' : 'DOWN',
       atr: analysis.atr,
       atrMA: analysis.atrMA,
@@ -542,6 +544,8 @@ class PumpAnalyzer {
     if (!enhancedResult.shouldGenerateSignal) return null;
     if (enhancedResult.isFakePump) return null;
 
+    if (enhancedResult.confidence < 65) return null;
+
     const tiers = config.signalTiers || {};
     
     const tradeDecision = tradeLogger.shouldTrade({ ...enhancedResult, symbol, type: enhancedResult.tier });
@@ -563,9 +567,8 @@ class PumpAnalyzer {
       }
     }
 
-    if (enhancedResult.tier === 'EARLY' || (enhancedResult.confidence >= 40 && !enhancedResult.isFakePump)) {
-      const tierType = enhancedResult.tier === 'EARLY' ? 'EARLY' : (enhancedResult.confidence >= 50 ? 'EARLY' : null);
-      if (tierType && priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 6)) {
+    if (enhancedResult.tier === 'EARLY' && enhancedResult.confidence >= 65 && !enhancedResult.isFakePump) {
+      if (priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 6)) {
         console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
         return { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
       }

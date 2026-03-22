@@ -20,6 +20,7 @@ class SignalEngine {
     };
     this.startTime = Date.now();
     this.warmupTime = 60 * 1000;
+    this.warmupLogged = false;
   }
 
   isWarmedUp() {
@@ -99,11 +100,14 @@ class SignalEngine {
 
   async processTicker(ticker) {
     if (!this.isWarmedUp()) {
-      const status = this.getWarmupStatus();
-      if (status.remaining % 10 === 0 && status.remaining > 0) {
-        console.log(`⏳ Warming up... ${status.remaining}s remaining`);
+      if (!this.warmupLogged) {
+        console.log(`⏳ Warming up... ${this.getWarmupStatus().remaining}s remaining`);
+        this.warmupLogged = true;
       }
       return;
+    } else if (this.warmupLogged) {
+      console.log('✅ Warmup complete - engine active');
+      this.warmupLogged = false;
     }
 
     const analysis = pumpAnalyzer.analyze(ticker);

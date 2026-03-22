@@ -1,24 +1,32 @@
 export function calculateConfidence(data) {
   let confidence = 0;
   
-  const { score, volumeSpike, momentum, imbalance, priceChange, trend, atr, atrMA } = data;
+  const { score, volumeSpike, momentum, imbalance, priceChange, trend, orderflow, oiChange } = data;
 
   if (!score || score < 30) return 0;
 
-  confidence += data.score * 0.6;
-  confidence += Math.min(data.volumeSpike * 10, 25);
-  confidence += Math.max((data.momentum * 100) * 0.2, 0);
+  confidence += (score || 0) * 0.5;
+  confidence += Math.min(volumeSpike || 0, 3) * 8;
+  confidence += Math.min(Math.max(momentum || 0, 0), 0.1) * 50;
   
-  if (data.imbalance) {
-    confidence += Math.min(data.imbalance * 10, 20);
+  if (orderflow && orderflow > 1) {
+    confidence += Math.min(orderflow - 1, 1) * 20;
+  }
+  
+  if (oiChange) {
+    confidence += Math.min(oiChange, 5) * 3;
+  }
+  
+  if (imbalance) {
+    confidence += Math.min(imbalance * 5, 15);
   }
 
-  if (data.trend === 'UP' || data.trend === 'BULLISH') {
-    confidence += 10;
+  if (trend === 'UP' || trend === 'BULLISH') {
+    confidence += 5;
   }
 
-  if (data.priceChange > 10) confidence -= 15;
-  if (data.momentum < 0) confidence -= 10;
+  if (priceChange > 10) confidence -= 15;
+  if (momentum < 0) confidence -= 10;
 
   return Math.max(0, Math.min(100, Math.round(confidence)));
 }

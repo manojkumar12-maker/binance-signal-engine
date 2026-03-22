@@ -21,12 +21,12 @@ class MarketDataTracker {
   }
 
   handleTrade(trade) {
-    const symbol = trade.s;
-    const qty = parseFloat(trade.q);
-    const isBuyerMaker = trade.m;
+    const symbol = trade.symbol;
+    const qty = trade.quantity;
+    const isBuyerMaker = trade.isBuyerMaker;
 
     if (!this.orderflowHistory.has(symbol)) {
-      this.orderflowHistory.set(symbol, { buy: 0, sell: 0, trades: [] });
+      this.orderflowHistory.set(symbol, { buy: 0, sell: 0, trades: [], lastCleanup: Date.now() });
     }
 
     const data = this.orderflowHistory.get(symbol);
@@ -39,29 +39,33 @@ class MarketDataTracker {
     
     data.trades.push({ qty, isBuyerMaker, time: Date.now() });
     
-    if (data.trades.length > 100) {
-      data.trades = data.trades.slice(-100);
-      const windowStart = Date.now() - 60000;
+    const now = Date.now();
+    if (now - data.lastCleanup > 60000 || data.trades.length > 200) {
+      const windowStart = now - 60000;
+      data.trades = data.trades.filter(t => t.time > windowStart);
+      
       data.buy = 0;
       data.sell = 0;
       data.trades.forEach(t => {
-        if (t.time > windowStart) {
-          if (t.isBuyerMaker) data.sell += t.qty;
-          else data.buy += t.qty;
-        }
+        if (t.isBuyerMaker) data.sell += t.qty;
+        else data.buy += t.qty;
       });
+      
+      data.lastCleanup = now;
     }
   }
 
   getOrderflowRatio(symbol) {
     const data = this.orderflowHistory.get(symbol);
-    if (!data) return 1;
+    if (!data || data.trades.length === 0) return 1;
     return data.buy / (data.sell || 1);
   }
 
   getOrderflowData(symbol) {
     const data = this.orderflowHistory.get(symbol);
-    if (!data) return { ratio: 1, buyVolume: 0, sellVolume: 0, pressure: 'NEUTRAL' };
+    if (!data || data.trades.length === 0) {
+      return { ratio: 1, buyVolume: 0, sellVolume: 0, pressure: 'NEUTRAL', tradeCount: 0 };
+    }
     
     const ratio = data.buy / (data.sell || 1);
     let pressure = 'NEUTRAL';
@@ -76,7 +80,8 @@ class MarketDataTracker {
       ratio,
       buyVolume: data.buy,
       sellVolume: data.sell,
-      pressure
+      pressure,
+      tradeCount: data.trades.length
     };
   }
 
@@ -97,14 +102,15 @@ class MarketDataTracker {
       );
 
       if (response.data && response.data.length >= 2) {
-        const current = parseFloat(response.data[1].sumOpenInterest);
-        const previous = parseFloat(response.data[0].sumOpenInterest);
+        const current = parseFloat(response.data[response.data.length - 1].sumOpenInterest);
+        const previousOI = this.openInterest.get(symbol);
+        const prevValue = previousOI?.current || current;
         
-        const change = ((current - previous) / previous) * 100;
+        const change = prevValue > 0 ? ((current - prevValue) / prevValue) * 100 : 0;
         
         this.openInterest.set(symbol, {
           current,
-          previous,
+          previous: prevValue,
           change,
           timestamp: Date.now()
         });
