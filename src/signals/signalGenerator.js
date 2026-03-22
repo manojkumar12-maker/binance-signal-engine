@@ -1,6 +1,7 @@
 import { config } from '../../config/config.js';
 import { createSignal as dbCreateSignal } from '../database/db.js';
 import { addToActive } from '../state.js';
+import { riskManager } from '../engine/riskManager.js';
 
 class SignalGenerator {
   constructor() {
@@ -8,6 +9,7 @@ class SignalGenerator {
     this.signalHistory = [];
     this.signalId = 0;
     this.accountBalance = config?.positionSizing?.accountSize || 10000;
+    this.leverage = config?.positionSizing?.leverage || 5;
   }
 
   async generateSignal(symbol, analysis) {
@@ -18,6 +20,17 @@ class SignalGenerator {
     const signalEntry = entryPrice || (signals?.entry);
     const signalSL = signals?.sl;
     
+    const riskAmount = riskManager.calculateRiskAmount(this.accountBalance);
+    
+    const positionCalc = riskManager.calculatePositionSize({
+      riskAmount,
+      entry: signalEntry,
+      stopLoss: signalSL,
+      leverage: this.leverage
+    });
+    
+    const takeProfits = riskManager.calculateTakeProfits(signalEntry, positionCalc?.quantity || 1, this.leverage);
+    
     const signal = {
       id: `sig_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       symbol: symbol || 'UNKNOWN',
@@ -26,18 +39,26 @@ class SignalGenerator {
       timestamp: Date.now(),
       entryPrice: signalEntry,
       atr,
+      leverage: this.leverage,
+      riskAmount,
+      positionSize: positionCalc,
       targets: {
-        tp1: signals?.tp1,
-        tp2: signals?.tp2,
-        tp3: signals?.tp3,
+        tp1: takeProfits[0]?.price || signals?.tp1,
+        tp2: takeProfits[1]?.price || signals?.tp2,
+        tp3: takeProfits[2]?.price || signals?.tp3,
         tp4: signals?.tp4,
         tp5: signals?.tp5
       },
       stopLoss: signalSL,
       riskReward: {
-        tp1: signalSL && signalEntry ? ((signals.tp1 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
-        tp2: signalSL && signalEntry ? ((signals.tp2 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
-        tp3: signalSL && signalEntry ? ((signals.tp3 - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0'
+        tp1: signalSL && signalEntry && takeProfits[0] ? ((takeProfits[0].price - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
+        tp2: signalSL && signalEntry && takeProfits[1] ? ((takeProfits[1].price - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0',
+        tp3: signalSL && signalEntry && takeProfits[2] ? ((takeProfits[2].price - signalEntry) / (signalEntry - signalSL)).toFixed(2) : '0'
+      },
+      tradeDetails: {
+        quantity: positionCalc?.quantity?.toFixed(4) || 'N/A',
+        positionValue: positionCalc?.positionValue?.toFixed(2) || 'N/A',
+        actualRisk: positionCalc?.actualRisk?.toFixed(2) || 'N/A'
       },
       metrics: {
         priceChange: typeof priceChange === 'number' ? priceChange.toFixed(2) : '0',
@@ -104,13 +125,23 @@ class SignalGenerator {
 `;
     }
     
+    const tradeDetails = signal.tradeDetails || {};
+    const riskSection = `
+💎 RISK MANAGEMENT:
+   Leverage: ${signal.leverage || 5}x
+   Quantity: ${tradeDetails.quantity || 'N/A'}
+   Position Value: $${tradeDetails.positionValue || 'N/A'}
+   Risk Amount: $${signal.riskAmount?.toFixed(2) || 'N/A'}
+   Actual Risk: $${tradeDetails.actualRisk || 'N/A'}
+`;
+    
     return `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 Symbol: ${signal.symbol}
 🕐 Time: ${new Date(signal.timestamp).toLocaleString()}
-${prePumpSection}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${prePumpSection}${riskSection}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 ENTRY: ${entryDisplay}
 📏 ATR: ${atrDisplay}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

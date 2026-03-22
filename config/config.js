@@ -36,7 +36,17 @@ export const config = {
       enabled: true,
       basePercent: 0.3,
       volatilityMultiplier: true
-    }
+    },
+    leverage: 5,
+    riskPerTradePercent: 0.1,
+    maxRiskPerTrade: 2,
+    dailyLossLimit: 5,
+    minTPPercent: 0.5
+  },
+  positionSizing: {
+    accountSize: 10000,
+    leverage: 5,
+    riskPercent: 10
   },
   filters: {
     volatilityExpansionBonus: 10,
