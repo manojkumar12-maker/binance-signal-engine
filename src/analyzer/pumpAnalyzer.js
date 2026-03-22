@@ -7,6 +7,7 @@ import { incrementSignalCount } from '../engine/adaptiveFilter.js';
 import { PrePumpDetector } from '../engine/prePumpDetector.js';
 import { LiquidationService } from '../engine/liquidationService.js';
 import { orderflowTracker } from '../engine/orderflowTracker.js';
+import { signalRankingEngine } from '../engine/signalRankingEngine.js';
 import { oiTracker } from '../engine/oiTracker.js';
 import { fundingService } from '../engine/fundingService.js';
 import { liquidationEngine } from '../engine/liquidationEngine.js';
@@ -372,20 +373,26 @@ class PumpAnalyzer {
     
     if (this.cycleSignals.length === 0) return [];
     
-    if (now - this.lastCycleProcess < 5000 && this.cycleSignals.length < 10) {
+    if (now - this.lastCycleProcess < 10000 && this.cycleSignals.length < 5) {
+      return [];
+    }
+
+    const filtered = this.cycleSignals.filter(s => !signalRankingEngine.isDuplicate(s.symbol));
+
+    if (filtered.length === 0) {
+      this.cycleSignals = [];
+      this.lastCycleProcess = now;
       return [];
     }
     
-    const ranked = this.cycleSignals
-      .sort((a, b) => {
-        const scoreA = (a.confidence || 0) + (a.score || 0);
-        const scoreB = (b.confidence || 0) + (b.score || 0);
-        return scoreB - scoreA;
-      })
-      .slice(0, 5);
+    const ranked = signalRankingEngine.processSignals(filtered);
     
     this.cycleSignals = [];
     this.lastCycleProcess = now;
+    
+    if (ranked.length > 0) {
+      console.log(`🏆 SRE: ${ranked.length} signals ranked (max ${signalRankingEngine.maxActive}): ${ranked.map(s => `${s.type}:${s.symbol}(${s.rankScore?.toFixed(0)})`).join(' | ')}`);
+    }
     
     return ranked;
   }

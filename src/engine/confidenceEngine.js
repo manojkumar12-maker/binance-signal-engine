@@ -68,10 +68,10 @@ export function analyzeSignal(data) {
   const fakePump = isFakePump(data);
   const smartEntry = getSmartEntry(data.entryPrice, data.atr);
   
-  let entryQuality = 'N/A';
-  if (data.priceChange >= 2 && data.priceChange <= 5) entryQuality = 'EXCELLENT';
-  else if (data.priceChange >= 5 && data.priceChange <= 8) entryQuality = 'GOOD';
-  else if (data.priceChange > 8) entryQuality = 'LATE';
+  let entryQuality = 'WEAK';
+  if (data.confidence >= 70) entryQuality = 'EXCELLENT';
+  else if (data.confidence >= 60) entryQuality = 'GOOD';
+  else if (data.confidence >= 50) entryQuality = 'OK';
 
   const shouldTrade = 
     classification.action !== 'REJECT' &&

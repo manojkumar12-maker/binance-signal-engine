@@ -10,10 +10,25 @@ class SignalGenerator {
     this.signalId = 0;
     this.accountBalance = config?.positionSizing?.accountSize || 10000;
     this.leverage = config?.positionSizing?.leverage || 5;
+    this.MAX_ACTIVE = 10;
+  }
+
+  getQuality(conf) {
+    if (conf >= 70) return 'EXCELLENT';
+    if (conf >= 60) return 'GOOD';
+    if (conf >= 50) return 'OK';
+    return 'WEAK';
   }
 
   async generateSignal(symbol, analysis) {
     if (!analysis || !analysis.type) return null;
+
+    if (this.activeSignals.size >= this.MAX_ACTIVE) {
+      if (Math.random() < 0.01) {
+        console.log(`⚠️ MAX_ACTIVE (${this.MAX_ACTIVE}) reached, skipping ${symbol}`);
+      }
+      return null;
+    }
 
     const { type, score, priceChange, volumeSpike, momentum, factors, signals, atr, entryPrice, metadata } = analysis;
     
@@ -52,6 +67,8 @@ class SignalGenerator {
       leverage: this.leverage,
       riskAmount,
       positionSize: positionCalc,
+      rankScore: analysis.rankScore || 0,
+      quality: this.getQuality(analysis.confidence || 0),
       targets: {
         tp1: signals?.tp1 || signalSL ? signalEntry + (signalEntry - signalSL) * 1 : null,
         tp2: signals?.tp2 || signalSL ? signalEntry + (signalEntry - signalSL) * 2 : null,
@@ -169,6 +186,8 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
 📊 Symbol: ${signal.symbol}
 🕐 Time: ${new Date(signal.timestamp).toLocaleString()}
 ${prePumpSection}${riskSection}${trailingSection}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏆 RANK: ${(signal.rankScore || 0).toFixed(0)} | Quality: ${signal.quality || 'N/A'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 ENTRY: ${entryDisplay}
 🛑 STOP LOSS: ${slDisplay}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
