@@ -1,10 +1,12 @@
 export const adaptiveState = {
-  targetSignalsPerMinute: 5,
+  targetSignalsPerMinute: 8,
   currentSignals: 0,
   lastReset: Date.now(),
-  scoreThreshold: 55,
-  confluenceThreshold: 3,
-  confidenceThreshold: 65
+  scoreThreshold: 50,
+  confluenceThreshold: 2,
+  confidenceThreshold: 60,
+  mode: 'NORMAL',
+  history: []
 };
 
 export function updateAdaptiveThresholds() {
@@ -12,20 +14,31 @@ export function updateAdaptiveThresholds() {
 
   if (now - adaptiveState.lastReset > 60000) {
     const signals = adaptiveState.currentSignals;
-
-    if (signals === 0) {
-      adaptiveState.scoreThreshold = Math.max(45, adaptiveState.scoreThreshold - 2);
-      adaptiveState.confluenceThreshold = Math.max(2, adaptiveState.confluenceThreshold - 1);
-      adaptiveState.confidenceThreshold = Math.max(55, adaptiveState.confidenceThreshold - 3);
+    adaptiveState.history.push(signals);
+    if (adaptiveState.history.length > 5) {
+      adaptiveState.history.shift();
+    }
+    const avgSignals = adaptiveState.history.reduce((a, b) => a + b, 0) / adaptiveState.history.length;
+    
+    if (signals === 0 && avgSignals < 3) {
+      adaptiveState.mode = 'RELAXED';
+      adaptiveState.scoreThreshold = Math.max(40, adaptiveState.scoreThreshold - 3);
+      adaptiveState.confluenceThreshold = Math.max(1, adaptiveState.confluenceThreshold - 1);
+      adaptiveState.confidenceThreshold = Math.max(50, adaptiveState.confidenceThreshold - 5);
+    } else if (signals > adaptiveState.targetSignalsPerMinute * 2) {
+      adaptiveState.mode = 'STRICT';
+      adaptiveState.scoreThreshold = Math.min(60, adaptiveState.scoreThreshold + 2);
+      adaptiveState.confluenceThreshold = Math.min(4, adaptiveState.confluenceThreshold + 1);
+      adaptiveState.confidenceThreshold = Math.min(75, adaptiveState.confidenceThreshold + 3);
+    } else {
+      adaptiveState.mode = 'NORMAL';
     }
 
-    if (signals > adaptiveState.targetSignalsPerMinute) {
-      adaptiveState.scoreThreshold = Math.min(70, adaptiveState.scoreThreshold + 2);
-      adaptiveState.confluenceThreshold = Math.min(5, adaptiveState.confluenceThreshold + 1);
-      adaptiveState.confidenceThreshold = Math.min(85, adaptiveState.confidenceThreshold + 3);
-    }
+    adaptiveState.scoreThreshold = Math.min(Math.max(adaptiveState.scoreThreshold, 40), 60);
+    adaptiveState.confluenceThreshold = Math.min(Math.max(adaptiveState.confluenceThreshold, 1), 4);
+    adaptiveState.confidenceThreshold = Math.min(Math.max(adaptiveState.confidenceThreshold, 50), 75);
 
-    console.log(`🧠 Adaptive Update → Score≥${adaptiveState.scoreThreshold} | Conf≥${adaptiveState.confidenceThreshold} | Confluence≥${adaptiveState.confluenceThreshold} | Signals: ${signals}`);
+    console.log(`🧠 Adaptive [${adaptiveState.mode}] → Score≥${adaptiveState.scoreThreshold} | Conf≥${adaptiveState.confidenceThreshold} | Confluence≥${adaptiveState.confluenceThreshold} | Signals: ${signals}`);
 
     adaptiveState.currentSignals = 0;
     adaptiveState.lastReset = now;
@@ -48,18 +61,18 @@ export function getRejectionReason(data) {
   }
 
   const ofRatio = data.orderflow?.ratio || data.ofRatio || 1;
-  if (ofRatio < 1.2) {
-    reasons.push(`Weak OF ${ofRatio.toFixed(2)}`);
+  if (ofRatio < 1.2 && ofRatio > 0) {
+    reasons.push(`OF ${ofRatio.toFixed(2)}`);
   }
 
   const oiChange = data.oiChange || data.openInterest?.change || 0;
-  if (oiChange < 1) {
-    reasons.push(`Weak OI ${oiChange.toFixed(2)}%`);
+  if (oiChange < 2 && oiChange >= 0) {
+    reasons.push(`OI ${oiChange.toFixed(2)}%`);
   }
 
   const volSpike = data.volumeSpike || 0;
   if (volSpike < 2) {
-    reasons.push(`Weak Vol ${volSpike.toFixed(1)}x`);
+    reasons.push(`Vol ${volSpike.toFixed(1)}x`);
   }
 
   return reasons;
@@ -73,9 +86,19 @@ export function passesAdaptiveFilter(data) {
   if (data.confidence < adaptiveState.confidenceThreshold) return false;
   if (data.confluence < adaptiveState.confluenceThreshold) return false;
   if (ofRatio < 1.2) return false;
-  if (oiChange < 2) return false;
-  if ((data.volumeSpike || 0) < 2) return false;
+  if (oiChange < 2 && adaptiveState.mode === 'STRICT') return false;
+  if ((data.volumeSpike || 0) < 1.5) return false;
 
+  return true;
+}
+
+export function passesBasicFilter(data) {
+  const ofRatio = data.orderflow?.ratio || data.ofRatio || 1;
+  const oiChange = data.oiChange || data.openInterest?.change || 0;
+  
+  if (data.score < 35) return false;
+  if ((data.volumeSpike || 0) < 1.0) return false;
+  
   return true;
 }
 
@@ -88,6 +111,7 @@ export function getAdaptiveStats() {
     scoreThreshold: adaptiveState.scoreThreshold,
     confluenceThreshold: adaptiveState.confluenceThreshold,
     confidenceThreshold: adaptiveState.confidenceThreshold,
-    currentSignals: adaptiveState.currentSignals
+    currentSignals: adaptiveState.currentSignals,
+    mode: adaptiveState.mode
   };
 }

@@ -18,38 +18,38 @@ export class PrePumpDetector {
     let score = 0;
     const reasons = [];
 
-    if (oiChange > 3 && Math.abs(priceChange) < 1) {
+    if (oiChange > 2 && Math.abs(priceChange) < 2) {
       score += 2;
       reasons.push('OI buildup');
     }
 
-    if (orderflow > 1.2 && Math.abs(priceChange) < 1) {
+    if (orderflow > 1.2 && Math.abs(priceChange) < 2) {
       score += 2;
       reasons.push('Stealth accumulation');
     }
 
-    if (fundingRate < -0.01) {
+    if (fundingRate < -0.005) {
       score += 1;
       reasons.push('Short squeeze setup');
     }
 
-    if (volumeSpike > 1.5) {
+    if (volumeSpike > 1.3) {
       score += 1;
       reasons.push('Volume rising');
     }
 
-    if (imbalance > 1.3) {
+    if (imbalance > 1.2) {
       score += 1;
       reasons.push('Bid dominance');
     }
 
-    if (momentum > 0.05 && Math.abs(priceChange) < 2) {
+    if (momentum > 0.03 && Math.abs(priceChange) < 3) {
       score += 1;
       reasons.push('Momentum building');
     }
 
-    const isPrePump = score >= 4;
-    const isBuilding = score >= 3;
+    const isPrePump = score >= 3;
+    const isBuilding = score >= 2;
 
     this.symbolStates.set(symbol, {
       isPrePump,

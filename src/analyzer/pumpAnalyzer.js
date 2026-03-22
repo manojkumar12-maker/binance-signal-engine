@@ -605,7 +605,7 @@ class PumpAnalyzer {
       return null;
     }
     
-    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4) {
+    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 3) {
       console.log(`🟣 PRE-PUMP 🚀: ${symbol} | Score=${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x | Funding:${(fundingRate * 100).toFixed(3)}%`);
       console.log(`   Reasons: ${prePumpResult.reasons.join(' | ')}`);
       const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'PRE_PUMP') };
@@ -631,8 +631,8 @@ class PumpAnalyzer {
       }
     }
 
-    if (enhancedResult.tier === 'EARLY' && enhancedResult.confidence >= 65 && !enhancedResult.isFakePump) {
-      if (priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 6)) {
+    if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 50) && !enhancedResult.isFakePump) {
+      if (priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 8)) {
         console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
         const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
         incrementSignalCount();

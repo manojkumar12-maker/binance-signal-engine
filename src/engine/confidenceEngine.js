@@ -3,30 +3,30 @@ export function calculateConfidence(data) {
   
   const { score, volumeSpike, momentum, imbalance, priceChange, trend, orderflow, oiChange } = data;
 
-  if (!score || score < 30) return 0;
+  if (!score || score < 20) return 0;
 
   confidence += (score || 0) * 0.5;
-  confidence += Math.min(volumeSpike || 0, 3) * 8;
-  confidence += Math.min(Math.max(momentum || 0, 0), 0.1) * 50;
+  confidence += Math.min(volumeSpike || 0, 3) * 6;
+  confidence += Math.min(Math.max(momentum || 0, 0), 0.1) * 40;
   
   if (orderflow && orderflow > 1) {
-    confidence += Math.min(orderflow - 1, 1) * 20;
+    confidence += Math.min(orderflow - 1, 1) * 15;
   }
   
   if (oiChange) {
-    confidence += Math.min(oiChange, 5) * 3;
+    confidence += Math.min(Math.abs(oiChange), 5) * 2;
   }
   
   if (imbalance) {
-    confidence += Math.min(imbalance * 5, 15);
+    confidence += Math.min(imbalance * 4, 12);
   }
 
   if (trend === 'UP' || trend === 'BULLISH') {
     confidence += 5;
   }
 
-  if (priceChange > 10) confidence -= 15;
-  if (momentum < 0) confidence -= 10;
+  if (priceChange > 10) confidence -= 10;
+  if (momentum < 0) confidence -= 5;
 
   return Math.max(0, Math.min(100, Math.round(confidence)));
 }

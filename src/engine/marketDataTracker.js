@@ -13,17 +13,33 @@ class MarketDataTracker {
     this.symbols = [];
     this.lastOIUpdate = new Map();
     this.lastFundingUpdate = new Map();
+    this.prevOIValues = new Map();
+    this.tradeCount = 0;
+    this.lastDebugLog = 0;
   }
 
   initialize(symbols) {
     this.symbols = symbols;
     console.log('📊 Market Data Tracker initialized');
+    
+    setInterval(() => {
+      this.resetOrderflowVolumes();
+    }, 30000);
+  }
+
+  resetOrderflowVolumes() {
+    for (const [symbol, data] of this.orderflowHistory.entries()) {
+      data.buy = 0;
+      data.sell = 0;
+    }
   }
 
   handleTrade(trade) {
     const symbol = trade.symbol;
-    const qty = trade.quantity;
+    const qty = parseFloat(trade.quantity) || 0;
     const isBuyerMaker = trade.isBuyerMaker;
+
+    if (!qty || isNaN(qty)) return;
 
     if (!this.orderflowHistory.has(symbol)) {
       this.orderflowHistory.set(symbol, { buy: 0, sell: 0, trades: [], lastCleanup: Date.now() });
@@ -38,36 +54,43 @@ class MarketDataTracker {
     }
     
     data.trades.push({ qty, isBuyerMaker, time: Date.now() });
+    this.tradeCount++;
     
-    const now = Date.now();
-    if (now - data.lastCleanup > 60000 || data.trades.length > 200) {
-      const windowStart = now - 60000;
-      data.trades = data.trades.filter(t => t.time > windowStart);
-      
-      data.buy = 0;
-      data.sell = 0;
-      data.trades.forEach(t => {
-        if (t.isBuyerMaker) data.sell += t.qty;
-        else data.buy += t.qty;
-      });
-      
-      data.lastCleanup = now;
+    if (data.trades.length > 500) {
+      data.trades = data.trades.slice(-500);
+    }
+
+    if (this.tradeCount % 10000 === 0) {
+      const now = Date.now();
+      if (now - this.lastDebugLog > 60000) {
+        const totalSymbols = this.orderflowHistory.size;
+        const activeSymbols = Array.from(this.orderflowHistory.values()).filter(d => d.trades.length > 0).length;
+        console.log(`📊 Trades: ${this.tradeCount} | Symbols tracking: ${totalSymbols} | Active: ${activeSymbols}`);
+        this.lastDebugLog = now;
+      }
     }
   }
 
   getOrderflowRatio(symbol) {
     const data = this.orderflowHistory.get(symbol);
-    if (!data || data.trades.length === 0) return 1;
-    return data.buy / (data.sell || 1);
+    if (!data) return 1;
+    const total = data.buy + data.sell;
+    if (total === 0) return 1;
+    return data.buy / data.sell;
   }
 
   getOrderflowData(symbol) {
     const data = this.orderflowHistory.get(symbol);
-    if (!data || data.trades.length === 0) {
+    if (!data) {
       return { ratio: 1, buyVolume: 0, sellVolume: 0, pressure: 'NEUTRAL', tradeCount: 0 };
     }
     
-    const ratio = data.buy / (data.sell || 1);
+    const total = data.buy + data.sell;
+    if (total === 0) {
+      return { ratio: 1, buyVolume: 0, sellVolume: 0, pressure: 'NEUTRAL', tradeCount: data.trades.length };
+    }
+    
+    const ratio = data.buy / data.sell;
     let pressure = 'NEUTRAL';
     
     if (ratio > 1.6) pressure = 'EXTREME_BUY';
@@ -87,7 +110,7 @@ class MarketDataTracker {
 
   async updateOpenInterest(symbol) {
     const lastUpdate = this.lastOIUpdate.get(symbol) || 0;
-    if (Date.now() - lastUpdate < 60000) return;
+    if (Date.now() - lastUpdate < 15000) return;
 
     try {
       const response = await axios.get(
@@ -101,16 +124,17 @@ class MarketDataTracker {
         }
       );
 
-      if (response.data && response.data.length >= 2) {
+      if (response.data && response.data.length >= 1) {
         const current = parseFloat(response.data[response.data.length - 1].sumOpenInterest);
-        const previousOI = this.openInterest.get(symbol);
-        const prevValue = previousOI?.current || current;
+        const prevOI = this.prevOIValues.get(symbol) || current;
         
-        const change = prevValue > 0 ? ((current - prevValue) / prevValue) * 100 : 0;
+        const change = prevOI > 0 ? ((current - prevOI) / prevOI) * 100 : 0;
+        
+        this.prevOIValues.set(symbol, current);
         
         this.openInterest.set(symbol, {
           current,
-          previous: prevValue,
+          previous: prevOI,
           change,
           timestamp: Date.now()
         });
