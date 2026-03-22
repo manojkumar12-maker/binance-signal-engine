@@ -1,25 +1,20 @@
 export function calculateConfidence(data) {
+  const { score = 0, volumeSpike = 0, momentum = 0, imbalance = 1, priceChange = 0, trend = 'DOWN', orderflow = 1, oiChange = 0 } = data;
+
+  if (!score || score < 0) return 0;
+
   let confidence = 0;
-  
-  const { score, volumeSpike, momentum, imbalance, priceChange, trend, orderflow, oiChange } = data;
 
-  if (!score || score < 20) return 0;
-
-  confidence += (score || 0) * 0.5;
-  confidence += Math.min(volumeSpike || 0, 3) * 6;
-  confidence += Math.min(Math.max(momentum || 0, 0), 0.1) * 40;
+  confidence += score * 0.5;
+  confidence += Math.min(volumeSpike, 3) * 6;
+  confidence += Math.min(Math.max(momentum, 0), 0.1) * 40;
   
   if (orderflow && orderflow > 1) {
     confidence += Math.min(orderflow - 1, 1) * 15;
   }
   
-  if (oiChange) {
-    confidence += Math.min(Math.abs(oiChange), 5) * 2;
-  }
-  
-  if (imbalance) {
-    confidence += Math.min(imbalance * 4, 12);
-  }
+  confidence += Math.min(Math.abs(oiChange), 5) * 2;
+  confidence += Math.min(imbalance * 4, 12);
 
   if (trend === 'UP' || trend === 'BULLISH') {
     confidence += 5;
@@ -82,8 +77,8 @@ export function analyzeSignal(data) {
     !fakePump;
 
   const shouldGenerateSignal = 
-    classification.action !== 'REJECT' &&
-    !fakePump;
+    classification.action !== 'REJECT' ||
+    confluencePassed;
 
   const confluenceCount = [data.volumeSpike > 1.5, data.momentum > 0.05, data.imbalance > 1.2, data.trend === 'UP', data.orderflow > 1.1, data.oiChange > 1].filter(Boolean).length;
 

@@ -168,8 +168,10 @@ class BinanceWebSocketManager {
   connectTradeStream() {
     if (!this.symbols || this.symbols.length === 0) return;
 
-    const chunkSize = 500;
+    const chunkSize = 100;
     const chunks = this.chunkArray(this.symbols, chunkSize);
+    
+    console.log(`📡 Connecting trade stream: ${this.symbols.length} symbols in ${chunks.length} chunks (${chunkSize} each)`);
     
     chunks.forEach((chunk, index) => {
       setTimeout(() => {
@@ -179,7 +181,7 @@ class BinanceWebSocketManager {
         const tradeWs = new WebSocket(wsUrl);
         
         tradeWs.on('open', () => {
-          console.log(`✅ Trade stream ${index + 1}/${chunks.length} connected`);
+          console.log(`✅ Trade stream ${index + 1}/${chunks.length} connected (${chunk.length} symbols)`);
         });
         
         tradeWs.on('message', (data) => {
@@ -194,10 +196,12 @@ class BinanceWebSocketManager {
         });
         
         tradeWs.on('close', () => {
+          console.log(`⚠️ Trade stream ${index + 1} closed, reconnecting...`);
           setTimeout(() => this.connectTradeStream(), 5000);
         });
         
-        tradeWs.on('error', () => {
+        tradeWs.on('error', (err) => {
+          console.error(`❌ Trade stream ${index + 1} error: ${err.message}`);
           tradeWs.close();
         });
       }, index * 2000);
@@ -212,8 +216,13 @@ class BinanceWebSocketManager {
       isBuyerMaker: trade.m,
       timestamp: trade.T
     };
-    
+
     this.callbacks.trade.forEach(cb => cb(tradeData));
+
+    this.tradeCount = (this.tradeCount || 0) + 1;
+    if (this.tradeCount % 10000 === 0) {
+      console.log(`📊 Trades received: ${this.tradeCount} (${Object.keys(this.tickers).length} symbols)`);
+    }
   }
 
   onTicker(callback) {

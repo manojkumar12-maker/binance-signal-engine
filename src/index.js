@@ -14,6 +14,15 @@ import { orderflowTracker } from './engine/orderflowTracker.js';
 import { oiTracker } from './engine/oiTracker.js';
 import { fundingService } from './engine/fundingService.js';
 
+process.on('uncaughtException', (err) => {
+  console.error('🔥 UNCAUGHT EXCEPTION:', err.message);
+  console.error(err.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 UNHANDLED REJECTION:', reason);
+});
+
 class SignalEngine {
   constructor() {
     this.stats = {
@@ -73,7 +82,7 @@ class SignalEngine {
 
     setInterval(() => {
       orderflowTracker.reset();
-    }, 4000);
+    }, 60000);
 
     setInterval(async () => {
       const topSymbols = wsManager.symbols.slice(0, 30);

@@ -519,12 +519,19 @@ class PumpAnalyzer {
   }
 
   determineTier(symbol, analysis) {
+    if (!analysis) return null;
     let { score, priceChange, volumeSpike, momentum, orderbookImbalance } = analysis;
+
+    if (score === undefined || score === null || isNaN(score)) score = 0;
+    if (priceChange === undefined || priceChange === null) priceChange = 0;
+    if (volumeSpike === undefined || volumeSpike === null) volumeSpike = 0;
+    if (momentum === undefined || momentum === null) momentum = 0;
+    if (orderbookImbalance === undefined || orderbookImbalance === null) orderbookImbalance = 1;
 
     const orderflowData = orderflowTracker.getOrderflowData(symbol);
     const oiData = oiTracker.getOIData(symbol);
     const fundingData = fundingService.getFundingData(symbol);
-    const liqData = liquidationEngine.analyze(symbol, analysis.entryPrice);
+    const liqData = liquidationEngine.analyze(symbol, analysis.entryPrice || 0);
     const ofRatio = orderflowData?.ratio || 1;
     const oiChange = oiData?.change || 0;
     const fundingRate = fundingData?.rate || 0;
@@ -555,7 +562,7 @@ class PumpAnalyzer {
     const hasScore = score >= 35;
 
     if (!hasScore) {
-      console.log(`❌ ${symbol} KILL: Score=${score.toFixed(1)} < 35`);
+      console.log(`❌ ${symbol} KILL: Score=${(score || 0).toFixed(1)} < 35`);
       return null;
     }
 
@@ -564,11 +571,15 @@ class PumpAnalyzer {
       return null;
     }
 
-    const oiPass = hasOI || hasGoodVolume || hasGoodOF;
-    const overallStrength = score + (confluence * 5) + (hasGoodVolume ? 10 : 0) + (hasGoodOF ? 5 : 0);
+    if (score === undefined || score === null || isNaN(score)) {
+      score = 0;
+    }
 
-    if (overallStrength < 40) {
-      console.log(`❌ ${symbol} KILL: Strength=${overallStrength.toFixed(0)} (Score=${score.toFixed(0)} Conf=${confluence} Vol=${volumeSpike.toFixed(1)}x OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}%)`);
+    const oiPass = hasOI || hasGoodVolume || hasGoodOF;
+    const overallStrength = (score || 0) + (confluence * 5) + (hasGoodVolume ? 10 : 0) + (hasGoodOF ? 5 : 0);
+
+    if (overallStrength < 35) {
+      console.log(`❌ ${symbol} KILL: Strength=${(overallStrength || 0).toFixed(0)} (Score=${(score || 0).toFixed(0)} Conf=${confluence} Vol=${(volumeSpike || 0).toFixed(1)}x OF=${(ofRatio || 1).toFixed(2)} OI=${(oiChange || 0).toFixed(1)}%)`);
       return null;
     }
 
