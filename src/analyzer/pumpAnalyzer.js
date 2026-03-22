@@ -176,7 +176,9 @@ class PumpAnalyzer {
   }
 
   updateHistory(symbol, ticker) {
+    if (!symbol || !ticker) return;
     const { price, quoteVolume, high, low } = ticker;
+    if (!price || price <= 0) return;
     const now = Date.now();
 
     if (!this.priceHistory.has(symbol)) {
@@ -568,12 +570,17 @@ class PumpAnalyzer {
     };
     const prePumpResult = prePumpDetector.analyze(symbol, prePumpData);
 
+    const HARD_PUMP_FILTERS = priceChange >= 3 && volumeSpike >= 5 && ofRatio >= 1.5 && Math.abs(oiChange) >= 0.3;
+    if (!HARD_PUMP_FILTERS && Math.random() < 0.01) {
+      console.log(`❌ ${symbol} → HardFilter: PC=${priceChange.toFixed(1)}% Vol=${volumeSpike.toFixed(1)}x OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}%`);
+    }
+
     let confluence = 0;
-    if (volumeSpike > 1.5) confluence++;
-    if (ofRatio > 1.1) confluence++;
-    if (oiChange > 0.5) confluence++;
-    if (momentum > 0.05) confluence++;
-    if (priceChange > 0.5) confluence++;
+    if (volumeSpike > 3) confluence++;
+    if (ofRatio > 1.3) confluence++;
+    if (oiChange > 1) confluence++;
+    if (momentum > 0.1) confluence++;
+    if (priceChange > 3) confluence++;
     confluence = Math.min(confluence, 5);
 
     const hasOI = Math.abs(oiChange) > 0.1;
@@ -661,21 +668,23 @@ class PumpAnalyzer {
       return this.validateRiskReward(ex.entry, ex.sl, ex.tp1) && this.validateMinimumMove(ex.entry, ex.tp3);
     };
 
-    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 2 && !isFilteredSymbol) {
+    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) {
         if (Math.random() < 0.01) console.log(`⚠️ ${symbol} PRE_PUMP rejected: R:R < 1.0 or move < 0.5%`);
         return null;
       }
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x`);
+      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
+      const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | Score:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI:${oiChange.toFixed(1)}% | Move:${movePercent}%`);
       console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
-      const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP') };
+      const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: ex };
       this.signalCounts.PRE_PUMP++;
       incrementSignalCount();
       return signal;
     }
     
     if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 70)) {
-      if (priceChange >= (tiers.SNIPER?.priceChangeMin || 1.5) && priceChange <= (tiers.SNIPER?.priceChangeMax || 10)) {
+      if (priceChange >= 3 && volumeSpike >= 5 && ofRatio >= 1.8) {
         if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) {
           if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER rejected: R:R < 1.0 or move < 0.5%`);
           return null;
@@ -690,7 +699,7 @@ class PumpAnalyzer {
     }
 
     if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 55)) {
-      if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 1) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 12)) {
+      if (priceChange >= 2 && volumeSpike >= 3 && ofRatio >= 1.5) {
         if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) {
           if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED rejected: R:R < 1.0 or move < 0.5%`);
           return null;
@@ -704,8 +713,8 @@ class PumpAnalyzer {
       }
     }
 
-    if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 35) && !enhancedResult.isFakePump) {
-      if (priceChange >= (tiers.EARLY?.priceChangeMin || 0.5) && priceChange <= (tiers.EARLY?.priceChangeMax || 12)) {
+    if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 40) && !enhancedResult.isFakePump) {
+      if (priceChange >= 1.5 && volumeSpike >= 2 && ofRatio >= 1.2) {
         if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) {
           if (Math.random() < 0.01) console.log(`⚠️ ${symbol} EARLY rejected: R:R < 1.0 or move < 0.5%`);
           return null;

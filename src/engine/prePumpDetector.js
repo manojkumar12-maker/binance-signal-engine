@@ -18,38 +18,38 @@ export class PrePumpDetector {
     let score = 0;
     const reasons = [];
 
-    if (oiChange > 1 && Math.abs(priceChange) < 3) {
+    if (oiChange > 2 && Math.abs(priceChange) < 3) {
       score += 2;
       reasons.push('OI buildup');
     }
 
-    if (orderflow > 1.1 && Math.abs(priceChange) < 3) {
+    if (orderflow > 1.3 && Math.abs(priceChange) < 3) {
       score += 2;
       reasons.push('Stealth accumulation');
     }
 
-    if (fundingRate < -0.003) {
+    if (fundingRate < -0.005) {
       score += 1;
       reasons.push('Short squeeze setup');
     }
 
-    if (volumeSpike > 1.2) {
+    if (volumeSpike > 2.5) {
       score += 1;
       reasons.push('Volume rising');
     }
 
-    if (imbalance > 1.1) {
+    if (imbalance > 1.3) {
       score += 1;
       reasons.push('Bid dominance');
     }
 
-    if (momentum > 0.02 && Math.abs(priceChange) < 4) {
+    if (momentum > 0.05 && Math.abs(priceChange) < 4) {
       score += 1;
       reasons.push('Momentum building');
     }
 
-    const isPrePump = score >= 2;
-    const isBuilding = score >= 1;
+    const isPrePump = score >= 4;
+    const isBuilding = score >= 3;
 
     this.symbolStates.set(symbol, {
       isPrePump,
@@ -71,7 +71,7 @@ export class PrePumpDetector {
   detectDirection(data) {
     const { orderflow, oiChange, priceChange, momentum } = data;
     
-    if (orderflow > 1.3 && oiChange > 2 && (priceChange > 0 || momentum > 0)) {
+    if (orderflow > 1.5 && oiChange > 2 && (priceChange > 0 || momentum > 0)) {
       return 'LONG';
     }
     
