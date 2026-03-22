@@ -49,9 +49,9 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id}
     
     try {
       await axios.post(
-        `https://api.telegram.org/bot${config.notifications.telegram.botToken}/sendMessage`,
+        `https://api.telegram.org/bot${config?.notifications?.telegram?.botToken}/sendMessage`,
         {
-          chat_id: config.notifications.telegram.chatId,
+          chat_id: config?.notifications?.telegram?.chatId,
           text,
           parse_mode: 'HTML'
         }

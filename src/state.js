@@ -2,6 +2,7 @@ export const state = {
   signals: [],
   lastSignalTime: {},
   activeSignals: new Set(),
+  strongCooldownSignals: new Set(),
   stats: {
     total: 0,
     early: 0,
@@ -20,6 +21,20 @@ export function canTrigger(symbol, cooldownMs = 5 * 60 * 1000) {
   }
   
   state.lastSignalTime[symbol] = now;
+  return true;
+}
+
+export function strongCanTrigger(symbol, cooldownMs = 5 * 60 * 1000) {
+  if (state.strongCooldownSignals.has(symbol)) {
+    return false;
+  }
+  
+  state.strongCooldownSignals.add(symbol);
+  
+  setTimeout(() => {
+    state.strongCooldownSignals.delete(symbol);
+  }, cooldownMs);
+  
   return true;
 }
 

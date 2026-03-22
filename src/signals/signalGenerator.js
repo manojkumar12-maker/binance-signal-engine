@@ -10,10 +10,10 @@ class SignalGenerator {
     this.accountBalance = config?.positionSizing?.accountSize || 10000;
   }
 
-  async generateSignal(analysis) {
+  async generateSignal(symbol, analysis) {
     if (!analysis || !analysis.type) return null;
 
-    const { type, score, priceChange, volumeSpike, momentum, factors, signals, atr, entryPrice, symbol, metadata } = analysis;
+    const { type, score, priceChange, volumeSpike, momentum, factors, signals, atr, entryPrice, metadata } = analysis;
     
     const signalEntry = entryPrice || (signals?.entry);
     const signalSL = signals?.sl;

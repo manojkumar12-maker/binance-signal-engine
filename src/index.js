@@ -8,7 +8,7 @@ import { orderBookAnalyzer } from './engine/orderBookAnalyzer.js';
 import { marketDataTracker } from './engine/marketDataTracker.js';
 import { tradeLogger } from './engine/tradeLogger.js';
 import { initDatabase, closeDatabase, createSignal as dbCreateSignal } from './database/db.js';
-import { state, canTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
+import { state, canTrigger, strongCanTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
 
 class SignalEngine {
   constructor() {
@@ -123,11 +123,11 @@ class SignalEngine {
         return;
       }
       
-      if (!canTrigger(ticker.symbol, 5 * 60 * 1000)) {
+      if (!strongCanTrigger(ticker.symbol, 5 * 60 * 1000)) {
         return;
       }
       
-      const signal = await signalGenerator.generateSignal(analysis);
+      const signal = await signalGenerator.generateSignal(ticker.symbol, analysis);
       
       if (signal) {
         addSignal(signal);

@@ -5,8 +5,8 @@ export function calculateConfidence(data) {
 
   if (!score || score < 30) return 0;
 
-  confidence += data.score * 0.4;
-  confidence += Math.min(data.volumeSpike * 15, 30);
+  confidence += data.score * 0.6;
+  confidence += Math.min(data.volumeSpike * 10, 25);
   confidence += Math.max((data.momentum * 100) * 0.2, 0);
   
   if (data.imbalance) {
@@ -80,13 +80,16 @@ export function analyzeSignal(data) {
     marketStatus.trending &&
     !fakePump;
 
+  const confluenceCount = [data.volumeSpike > 2, data.momentum > 0.1, data.imbalance > 1.3, data.trend === 'UP'].filter(Boolean).length;
+
   return {
     ...data,
     confidence,
+    confluence: Math.min(confluenceCount, 5),
     tier: classification.tier,
     action: classification.action,
     hasConfluence: confluencePassed,
-    confluenceCount: [data.volumeSpike > 2, data.momentum > 0.1, data.imbalance > 1.3, data.trend === 'UP'].filter(Boolean).length,
+    confluenceCount: Math.min(confluenceCount, 5),
     isTrending: marketStatus.trending,
     regime: marketStatus.regime,
     isFakePump: fakePump,
