@@ -130,7 +130,7 @@ ${factorsList}
 
     const update = {
       currentPrice,
-      unrealizedPnL: ((currentPrice - signal.entryPrice) / signal.entryPrice * 100).toFixed(2),
+      unrealizedPnL: parseFloat(((currentPrice - signal.entryPrice) / signal.entryPrice * 100).toFixed(2)),
       tpHit: [],
       slHit: false
     };

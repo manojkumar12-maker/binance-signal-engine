@@ -154,7 +154,8 @@ class BinanceWebSocketManager {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       console.log(`🔄 Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-      setTimeout(() => this.connect(), 3000 * this.reconnectAttempts);
+      const delay = Math.min(3000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
+      setTimeout(() => this.connect(), delay);
     } else {
       console.error('❌ Max reconnection attempts reached');
     }
