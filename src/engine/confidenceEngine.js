@@ -32,21 +32,21 @@ export function calculateConfidence(data) {
 }
 
 export function classifyByConfidence(confidence) {
-  if (confidence >= 80) return { tier: 'SNIPER', action: 'TRADE' };
-  if (confidence >= 70) return { tier: 'CONFIRMED', action: 'WATCH' };
-  if (confidence >= 40) return { tier: 'EARLY', action: 'WATCH' };
+  if (confidence >= 75) return { tier: 'SNIPER', action: 'TRADE' };
+  if (confidence >= 60) return { tier: 'CONFIRMED', action: 'WATCH' };
+  if (confidence >= 35) return { tier: 'EARLY', action: 'WATCH' };
   return { tier: null, action: 'REJECT' };
 }
 
 export function hasConfluence(data) {
   let confluence = 0;
 
-  if (data.volumeSpike > 2) confluence++;
-  if (data.momentum > 0.1) confluence++;
-  if (data.imbalance > 1.3) confluence++;
+  if (data.volumeSpike > 1.5) confluence++;
+  if (data.momentum > 0.05) confluence++;
+  if (data.imbalance > 1.2) confluence++;
   if (data.trend === 'UP') confluence++;
 
-  return confluence >= 3;
+  return confluence >= 2;
 }
 
 export function isTrendingMarket(data) {
@@ -56,7 +56,7 @@ export function isTrendingMarket(data) {
 
 export function isFakePump(data) {
   const { volumeSpike, momentum } = data;
-  return volumeSpike > 3 && momentum < 0.05;
+  return volumeSpike > 5 && momentum < 0.03;
 }
 
 export function getSmartEntry(entryPrice, atr) {
@@ -79,16 +79,13 @@ export function analyzeSignal(data) {
 
   const shouldTrade = 
     classification.action !== 'REJECT' &&
-    confluencePassed &&
-    marketStatus.trending &&
     !fakePump;
 
   const shouldGenerateSignal = 
     classification.action !== 'REJECT' &&
-    marketStatus.trending &&
     !fakePump;
 
-  const confluenceCount = [data.volumeSpike > 2, data.momentum > 0.1, data.imbalance > 1.3, data.trend === 'UP'].filter(Boolean).length;
+  const confluenceCount = [data.volumeSpike > 1.5, data.momentum > 0.05, data.imbalance > 1.2, data.trend === 'UP', data.orderflow > 1.1, data.oiChange > 1].filter(Boolean).length;
 
   return {
     ...data,

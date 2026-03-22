@@ -3,11 +3,11 @@ import { config } from '../../config/config.js';
 
 export class OITracker {
   constructor() {
-    this.prev = new Map();
-    this.current = new Map();
+    this.prevOI = new Map();
+    this.currentOI = new Map();
     this.changeCache = new Map();
     this.lastFetch = new Map();
-    this.fetchInterval = 15000;
+    this.fetchInterval = 20000;
   }
 
   async fetch(symbol) {
@@ -20,22 +20,34 @@ export class OITracker {
 
     try {
       const res = await axios.get(
-        `${config.binance.apiUrl}/fapi/v1/openInterest`,
+        `${config.binance.apiUrl}/futures/data/openInterestHist`,
         {
-          params: { symbol },
+          params: {
+            symbol,
+            period: '5m',
+            limit: 2
+          },
           timeout: 5000
         }
       );
 
-      const oi = parseFloat(res.data.openInterest);
-
-      if (isNaN(oi) || oi === 0) {
+      if (!res.data || res.data.length < 2) {
         return this.changeCache.get(symbol) || 0;
       }
 
-      this.current.set(symbol, oi);
+      const prevOIValue = parseFloat(res.data[0].sumOpenInterest);
+      const currOIValue = parseFloat(res.data[1].sumOpenInterest);
 
-      const change = this.calculateChange(symbol);
+      if (isNaN(prevOIValue) || isNaN(currOIValue) || prevOIValue === 0) {
+        return this.changeCache.get(symbol) || 0;
+      }
+
+      this.currentOI.set(symbol, currOIValue);
+      
+      const prevStored = this.prevOI.get(symbol) || prevOIValue;
+      const change = ((currOIValue - prevStored) / prevStored) * 100;
+
+      this.prevOI.set(symbol, currOIValue);
 
       this.changeCache.set(symbol, change);
       this.lastFetch.set(symbol, now);
@@ -44,26 +56,6 @@ export class OITracker {
     } catch (e) {
       return this.changeCache.get(symbol) || 0;
     }
-  }
-
-  calculateChange(symbol) {
-    const prev = this.prev.get(symbol);
-    const curr = this.current.get(symbol);
-
-    if (!prev || !curr) {
-      if (curr) {
-        this.prev.set(symbol, curr);
-      }
-      return 0;
-    }
-
-    if (prev === 0) return 0;
-
-    const change = ((curr - prev) / prev) * 100;
-
-    this.prev.set(symbol, curr);
-
-    return change;
   }
 
   async fetchBatch(symbols) {
@@ -80,12 +72,12 @@ export class OITracker {
   }
 
   getCurrent(symbol) {
-    return this.current.get(symbol) || 0;
+    return this.currentOI.get(symbol) || 0;
   }
 
   getOIData(symbol) {
-    const current = this.current.get(symbol) || 0;
-    const prev = this.prev.get(symbol) || current;
+    const current = this.currentOI.get(symbol) || 0;
+    const prev = this.prevOI.get(symbol) || current;
     const change = this.changeCache.get(symbol) || 0;
 
     let trend = 'NEUTRAL';
@@ -122,8 +114,8 @@ export class OITracker {
   }
 
   reset() {
-    this.prev.clear();
-    this.current.clear();
+    this.prevOI.clear();
+    this.currentOI.clear();
     this.changeCache.clear();
     this.lastFetch.clear();
   }

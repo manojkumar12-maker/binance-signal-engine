@@ -4,9 +4,10 @@ export class OrderflowTracker {
     this.lastReset = Date.now();
   }
 
-  handleTrade(symbol, trade) {
-    const qty = parseFloat(trade.q) || 0;
-    if (!qty) return;
+  handleTrade(trade) {
+    const symbol = trade.symbol;
+    const qty = parseFloat(trade.quantity) || parseFloat(trade.q) || 0;
+    if (!qty || !symbol) return;
 
     if (!this.data.has(symbol)) {
       this.data.set(symbol, {
@@ -19,13 +20,13 @@ export class OrderflowTracker {
 
     const d = this.data.get(symbol);
 
-    if (trade.m) {
+    if (trade.isBuyerMaker || trade.m) {
       d.sell += qty;
     } else {
       d.buy += qty;
     }
 
-    d.trades.push({ qty, m: trade.m, time: Date.now() });
+    d.trades.push({ qty, isBuyerMaker: trade.isBuyerMaker || trade.m, time: Date.now() });
     d.lastUpdate = Date.now();
 
     if (d.trades.length > 200) {

@@ -25,7 +25,7 @@ class PumpAnalyzer {
     this.highPrices = new Map();
     this.lowPrices = new Map();
     this.lastSignalTime = new Map();
-    this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, lastReset: Date.now() };
+    this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, PRE_PUMP: 0, lastReset: Date.now() };
     this.volumeRateHistory = new Map();
     this.quoteVolumeHistory = new Map();
     this.orderbookImbalance = new Map();
@@ -537,23 +537,26 @@ class PumpAnalyzer {
     const prePumpResult = prePumpDetector.analyze(symbol, prePumpData);
 
     let confluence = 0;
-    if (volumeSpike > 2) confluence++;
-    if (ofRatio > 1.2) confluence++;
-    if (oiChange > 2) confluence++;
+    if (volumeSpike > 1.5) confluence++;
+    if (ofRatio > 1.1) confluence++;
+    if (oiChange > 1) confluence++;
     if (momentum > 0.05) confluence++;
-    if (priceChange > 2) confluence++;
+    if (priceChange > 1) confluence++;
     confluence = Math.min(confluence, 5);
 
     if (
-      ofRatio < 1.1 ||
-      oiChange < 1.5 ||
-      volumeSpike < 1.5 ||
-      confluence < 2
+      ofRatio < 0.8 ||
+      oiChange < 0.5 ||
+      volumeSpike < 1.0 ||
+      confluence < 1
     ) {
+      if (ofRatio < 0.8 || oiChange < 0.5 || volumeSpike < 1.0) {
+        console.log(`❌ ${symbol} KILL: OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}% Vol=${volumeSpike.toFixed(1)}x Conf=${confluence}`);
+      }
       return null;
     }
 
-    if (score < 45) return null;
+    if (score < 40) return null;
 
     const confidenceData = {
       score,
@@ -617,10 +620,11 @@ class PumpAnalyzer {
       return null;
     }
     
-    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 3) {
+    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 2) {
       console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | OI:${oiChange?.toFixed(1) || '0.0'}% | OF:${ofRatio?.toFixed(2) || '1.00'} | Vol:${volumeSpike?.toFixed(1) || '0'}x | Fund:${(fundingRate * 100).toFixed(3)}%`);
       console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
       const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'PRE_PUMP') };
+      this.signalCounts.PRE_PUMP++;
       incrementSignalCount();
       return signal;
     }
@@ -643,8 +647,8 @@ class PumpAnalyzer {
       }
     }
 
-    if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 50) && !enhancedResult.isFakePump) {
-      if (priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 8)) {
+    if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 45) && !enhancedResult.isFakePump) {
+      if (priceChange >= (tiers.EARLY?.priceChangeMin || 0.5) && priceChange <= (tiers.EARLY?.priceChangeMax || 10)) {
         console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
         const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
         incrementSignalCount();
@@ -739,7 +743,7 @@ class PumpAnalyzer {
       if (totalSignals === 0) {
         console.log(`\n⚠️ Auto-relax: No signals in ${elapsed.toFixed(0)}min, reducing thresholds...`);
       }
-      this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, lastReset: now };
+      this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, PRE_PUMP: 0, lastReset: now };
     }
   }
 

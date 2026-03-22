@@ -98,6 +98,16 @@ class SignalEngine {
       this.showStats();
     }, 60000);
 
+    setInterval(() => {
+      const topSymbols = wsManager.symbols.slice(0, 5);
+      const samples = topSymbols.map(sym => {
+        const of = orderflowTracker.getOrderflow(sym);
+        const oi = oiTracker.getChange(sym);
+        return `${sym}:OF=${of.toFixed(2)}|OI=${oi.toFixed(1)}%`;
+      }).join(' | ');
+      console.log(`📊 DATA CHECK: ${samples}`);
+    }, 30000);
+
     console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
   }
 
