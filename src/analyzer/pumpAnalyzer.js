@@ -487,6 +487,31 @@ class PumpAnalyzer {
   determineTier(symbol, analysis) {
     let { score, priceChange, volumeSpike, momentum, orderbookImbalance } = analysis;
 
+    const orderflowData = marketDataTracker.getOrderflowData(symbol);
+    const oiData = marketDataTracker.getOpenInterestData(symbol);
+    const ofRatio = orderflowData.ratio || 1;
+    const oiChange = oiData.change || 0;
+
+    let confluence = 0;
+    if (volumeSpike > 2) confluence++;
+    if (ofRatio > 1.2) confluence++;
+    if (oiChange > 2) confluence++;
+    if (momentum > 0.05) confluence++;
+    if (priceChange > 2) confluence++;
+    confluence = Math.min(confluence, 5);
+
+    if (
+      ofRatio < 1.2 &&
+      oiChange < 2 &&
+      volumeSpike < 2 &&
+      confluence < 2
+    ) {
+      return null;
+    }
+
+    if (score < 50) return null;
+    if (confluence < 2) return null;
+
     const confidenceData = {
       score,
       volumeSpike,
@@ -502,19 +527,15 @@ class PumpAnalyzer {
 
     const result = analyzeSignal(confidenceData);
     
-    let enhancedResult = { ...result };
+    let enhancedResult = { ...result, confluence };
     
     if (config.advancedFeatures?.orderflow?.enabled || config.advancedFeatures?.openInterest?.enabled) {
       const enhanced = marketDataTracker.getEnhancedConfidence(result.confidence, symbol, priceChange);
       enhancedResult = {
         ...result,
-        confidence: enhanced.confidence,
-        bonuses: enhanced.bonuses,
-        penalties: enhanced.penalties,
-        orderflow: enhanced.orderflow,
-        openInterest: enhanced.openInterest,
-        funding: enhanced.funding,
-        regime: enhanced.regime
+        ...enhanced,
+        confluence,
+        confidence: enhanced.confidence
       };
     }
 
@@ -530,18 +551,14 @@ class PumpAnalyzer {
     
     if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 80)) {
       if (priceChange >= (tiers.SNIPER?.priceChangeMin || 2) && priceChange <= (tiers.SNIPER?.priceChangeMax || 8)) {
-        const ofRatio = enhancedResult.orderflow?.ratio || 1;
-        const oiChange = enhancedResult.openInterest?.change || 0;
-        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
+        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
         return { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'SNIPER') };
       }
     }
 
     if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confluenceCount >= 3 && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 65)) {
       if (priceChange >= (tiers.CONFIRMED?.priceChangeMin || 2) && priceChange <= (tiers.CONFIRMED?.priceChangeMax || 10)) {
-        const ofRatio = enhancedResult.orderflow?.ratio || 1;
-        const oiChange = enhancedResult.openInterest?.change || 0;
-        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
+        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
         return { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'CONFIRMED') };
       }
     }
@@ -549,9 +566,7 @@ class PumpAnalyzer {
     if (enhancedResult.tier === 'EARLY' || (enhancedResult.confidence >= 40 && !enhancedResult.isFakePump)) {
       const tierType = enhancedResult.tier === 'EARLY' ? 'EARLY' : (enhancedResult.confidence >= 50 ? 'EARLY' : null);
       if (tierType && priceChange >= (tiers.EARLY?.priceChangeMin || 1) && priceChange <= (tiers.EARLY?.priceChangeMax || 6)) {
-        const ofRatio = enhancedResult.orderflow?.ratio || 1;
-        const oiChange = enhancedResult.openInterest?.change || 0;
-        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}%`);
+        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | Score=${score?.toFixed(0) || 'N/A'} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | OI:${oiChange?.toFixed(1) || '0.0'}% | Confluence:${confluence}`);
         return { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: this.generateEntryExit(analysis.entryPrice, analysis.atr, 'EARLY') };
       }
     }

@@ -5,21 +5,25 @@ import { config } from '../../config/config.js';
 class BinanceWebSocketManager {
   constructor() {
     this.ws = null;
+    this.tradeWs = null;
     this.tickers = new Map();
     this.callbacks = {
       ticker: [],
       kline: [],
-      pump: []
+      pump: [],
+      trade: []
     };
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
     this.pingInterval = null;
+    this.tradePingInterval = null;
   }
 
   async initialize() {
     console.log('🔌 Initializing Binance WebSocket connection...');
     await this.fetchAllSymbols();
     this.connect();
+    this.connectTradeStream();
   }
 
   async fetchAllSymbols() {
@@ -161,8 +165,63 @@ class BinanceWebSocketManager {
     }
   }
 
+  connectTradeStream() {
+    if (!this.symbols || this.symbols.length === 0) return;
+
+    const chunkSize = 500;
+    const chunks = this.chunkArray(this.symbols, chunkSize);
+    
+    chunks.forEach((chunk, index) => {
+      setTimeout(() => {
+        const streams = chunk.map(s => `${s.toLowerCase()}@trade`);
+        const wsUrl = `wss://fstream.binance.com/stream?streams=${streams.join('/')}`;
+        
+        const tradeWs = new WebSocket(wsUrl);
+        
+        tradeWs.on('open', () => {
+          console.log(`✅ Trade stream ${index + 1}/${chunks.length} connected`);
+        });
+        
+        tradeWs.on('message', (data) => {
+          try {
+            const message = JSON.parse(data);
+            if (message.stream && message.data) {
+              this.handleTrade(message.data);
+            }
+          } catch (error) {
+            // Silent fail
+          }
+        });
+        
+        tradeWs.on('close', () => {
+          setTimeout(() => this.connectTradeStream(), 5000);
+        });
+        
+        tradeWs.on('error', () => {
+          tradeWs.close();
+        });
+      }, index * 2000);
+    });
+  }
+
+  handleTrade(trade) {
+    const tradeData = {
+      symbol: trade.s,
+      price: parseFloat(trade.p),
+      quantity: parseFloat(trade.q),
+      isBuyerMaker: trade.m,
+      timestamp: trade.T
+    };
+    
+    this.callbacks.trade.forEach(cb => cb(tradeData));
+  }
+
   onTicker(callback) {
     this.callbacks.ticker.push(callback);
+  }
+
+  onTrade(callback) {
+    this.callbacks.trade.push(callback);
   }
 
   onPump(callback) {

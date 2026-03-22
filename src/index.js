@@ -54,12 +54,22 @@ class SignalEngine {
       this.processTicker(ticker);
     });
 
+    wsManager.onTrade((trade) => {
+      marketDataTracker.handleTrade(trade);
+    });
+
     await wsManager.initialize();
     this.stats.symbolsMonitored = wsManager.symbols.length;
 
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
+
+    setInterval(async () => {
+      for (const symbol of wsManager.symbols.slice(0, 50)) {
+        await marketDataTracker.updateOpenInterest(symbol);
+      }
+    }, 60000);
 
     setInterval(() => {
       this.showStats();
