@@ -1,10 +1,9 @@
 import { config } from '../../config/config.js';
-import { autoTuner } from '../engine/autoTuner.js';
 import { orderBookAnalyzer } from '../engine/orderBookAnalyzer.js';
 import { marketDataTracker } from '../engine/marketDataTracker.js';
 import { tradeLogger } from '../engine/tradeLogger.js';
-import { analyzeSignal, getSmartEntry } from '../engine/confidenceEngine.js';
-import { adaptiveState, passesAdaptiveFilter, getRejectionReason, incrementSignalCount } from '../engine/adaptiveFilter.js';
+import { analyzeSignal } from '../engine/confidenceEngine.js';
+import { incrementSignalCount } from '../engine/adaptiveFilter.js';
 import { PrePumpDetector } from '../engine/prePumpDetector.js';
 import { LiquidationService } from '../engine/liquidationService.js';
 import { orderflowTracker } from '../engine/orderflowTracker.js';
@@ -293,13 +292,8 @@ class PumpAnalyzer {
       this.lastSignalEmit = Date.now();
       this.signalCounts[tier.type]++;
       this.checkAutoRelax();
-    } else {
-      if (Date.now() - this.lastSignalEmit > 60000) {
-        autoTuner.incrementNoSignal();
-      }
     }
     
-    autoTuner.tune();
     return this.selectTopSignals();
   }
 
@@ -621,7 +615,6 @@ class PumpAnalyzer {
     };
 
     const result = analyzeSignal(confidenceData);
-    
     let enhancedResult = { ...result, confluence, prePump: prePumpResult };
     
     if (liqData.signal && liqData.direction === 'UP') {
@@ -638,28 +631,17 @@ class PumpAnalyzer {
       enhancedResult.confidence -= 8;
     }
 
-    if (!enhancedResult.shouldGenerateSignal) {
-      if (Math.random() < 0.02 || enhancedResult.confidence > 20) {
-        console.log(`❌ ${symbol} → NoSignal: conf=${enhancedResult.confidence} tier=${enhancedResult.tier} fakePump=${enhancedResult.isFakePump} trending=${enhancedResult.isTrending}`);
-      }
-      return null;
-    }
     if (enhancedResult.isFakePump) return null;
 
-    const filterData = { score, confidence: enhancedResult.confidence, confluence, orderflow: ofRatio, oiChange, volumeSpike };
-    
-    if (!passesAdaptiveFilter(filterData)) {
-      const reasons = getRejectionReason(filterData);
-      if (adaptiveState.mode === 'RELAXED' || Math.random() < 0.05) {
-        console.log(`❌ ${symbol} → ${reasons.join(' | ')}`);
+    if (!enhancedResult.shouldGenerateSignal && confluence < 2 && prePumpResult.prePumpScore < 4) {
+      if (Math.random() < 0.01) {
+        console.log(`❌ ${symbol} → NoSignal: conf=${enhancedResult.confidence} tier=${enhancedResult.tier} confluence=${confluence}`);
       }
       return null;
     }
 
-    const tiers = config.signalTiers || {};
-    
-    const tradeDecision = tradeLogger.shouldTrade({ ...enhancedResult, symbol, type: enhancedResult.tier });
-    if (!tradeDecision.trade) {
+    if (priceChange > 15) {
+      if (Math.random() < 0.01) console.log(`❌ ${symbol} → LATE: priceChange=${priceChange.toFixed(1)}% > 15%`);
       return null;
     }
 
@@ -668,64 +650,48 @@ class PumpAnalyzer {
       return this.validateRiskReward(ex.entry, ex.sl, ex.tp1) && this.validateMinimumMove(ex.entry, ex.tp3);
     };
 
-    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
-      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) {
-        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} PRE_PUMP rejected: R:R < 1.0 or move < 0.5%`);
-        return null;
-      }
-      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
+    if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
+      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) return null;
+      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED');
       const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | Score:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI:${oiChange.toFixed(1)}% | Move:${movePercent}%`);
+      console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+      const signal = { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: ex };
+      this.signalCounts.CONFIRMED++;
+      incrementSignalCount();
+      return signal;
+    }
+
+    if (priceChange >= 5 && volumeSpike >= 3 && ofRatio >= 1.5 && priceChange <= 15) {
+      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) return null;
+      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER');
+      const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
+      console.log(`🔴 SNIPER ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+      const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: ex };
+      this.signalCounts.SNIPER++;
+      incrementSignalCount();
+      return signal;
+    }
+
+    if (priceChange >= 2 && volumeSpike >= 2 && priceChange <= 15) {
+      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) return null;
+      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
+      const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
+      console.log(`🟡 EARLY 👀: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+      const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: ex };
+      this.signalCounts.EARLY++;
+      incrementSignalCount();
+      return signal;
+    }
+
+    if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
+      if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) return null;
+      const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI:${oiChange.toFixed(1)}%`);
       console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
       const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: ex };
       this.signalCounts.PRE_PUMP++;
       incrementSignalCount();
       return signal;
-    }
-    
-    if (enhancedResult.tier === 'SNIPER' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.SNIPER?.confidenceThreshold || 70)) {
-      if (priceChange >= 3 && volumeSpike >= 5 && ofRatio >= 1.8) {
-        if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) {
-          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER rejected: R:R < 1.0 or move < 0.5%`);
-          return null;
-        }
-        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER');
-        const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
-        console.log(`🔴 SNIPER ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | Move:${movePercent}% | R:R=${ex.rr1?.toFixed(1)}`);
-        const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: ex };
-        incrementSignalCount();
-        return signal;
-      }
-    }
-
-    if (enhancedResult.tier === 'CONFIRMED' && enhancedResult.hasConfluence && enhancedResult.confidence >= (tiers.CONFIRMED?.confidenceThreshold || 55)) {
-      if (priceChange >= 2 && volumeSpike >= 3 && ofRatio >= 1.5) {
-        if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) {
-          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED rejected: R:R < 1.0 or move < 0.5%`);
-          return null;
-        }
-        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED');
-        const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
-        console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | Conf=${enhancedResult.confidence} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | Move:${movePercent}% | R:R=${ex.rr1?.toFixed(1)}`);
-        const signal = { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: ex };
-        incrementSignalCount();
-        return signal;
-      }
-    }
-
-    if ((enhancedResult.tier === 'EARLY' || enhancedResult.confidence >= 40) && !enhancedResult.isFakePump) {
-      if (priceChange >= 1.5 && volumeSpike >= 2 && ofRatio >= 1.2) {
-        if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) {
-          if (Math.random() < 0.01) console.log(`⚠️ ${symbol} EARLY rejected: R:R < 1.0 or move < 0.5%`);
-          return null;
-        }
-        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
-        const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
-        console.log(`🟡 EARLY 👀: ${symbol} | Conf=${enhancedResult.confidence} | PriceChg=${priceChange?.toFixed(1) || 0}% | Vol=${volumeSpike?.toFixed(1) || 0}x | OF:${ofRatio?.toFixed(2) || '1.00'} | Move:${movePercent}% | R:R=${ex.rr1?.toFixed(1)}`);
-        const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: ex };
-        incrementSignalCount();
-        return signal;
-      }
     }
 
     return null;

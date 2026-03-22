@@ -17,6 +17,9 @@ class BinanceWebSocketManager {
     this.maxReconnectAttempts = 10;
     this.pingInterval = null;
     this.tradePingInterval = null;
+    this.isReconnecting = false;
+    this.tradeStreamConnecting = false;
+    this.tradeStreamReady = false;
   }
 
   async initialize() {
@@ -83,6 +86,7 @@ class BinanceWebSocketManager {
     this.ws.on('close', () => {
       console.log('⚠️ WebSocket disconnected');
       this.stopPing();
+      this.isReconnecting = false;
       this.reconnect();
     });
 
@@ -155,17 +159,26 @@ class BinanceWebSocketManager {
   }
 
   reconnect() {
+    if (this.isReconnecting) return;
+    this.isReconnecting = true;
+    
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       console.log(`🔄 Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-      const delay = Math.min(3000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
-      setTimeout(() => this.connect(), delay);
+      const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts - 1), 15000);
+      setTimeout(() => {
+        this.isReconnecting = false;
+        this.connect();
+      }, delay);
     } else {
+      this.isReconnecting = false;
       console.error('❌ Max reconnection attempts reached');
     }
   }
 
   connectTradeStream() {
+    if (this.tradeStreamConnecting || this.tradeStreamReady) return;
+    this.tradeStreamConnecting = true;
     if (!this.symbols || this.symbols.length === 0) return;
 
     const chunkSize = 100;
@@ -181,6 +194,8 @@ class BinanceWebSocketManager {
         const tradeWs = new WebSocket(wsUrl);
         
         tradeWs.on('open', () => {
+          this.tradeStreamReady = true;
+          this.tradeStreamConnecting = false;
           console.log(`✅ Trade stream ${index + 1}/${chunks.length} connected (${chunk.length} symbols)`);
         });
         
@@ -197,7 +212,10 @@ class BinanceWebSocketManager {
         
         tradeWs.on('close', () => {
           console.log(`⚠️ Trade stream ${index + 1} closed, reconnecting...`);
-          setTimeout(() => this.connectTradeStream(), 5000);
+          this.tradeStreamReady = false;
+          setTimeout(() => {
+            this.connectTradeStream();
+          }, 2000);
         });
         
         tradeWs.on('error', (err) => {
@@ -247,6 +265,9 @@ class BinanceWebSocketManager {
 
   disconnect() {
     this.stopPing();
+    this.isReconnecting = false;
+    this.tradeStreamConnecting = false;
+    this.tradeStreamReady = false;
     if (this.ws) {
       this.ws.close();
     }

@@ -8,10 +8,12 @@ export class OITracker {
     this.changeCache = new Map();
     this.changeHistory = new Map();
     this.lastFetch = new Map();
-    this.fetchInterval = 12000;
+    this.fetchInterval = 10000;
+    this.trackedSymbols = new Set();
   }
 
   async fetch(symbol) {
+    if (!symbol) return 0;
     const now = Date.now();
     const lastFetch = this.lastFetch.get(symbol) || 0;
     
@@ -38,21 +40,24 @@ export class OITracker {
         return this.getChange(symbol);
       }
 
-      const prevStored = this.prevOI.get(symbol);
+      this.trackedSymbols.add(symbol);
+      this.currentOI.set(symbol, currOIValue);
       
-      if (prevStored && prevStored > 0) {
-        const change = ((currOIValue - prevStored) / prevStored) * 100;
-        this.changeCache.set(symbol, change);
-        this.addToHistory(symbol, change);
+      const prevStored = this.prevOI.get(symbol);
+      let change = 0;
+      
+      if (prevStored && prevStored > 0 && currOIValue > 0) {
+        change = ((currOIValue - prevStored) / prevStored) * 100;
       } else {
-        this.changeCache.set(symbol, 0);
+        change = 0;
       }
       
+      this.changeCache.set(symbol, change);
       this.prevOI.set(symbol, currOIValue);
-      this.currentOI.set(symbol, currOIValue);
       this.lastFetch.set(symbol, now);
+      this.addToHistory(symbol, change);
 
-      return this.changeCache.get(symbol) || 0;
+      return change;
     } catch (e) {
       return this.getChange(symbol);
     }
@@ -64,7 +69,7 @@ export class OITracker {
     }
     const history = this.changeHistory.get(symbol);
     history.push(change);
-    if (history.length > 10) history.shift();
+    if (history.length > 20) history.shift();
   }
 
   getAverageChange(symbol) {
@@ -80,14 +85,17 @@ export class OITracker {
   }
 
   getChange(symbol) {
+    if (!symbol) return 0;
     return this.changeCache.get(symbol) || 0;
   }
 
   getCurrent(symbol) {
+    if (!symbol) return 0;
     return this.currentOI.get(symbol) || 0;
   }
 
   getOIData(symbol) {
+    if (!symbol) return { current: 0, previous: 0, change: 0, avgChange: 0, trend: 'NEUTRAL' };
     const current = this.currentOI.get(symbol) || 0;
     const prev = this.prevOI.get(symbol) || current;
     const change = this.changeCache.get(symbol) || 0;
@@ -99,13 +107,7 @@ export class OITracker {
     else if (avgChange < -2) trend = 'STRONG_DECREASE';
     else if (avgChange < -0.5) trend = 'DECREASE';
 
-    return {
-      current,
-      previous: prev,
-      change,
-      avgChange,
-      trend
-    };
+    return { current, previous: prev, change, avgChange, trend };
   }
 
   getStats() {
@@ -113,7 +115,7 @@ export class OITracker {
     let negative = 0;
     let neutral = 0;
 
-    for (const symbol of this.changeHistory.keys()) {
+    for (const symbol of this.trackedSymbols) {
       const avg = this.getAverageChange(symbol);
       if (avg > 0.5) positive++;
       else if (avg < -0.5) negative++;
@@ -121,7 +123,7 @@ export class OITracker {
     }
 
     return {
-      tracked: this.changeHistory.size,
+      tracked: this.trackedSymbols.size,
       positive,
       negative,
       neutral
@@ -134,6 +136,7 @@ export class OITracker {
     this.changeCache.clear();
     this.changeHistory.clear();
     this.lastFetch.clear();
+    this.trackedSymbols.clear();
   }
 }
 
