@@ -391,7 +391,7 @@ class PumpAnalyzer {
     this.lastCycleProcess = now;
     
     if (ranked.length > 0) {
-      console.log(`🏆 SRE: ${ranked.length} signals ranked (max ${signalRankingEngine.maxActive}): ${ranked.map(s => `${s.type}:${s.symbol}(${s.rankScore?.toFixed(0)})`).join(' | ')}`);
+      console.log(`🏆 SRE: ${ranked.length} ranked: ${ranked.map(s => `${s.type}:${s.symbol}(${s.rankScore?.toFixed(0)})[${s.oiState || '?'}]`).join(' | ')}`);
     }
     
     return ranked;
@@ -582,6 +582,15 @@ class PumpAnalyzer {
     if (oiChange > 1) confluence++;
     if (momentum > 0.1) confluence++;
     if (priceChange > 3) confluence++;
+
+    const getOIStateLabel = (pc, oi) => {
+      if (pc > 0 && oi > 0.3) return '🚀 LONG';
+      if (pc > 0 && oi < -0.3) return '⚠️ SHORT_CVR';
+      if (pc < 0 && oi > 0.3) return '🔻 SHORT';
+      if (pc < 0 && oi < -0.3) return '⚠️ LONG_EXT';
+      return '⚪ NO_OI';
+    };
+    const oiStateLabel = getOIStateLabel(priceChange, oiChange);
     confluence = Math.min(confluence, 5);
 
     const hasOI = Math.abs(oiChange) > 0.1;
@@ -660,9 +669,8 @@ class PumpAnalyzer {
     if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED');
-      const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
-      console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
-      const signal = { symbol, type: 'CONFIRMED', score, ...enhancedResult, priority: 2, signalTime: Date.now(), signals: ex };
+      console.log(`🟢 CONFIRMED ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}] | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+      const signal = { symbol, type: 'CONFIRMED', score, ...enhancedResult, oiChange, priority: 2, signalTime: Date.now(), signals: ex };
       this.signalCounts.CONFIRMED++;
       incrementSignalCount();
       return signal;
@@ -671,9 +679,8 @@ class PumpAnalyzer {
     if (priceChange >= 5 && volumeSpike >= 3 && ofRatio >= 1.5 && priceChange <= 15) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER');
-      const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
-      console.log(`🔴 SNIPER ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
-      const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, priority: 1, signalTime: Date.now(), signals: ex };
+      console.log(`🔴 SNIPER ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}] | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+      const signal = { symbol, type: 'SNIPER', score, ...enhancedResult, oiChange, priority: 1, signalTime: Date.now(), signals: ex };
       this.signalCounts.SNIPER++;
       incrementSignalCount();
       return signal;
@@ -682,9 +689,8 @@ class PumpAnalyzer {
     if (priceChange >= 2 && volumeSpike >= 2 && priceChange <= 15) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
-      const movePercent = ((ex.tp3 - ex.entry) / ex.entry * 100).toFixed(1);
-      console.log(`🟡 EARLY 👀: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
-      const signal = { symbol, type: 'EARLY', score, ...enhancedResult, priority: 3, signalTime: Date.now(), signals: ex };
+      console.log(`🟡 EARLY 👀: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}] | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+      const signal = { symbol, type: 'EARLY', score, ...enhancedResult, oiChange, priority: 3, signalTime: Date.now(), signals: ex };
       this.signalCounts.EARLY++;
       incrementSignalCount();
       return signal;
@@ -693,9 +699,9 @@ class PumpAnalyzer {
     if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI:${oiChange.toFixed(1)}%`);
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}]`);
       console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
-      const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, priority: 0, signalTime: Date.now(), signals: ex };
+      const signal = { symbol, type: 'PRE_PUMP', score, ...enhancedResult, oiChange, priority: 0, signalTime: Date.now(), signals: ex };
       this.signalCounts.PRE_PUMP++;
       incrementSignalCount();
       return signal;

@@ -278,6 +278,17 @@
             color: #64748b;
         }
 
+        .signal-rank {
+            font-size: 13px;
+            font-weight: bold;
+            color: #fbbf24;
+        }
+
+        .signal-oi {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
         .signal-strength {
             display: flex;
             align-items: center;
@@ -570,6 +581,8 @@
                             </div>
                             <div class="signal-footer">
                                 <span class="signal-time">${new Date(signal.timestamp).toLocaleString()}</span>
+                                <div class="signal-rank" title="Rank Score">🏆 ${(signal.rankScore || 0).toFixed(0)}</div>
+                                <div class="signal-oi">OI: ${(signal.oiChange || 0).toFixed(1)}%</div>
                                 <div class="signal-strength">
                                     <div class="strength-bar">
                                         <div class="strength-fill" style="width: ${signal.metrics?.score || 0}%"></div>
