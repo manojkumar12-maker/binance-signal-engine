@@ -76,18 +76,17 @@ class SignalEngine {
     }, 4000);
 
     setInterval(async () => {
-      const topSymbols = wsManager.symbols.slice(0, 50);
+      const topSymbols = wsManager.symbols.slice(0, 30);
       for (const symbol of topSymbols) {
         await oiTracker.fetch(symbol);
         await fundingService.fetch(symbol);
       }
-    }, 15000);
-
-    setInterval(async () => {
-      for (const symbol of wsManager.symbols.slice(0, 50)) {
-        await marketDataTracker.updateOpenInterest(symbol);
+      const oiStats = oiTracker.getStats();
+      const updatedCount = Array.from(oiTracker.changeCache.values()).filter(v => v !== 0).length;
+      if (updatedCount > 0) {
+        console.log(`📊 OI Tracker: ${updatedCount} symbols with OI data`);
       }
-    }, 60000);
+    }, 15000);
 
     setInterval(() => {
       this.processCycleSignals();
@@ -103,10 +102,14 @@ class SignalEngine {
       const samples = topSymbols.map(sym => {
         const of = orderflowTracker.getOrderflow(sym);
         const oi = oiTracker.getChange(sym);
-        return `${sym}:OF=${of.toFixed(2)}|OI=${oi.toFixed(1)}%`;
+        const oiData = oiTracker.getOIData(sym);
+        const ofData = orderflowTracker.getOrderflowData(sym);
+        return `${sym}:OF=${of.toFixed(2)}(b=${ofData.buyVolume.toFixed(0)}s=${ofData.sellVolume.toFixed(0)})|OI=${oi.toFixed(1)}%(${oiData.trend})`;
       }).join(' | ');
+      const oiStats = oiTracker.getStats();
       console.log(`📊 DATA CHECK: ${samples}`);
-    }, 30000);
+      console.log(`📊 OI: tracked=${oiStats.tracked} pos=${oiStats.positive} neg=${oiStats.negative} | OF: active=${orderflowTracker.getStats().activeSymbols}`);
+    }, 20000);
 
     console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
   }

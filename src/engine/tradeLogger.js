@@ -239,7 +239,7 @@ class TradeLogger {
       a.type === 'POOR_TIER' && a.action === `AVOID_${signal.type}`
     );
     if (avoidTier) {
-      confidence -= 20;
+      confidence -= 10;
       reasons.push(`Avoiding ${signal.type} tier`);
     }
 
@@ -256,7 +256,7 @@ class TradeLogger {
     }
 
     return {
-      trade: confidence >= 60 && !avoidTier,
+      trade: confidence >= 30 && !avoidTier,
       confidence,
       reasons,
       analysis

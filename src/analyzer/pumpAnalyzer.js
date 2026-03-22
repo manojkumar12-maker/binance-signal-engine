@@ -262,7 +262,11 @@ class PumpAnalyzer {
         tier.confidence -= entryCheck.penalty;
       }
       
-      if (tier.confidence < (config.signalTiers[tier.type]?.confidenceThreshold || 30)) {
+      const tierThreshold = config.signalTiers[tier.type]?.confidenceThreshold || 20;
+      if (tier.confidence < tierThreshold) {
+        if (Math.random() < 0.01) {
+          console.log(`⚠️ ${symbol} ${tier.type}: Conf=${tier.confidence.toFixed(0)} < ${tierThreshold} (post-adjustment)`);
+        }
         return null;
       }
       
@@ -544,19 +548,29 @@ class PumpAnalyzer {
     if (priceChange > 1) confluence++;
     confluence = Math.min(confluence, 5);
 
-    if (
-      ofRatio < 0.8 ||
-      oiChange < 0.5 ||
-      volumeSpike < 1.0 ||
-      confluence < 1
-    ) {
-      if (ofRatio < 0.8 || oiChange < 0.5 || volumeSpike < 1.0) {
-        console.log(`❌ ${symbol} KILL: OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}% Vol=${volumeSpike.toFixed(1)}x Conf=${confluence}`);
-      }
+    const hasOI = oiChange !== 0;
+    const hasGoodVolume = volumeSpike >= 1.5;
+    const hasGoodOF = ofRatio >= 1.1;
+    const hasConfluence = confluence >= 1;
+    const hasScore = score >= 35;
+
+    if (!hasScore) {
+      console.log(`❌ ${symbol} KILL: Score=${score.toFixed(1)} < 35`);
       return null;
     }
 
-    if (score < 40) return null;
+    if (!hasOI && !hasGoodVolume && !hasGoodOF) {
+      console.log(`❌ ${symbol} KILL: No OI + No Vol(${volumeSpike.toFixed(1)}x) + No OF(${ofRatio.toFixed(2)}) = all weak`);
+      return null;
+    }
+
+    const oiPass = hasOI || hasGoodVolume || hasGoodOF;
+    const overallStrength = score + (confluence * 5) + (hasGoodVolume ? 10 : 0) + (hasGoodOF ? 5 : 0);
+
+    if (overallStrength < 40) {
+      console.log(`❌ ${symbol} KILL: Strength=${overallStrength.toFixed(0)} (Score=${score.toFixed(0)} Conf=${confluence} Vol=${volumeSpike.toFixed(1)}x OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}%)`);
+      return null;
+    }
 
     const confidenceData = {
       score,
@@ -595,9 +609,8 @@ class PumpAnalyzer {
     }
 
     if (!enhancedResult.shouldGenerateSignal) {
-      const reasons = getRejectionReason({ score, confidence: enhancedResult.confidence, confluence, orderflow: ofRatio, oiChange, volumeSpike });
-      if (reasons.length > 0) {
-        console.log(`❌ ${symbol} → ${reasons.join(' | ')}`);
+      if (Math.random() < 0.02 || enhancedResult.confidence > 20) {
+        console.log(`❌ ${symbol} → NoSignal: conf=${enhancedResult.confidence} tier=${enhancedResult.tier} fakePump=${enhancedResult.isFakePump} trending=${enhancedResult.isTrending}`);
       }
       return null;
     }

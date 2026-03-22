@@ -20,36 +20,35 @@ export class OITracker {
 
     try {
       const res = await axios.get(
-        `${config.binance.apiUrl}/futures/data/openInterestHist`,
+        `${config.binance.apiUrl}/fapi/v1/openInterest`,
         {
-          params: {
-            symbol,
-            period: '5m',
-            limit: 2
-          },
+          params: { symbol },
           timeout: 5000
         }
       );
 
-      if (!res.data || res.data.length < 2) {
+      if (!res.data || res.data.openInterest === undefined) {
         return this.changeCache.get(symbol) || 0;
       }
 
-      const prevOIValue = parseFloat(res.data[0].sumOpenInterest);
-      const currOIValue = parseFloat(res.data[1].sumOpenInterest);
+      const currOIValue = parseFloat(res.data.openInterest);
 
-      if (isNaN(prevOIValue) || isNaN(currOIValue) || prevOIValue === 0) {
+      if (isNaN(currOIValue) || currOIValue === 0) {
         return this.changeCache.get(symbol) || 0;
       }
 
-      this.currentOI.set(symbol, currOIValue);
+      const prevStored = this.prevOI.get(symbol);
+      let change = 0;
       
-      const prevStored = this.prevOI.get(symbol) || prevOIValue;
-      const change = ((currOIValue - prevStored) / prevStored) * 100;
-
+      if (prevStored && prevStored > 0) {
+        change = ((currOIValue - prevStored) / prevStored) * 100;
+        this.changeCache.set(symbol, change);
+      } else {
+        this.changeCache.set(symbol, 0);
+      }
+      
       this.prevOI.set(symbol, currOIValue);
-
-      this.changeCache.set(symbol, change);
+      this.currentOI.set(symbol, currOIValue);
       this.lastFetch.set(symbol, now);
 
       return change;
