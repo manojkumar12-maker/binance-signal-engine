@@ -590,13 +590,6 @@ class PumpAnalyzer {
     if (fundingData.signal === 'RISKY_LONG') {
       enhancedResult.confidence -= 8;
     }
-        ...result,
-        ...enhanced,
-        confluence,
-        confidence: enhanced.confidence,
-        prePump: prePumpResult
-      };
-    }
 
     if (!enhancedResult.shouldGenerateSignal) {
       const reasons = getRejectionReason({ score, confidence: enhancedResult.confidence, confluence, orderflow: ofRatio, oiChange, volumeSpike });
