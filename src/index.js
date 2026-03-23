@@ -93,14 +93,12 @@ class SignalEngine {
     }, 10000);
 
     setInterval(async () => {
-      const updated = await oiTracker.fetchTopSymbols(100);
+      const tracked = await oiTracker.fetchTopSymbols(200);
       const stats = oiTracker.getStats();
-      const nonZero = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.1).length;
+      const nonZero = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.3).length;
       
-      if (stats.tracked > 0) {
-        console.log(`📊 OI: tracked=${stats.tracked} pos=${stats.positive} neg=${stats.negative} nonZero=${nonZero}`);
-      }
-    }, 5000);
+      console.log(`📊 OI: tracked=${stats.tracked}/${stats.totalTracked} pos=${stats.positive} neg=${stats.negative} nonZero=${nonZero}`);
+    }, 10000);
 
     setInterval(() => {
       this.processCycleSignals();

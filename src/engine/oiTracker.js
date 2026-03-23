@@ -6,20 +6,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 class OITracker {
   constructor() {
     this.currentOI = new Map();
-    this.prevOI = new Map();
-    this.changeHistory = new Map();
+    this.oiHistory = new Map();
     this.changeCache = new Map();
     this.trackedSymbols = new Set();
-    this.updateTimestamps = new Map();
-    this.updateInterval = 15000;
-    this.batchSize = 10;
     this.symbols = [];
-    this.batchIndex = 0;
+    this.updateInterval = 30000;
+    this.historyWindow = 60;
+    this.batchSize = 15;
   }
 
   setSymbols(symbols) {
     this.symbols = symbols;
-    this.batchIndex = 0;
   }
 
   async fetch(symbol) {
@@ -43,26 +40,29 @@ class OITracker {
       this.trackedSymbols.add(symbol);
       this.currentOI.set(symbol, currOI);
 
-      const prev = this.prevOI.get(symbol);
-      const lastUpdate = this.updateTimestamps.get(symbol) || 0;
-      const now = Date.now();
+      if (!this.oiHistory.has(symbol)) {
+        this.oiHistory.set(symbol, []);
+      }
+      const history = this.oiHistory.get(symbol);
+      history.push(currOI);
+      if (history.length > this.historyWindow) {
+        history.shift();
+      }
 
       let change = 0;
-
-      if (prev === undefined) {
-        this.prevOI.set(symbol, currOI);
-        this.updateTimestamps.set(symbol, now);
-        change = 0;
-      } else if (now - lastUpdate >= this.updateInterval) {
-        change = ((currOI - prev) / prev) * 100;
-        this.prevOI.set(symbol, currOI);
-        this.updateTimestamps.set(symbol, now);
-      } else {
-        change = this.changeCache.get(symbol) || 0;
+      if (history.length >= 2) {
+        const prevOI = history[0];
+        const latestOI = history[history.length - 1];
+        if (prevOI > 0) {
+          change = ((latestOI - prevOI) / prevOI) * 100;
+        }
       }
 
       this.changeCache.set(symbol, change);
-      this.addToHistory(symbol, change);
+      
+      if (symbol === 'BTCUSDT' && Math.abs(change) > 0.01) {
+        console.log(`📊 OI BTC: current=${currOI} history_len=${history.length} change=${change.toFixed(3)}%`);
+      }
 
       return change;
     } catch (e) {
@@ -70,33 +70,26 @@ class OITracker {
     }
   }
 
-  addToHistory(symbol, change) {
-    if (!this.changeHistory.has(symbol)) {
-      this.changeHistory.set(symbol, []);
-    }
-    const history = this.changeHistory.get(symbol);
-    history.push(change);
-    if (history.length > 20) history.shift();
-  }
-
-  getAverageChange(symbol) {
-    const history = this.changeHistory.get(symbol);
-    if (!history || history.length < 2) return 0;
-    const recent = history.slice(-5);
-    return recent.reduce((a, b) => a + b, 0) / recent.length;
-  }
-
-  async fetchTopSymbols(count = 50) {
+  async fetchTopSymbols(count = 150) {
     const topSymbols = this.symbols.slice(0, count);
-    let updated = 0;
-
+    
     for (const symbol of topSymbols) {
-      const change = await this.fetch(symbol);
-      if (change !== 0) updated++;
-      await sleep(30);
+      await this.fetch(symbol);
+      await sleep(20);
     }
+    
+    return this.trackedSymbols.size;
+  }
 
-    return updated;
+  async fetchActiveSymbols(activeSymbols) {
+    const toFetch = activeSymbols.slice(0, 200);
+    
+    for (const symbol of toFetch) {
+      await this.fetch(symbol);
+      await sleep(20);
+    }
+    
+    return this.trackedSymbols.size;
   }
 
   getChange(symbol) {
@@ -105,17 +98,21 @@ class OITracker {
 
   getOIData(symbol) {
     const current = this.currentOI.get(symbol) || 0;
-    const prev = this.prevOI.get(symbol) || current;
+    const history = this.oiHistory.get(symbol) || [];
     const change = this.changeCache.get(symbol) || 0;
-    const avgChange = this.getAverageChange(symbol);
+    
+    let prev = current;
+    if (history.length >= 2) {
+      prev = history[0];
+    }
 
     let trend = 'NEUTRAL';
-    if (avgChange > 0.5) trend = 'INCREASE';
-    else if (avgChange > 2) trend = 'STRONG_INCREASE';
-    else if (avgChange < -0.5) trend = 'DECREASE';
-    else if (avgChange < -2) trend = 'STRONG_DECREASE';
+    if (change > 0.3) trend = 'INCREASE';
+    else if (change > 1) trend = 'STRONG_INCREASE';
+    else if (change < -0.3) trend = 'DECREASE';
+    else if (change < -1) trend = 'STRONG_DECREASE';
 
-    return { current, previous: prev, change, avgChange, trend };
+    return { current, previous: prev, change, trend };
   }
 
   getStats() {
@@ -123,10 +120,9 @@ class OITracker {
     let negative = 0;
     let neutral = 0;
 
-    for (const symbol of this.trackedSymbols) {
-      const avg = this.getAverageChange(symbol);
-      if (avg > 0.3) positive++;
-      else if (avg < -0.3) negative++;
+    for (const [symbol, change] of this.changeCache) {
+      if (change > 0.3) positive++;
+      else if (change < -0.3) negative++;
       else neutral++;
     }
 
@@ -134,17 +130,16 @@ class OITracker {
       tracked: this.trackedSymbols.size,
       positive,
       negative,
-      neutral
+      neutral,
+      totalTracked: this.symbols.length
     };
   }
 
   reset() {
     this.currentOI.clear();
-    this.prevOI.clear();
-    this.changeHistory.clear();
+    this.oiHistory.clear();
     this.changeCache.clear();
     this.trackedSymbols.clear();
-    this.updateTimestamps.clear();
   }
 }
 
