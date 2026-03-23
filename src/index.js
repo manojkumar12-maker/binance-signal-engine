@@ -290,7 +290,7 @@ global.autoTuner = autoTuner;
 global.state = state;
 global.marketDataTracker = marketDataTracker;
 global.tradeLogger = tradeLogger;
-global.oiCache = oiCache;
+global.oiTracker = oiTracker;
 
 process.on('SIGINT', async () => {
   await engine.stop();
