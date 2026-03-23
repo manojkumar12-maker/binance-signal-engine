@@ -831,9 +831,9 @@ class PumpAnalyzer {
     };
 
     if (priceChange >= 5 && volumeSpike >= 3 && ofRatio >= 1.5 && priceChange <= 15) {
-      const oiValid = Math.abs(oiChange) >= 0.5 || Math.abs(fakeOI || 0) >= 0.6;
+      const oiValid = Math.abs(oiChange) >= 0.05 || Math.abs(fakeOI || 0) >= 0.6;
       if (!oiValid) {
-        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: OI not valid (OI=${oiChange.toFixed(2)}% fake=${(fakeOI || 0).toFixed(2)})`);
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)})`);
         return null;
       }
       
@@ -854,9 +854,9 @@ class PumpAnalyzer {
     }
 
     if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
-      const oiValid = Math.abs(oiChange) >= 0.3 || Math.abs(fakeOI || 0) >= 0.4;
+      const oiValid = Math.abs(oiChange) >= 0.03 || Math.abs(fakeOI || 0) >= 0.4;
       if (!oiValid) {
-        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED: OI not valid (OI=${oiChange.toFixed(2)}% fake=${(fakeOI || 0).toFixed(2)})`);
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)})`);
         return null;
       }
       
@@ -896,7 +896,7 @@ class PumpAnalyzer {
         priceChange, volume: volumeSpike, oiChange, fakeOI, confidence: 50 
       });
       
-      const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
+      const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(2)}%` : 'N/A';
       const oiClass = this.classifyOI(priceChange, oiChange);
       const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
       console.log(`🟣 PRE-PUMP 🚀: ${symbol}\n  PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)}\n  OI=${oiStr} F=⚡${(fakeOI || 0).toFixed(2)} ${emoji} ${oiClass}\n   → ${prePumpResult.reasons.join(' | ')}`);
@@ -920,10 +920,11 @@ class PumpAnalyzer {
         priceChange, volume: volumeSpike, oiChange, fakeOI, confidence: 50 
       });
       
-      const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
+      const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(2)}%` : 'N/A';
+      const fakeStr = fakeOI !== null ? `F=⚡${fakeOI > 0 ? '+' : ''}${fakeOI.toFixed(2)}` : '';
       const oiClass = this.classifyOI(priceChange, oiChange);
       const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
-      console.log(`🟡 EARLY 🔎: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass} | Conf=${enhancedResult.confidence}`);
+      console.log(`🟡 EARLY 🔎: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${fakeStr} ${emoji} ${oiClass} | Conf=${enhancedResult.confidence}`);
       const signal = buildSignal('EARLY', ex);
       this.signalCounts.EARLY++;
       incrementSignalCount();
