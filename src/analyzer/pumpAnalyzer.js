@@ -12,6 +12,7 @@ import { oiTracker } from '../engine/oiTracker.js';
 import { fundingService } from '../engine/fundingService.js';
 import { liquidationEngine } from '../engine/liquidationEngine.js';
 import { liquidityTrapDetector } from '../engine/liquidityTrapDetector.js';
+import { signalPipeline, STAGES, signalStateMachine } from '../engine/signalPipeline.js';
 
 const prePumpDetector = new PrePumpDetector();
 const liquidationService = new LiquidationService();
@@ -348,6 +349,8 @@ class PumpAnalyzer {
     const { symbol, priceChangePercent } = ticker;
 
     if (!this.preFilter(ticker)) return null;
+    
+    signalStateMachine.checkTimeout(symbol);
     
     this.updateHistory(symbol, ticker);
     if (!this.checkCooldown(symbol)) return null;
@@ -833,8 +836,20 @@ class PumpAnalyzer {
         if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: OI not valid (OI=${oiChange.toFixed(2)}% fake=${(fakeOI || 0).toFixed(2)})`);
         return null;
       }
+      
+      const state = signalStateMachine.getState(symbol);
+      if (state.stage !== STAGES.CONFIRMED && state.stage !== STAGES.SNIPER) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: must progress from CONFIRMED (current: ${state.stage})`);
+        return null;
+      }
+      
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER');
+      
+      signalStateMachine.setState(symbol, STAGES.SNIPER, { 
+        priceChange, volume: volumeSpike, oiChange, fakeOI, confidence: 80 
+      });
+      
       return tryEmit('SNIPER', ex, 55);
     }
 
@@ -844,8 +859,20 @@ class PumpAnalyzer {
         if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED: OI not valid (OI=${oiChange.toFixed(2)}% fake=${(fakeOI || 0).toFixed(2)})`);
         return null;
       }
+      
+      const state = signalStateMachine.getState(symbol);
+      if (state.stage !== STAGES.EARLY && state.stage !== STAGES.CONFIRMED) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED: must progress from EARLY (current: ${state.stage})`);
+        return null;
+      }
+      
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED');
+      
+      signalStateMachine.setState(symbol, STAGES.CONFIRMED, { 
+        priceChange, volume: volumeSpike, oiChange, fakeOI, confidence: 65 
+      });
+      
       return tryEmit('CONFIRMED', ex, 55);
     }
 
@@ -855,8 +882,20 @@ class PumpAnalyzer {
         if (Math.random() < 0.01) console.log(`⚠️ ${symbol} PRE_PUMP: fakeOI not valid (fake=${(fakeOI || 0).toFixed(2)})`);
         return null;
       }
+      
+      const state = signalStateMachine.getState(symbol);
+      if (state.stage !== STAGES.IDLE && state.stage !== STAGES.PRE_PUMP) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} PRE_PUMP: must start from IDLE (current: ${state.stage})`);
+        return null;
+      }
+      
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
+      
+      signalStateMachine.setState(symbol, STAGES.PRE_PUMP, { 
+        priceChange, volume: volumeSpike, oiChange, fakeOI, confidence: 50 
+      });
+      
       const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
       const oiClass = this.classifyOI(priceChange, oiChange);
       const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
@@ -868,8 +907,19 @@ class PumpAnalyzer {
     }
 
     if (priceChange >= 1.5 && volumeSpike >= 2.0 && ofRatio >= 1.2 && momentum > 0 && enhancedResult.confidence >= 45 && priceChange <= 15) {
+      const state = signalStateMachine.getState(symbol);
+      if (state.stage !== STAGES.IDLE && state.stage !== STAGES.EARLY) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} EARLY: must start from IDLE (current: ${state.stage})`);
+        return null;
+      }
+      
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
+      
+      signalStateMachine.setState(symbol, STAGES.EARLY, { 
+        priceChange, volume: volumeSpike, oiChange, fakeOI, confidence: 50 
+      });
+      
       const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
       const oiClass = this.classifyOI(priceChange, oiChange);
       const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
