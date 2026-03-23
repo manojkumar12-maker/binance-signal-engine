@@ -1,12 +1,11 @@
 import axios from 'axios';
 
 const BINANCE_API = 'https://fapi.binance.com';
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-export const MAX_PER_SECOND = 15;
-export const TTL_MS = 30000;
-export const HISTORY_WINDOW = 30;
-export const MAX_TRACKED = 200;
+const MAX_BATCH = 50;
+const FETCH_INTERVAL = 5000;
+const HISTORY_SIZE = 20;
+const MAX_TRACKED = 200;
 
 class FlowTracker {
   constructor() {
@@ -21,11 +20,8 @@ class FlowTracker {
     const d = this.data.get(symbol);
     const qtyNum = parseFloat(qty) || 0;
     
-    if (isBuyerMaker) {
-      d.sell += qtyNum;
-    } else {
-      d.buy += qtyNum;
-    }
+    if (isBuyerMaker) d.sell += qtyNum;
+    else d.buy += qtyNum;
     d.volume += qtyNum;
   }
 
@@ -76,91 +72,65 @@ class FlowTracker {
 
 class OICache {
   constructor() {
-    this.data = new Map();
-    this.validFuturesSymbols = new Set();
-    this.loaded = false;
-    this.prioritySymbols = new Set();
+    this.cache = new Map();
+    this.validSymbols = new Set();
   }
 
-  async loadValidSymbols() {
-    if (this.loaded) return;
+  async init() {
     try {
       const res = await axios.get(`${BINANCE_API}/fapi/v1/exchangeInfo`, {
-        timeout: 10000,
+        timeout: 15000,
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
       
       res.data.symbols.forEach(s => {
         if (s.contractType === 'PERPETUAL' && s.status === 'TRADING') {
-          this.validFuturesSymbols.add(s.symbol);
+          this.validSymbols.add(s.symbol);
         }
       });
       
-      this.loaded = true;
-      console.log(`📊 OI: loaded ${this.validFuturesSymbols.size} valid symbols`);
+      console.log(`📊 OI: loaded ${this.validSymbols.size} valid symbols`);
     } catch (e) {
-      console.log('⚠️ OI: failed to load symbols');
-      this.loaded = true;
+      console.log('⚠️ OI: symbol load failed');
     }
   }
 
   isValid(symbol) {
-    return this.validFuturesSymbols.has(symbol);
-  }
-
-  markPriority(symbol) {
-    this.prioritySymbols.add(symbol);
-  }
-
-  clearPriority() {
-    this.prioritySymbols.clear();
+    return this.validSymbols.has(symbol);
   }
 
   update(symbol, oi) {
-    const now = Date.now();
-    
-    if (!this.data.has(symbol)) {
-      this.data.set(symbol, { history: [], lastUpdate: 0 });
+    if (!this.cache.has(symbol)) {
+      this.cache.set(symbol, []);
     }
 
-    const entry = this.data.get(symbol);
+    const arr = this.cache.get(symbol);
+    arr.push({ oi, time: Date.now() });
     
-    const lastOI = entry.history.length > 0 ? entry.history[entry.history.length - 1].oi : oi;
-    
-    entry.history.push({ oi, lastOI, time: now });
-    
-    if (entry.history.length > HISTORY_WINDOW) {
-      entry.history.shift();
+    if (arr.length > HISTORY_SIZE) {
+      arr.shift();
     }
-    
-    entry.lastUpdate = now;
   }
 
-  shouldFetch(symbol) {
-    const d = this.data.get(symbol);
-    const now = Date.now();
-    if (!d) return true;
-    if (now - d.lastUpdate > TTL_MS) return true;
-    return false;
+  get(symbol) {
+    return this.cache.get(symbol);
   }
 
   getChange(symbol) {
-    const d = this.data.get(symbol);
-    if (!d || d.history.length < 3) return 0;
+    const arr = this.cache.get(symbol);
+    if (!arr || arr.length < 2) return 0;
 
-    const first = d.history[0].oi;
-    const last = d.history[d.history.length - 1].oi;
+    const first = arr[0].oi;
+    const last = arr[arr.length - 1].oi;
     
-    if (first <= 0 || last <= 0) return 0;
+    if (!first || !last || first === 0) return 0;
 
-    const change = ((last - first) / first) * 100;
-    
-    return parseFloat(change.toFixed(3));
+    return ((last - first) / first) * 100;
   }
 
   getOIData(symbol) {
-    const d = this.data.get(symbol);
-    const current = d?.history.length > 0 ? d.history[d.history.length - 1].oi : 0;
+    const arr = this.cache.get(symbol);
+    const current = arr?.length > 0 ? arr[arr.length - 1].oi : 0;
     const change = this.getChange(symbol);
     
     let trend = 'NEUTRAL';
@@ -175,21 +145,19 @@ class OICache {
   getStats() {
     let positive = 0;
     let negative = 0;
-    
-    for (const [symbol] of this.data) {
+    let nonZero = 0;
+
+    for (const [symbol, arr] of this.cache) {
+      if (!this.isValid(symbol)) continue;
+      if (arr.length < 2) continue;
+      
       const change = this.getChange(symbol);
-      if (Math.abs(change) > 0.3) {
-        if (change > 0) positive++;
-        else negative++;
-      }
+      if (Math.abs(change) > 0.001) nonZero++;
+      if (change > 0.01) positive++;
+      else if (change < -0.01) negative++;
     }
 
-    return {
-      tracked: this.data.size,
-      positive,
-      negative,
-      nonZero: positive + negative
-    };
+    return { tracked: this.cache.size, positive, negative, nonZero };
   }
 }
 
@@ -197,29 +165,15 @@ class OITracker {
   constructor() {
     this.cache = new OICache();
     this.flowTracker = new FlowTracker();
-    this.allSymbols = [];
-    this.activeSymbols = [];
-    this.marketData = {};
-    this.isProcessing = false;
-    this.lastOIUpdate = new Map();
+    this.symbols = [];
+    this.batchIndex = 0;
+    this.lastFetch = new Map();
   }
 
-  async initialize(symbols) {
-    await this.cache.loadValidSymbols();
-    this.allSymbols = symbols.filter(s => this.cache.isValid(s));
-    console.log(`📊 OIT: ready with ${this.allSymbols.length} symbols`);
-  }
-
-  updateMarketData(marketData) {
-    this.marketData = marketData || {};
-    
-    const sorted = Object.entries(this.marketData)
-      .filter(([s, d]) => d.volume > 1000000 && this.cache.isValid(s))
-      .sort((a, b) => (b[1]?.volume || 0) - (a[1]?.volume || 0))
-      .slice(0, MAX_TRACKED)
-      .map(([s]) => s);
-    
-    this.activeSymbols = sorted;
+  async init(symbols) {
+    await this.cache.init();
+    this.symbols = symbols.filter(s => this.cache.isValid(s));
+    console.log(`📊 OIT: tracking ${this.symbols.length} symbols`);
   }
 
   handleTrade(trade) {
@@ -230,75 +184,87 @@ class OITracker {
   }
 
   markPriority(symbol) {
-    this.cache.markPriority(symbol);
+    // priority handled in fetch
   }
 
-  async fetch(symbol) {
-    if (!symbol || !this.cache.isValid(symbol)) return 0;
-
+  async fetchSymbol(symbol) {
     const now = Date.now();
-    const lastFetch = this.lastOIUpdate.get(symbol) || 0;
+    const lastFetch = this.lastFetch.get(symbol) || 0;
     
-    if (now - lastFetch < 2000) {
+    if (now - lastFetch < 5000) {
       return this.cache.getChange(symbol);
     }
 
     try {
       const res = await axios.get(
-        `${BINANCE_API}/fapi/v1/openInterest`,
-        {
-          params: { symbol },
-          timeout: 5000,
-          headers: { 'User-Agent': 'Mozilla/5.0' }
-        }
+        `${BINANCE_API}/fapi/v1/openInterest?symbol=${symbol}`,
+        { timeout: 3000 }
       );
 
-      this.lastOIUpdate.set(symbol, now);
+      this.lastFetch.set(symbol, now);
 
-      if (!res.data || res.data.openInterest === undefined) return 0;
+      if (!res.data?.openInterest) return 0;
 
       const oi = parseFloat(res.data.openInterest);
-      if (isNaN(oi) || oi === 0) return 0;
-
-      this.cache.update(symbol, oi);
-
-      const change = this.cache.getChange(symbol);
-      const historyLen = this.cache.data.get(symbol)?.history.length || 0;
+      const arr = this.cache.get(symbol);
+      const prevOI = arr && arr.length > 0 ? arr[arr.length - 1].oi : 0;
       
-      if (symbol === 'BTCUSDT' && historyLen % 5 === 0 && historyLen > 3) {
-        const firstOI = this.cache.data.get('BTCUSDT')?.history[0]?.oi || 0;
-        const lastOI = this.cache.data.get('BTCUSDT')?.history[historyLen - 1]?.oi || 0;
-        console.log(`📊 OI BTC: first=${firstOI.toFixed(0)} last=${lastOI.toFixed(0)} history=${historyLen} change=${change.toFixed(3)}%`);
+      if (oi > 0) {
+        if (prevOI > 0) {
+          const pctChange = ((oi - prevOI) / prevOI) * 100;
+          if (Math.abs(pctChange) > 0.0001) {
+            console.log(`📊 OI ${symbol}: prev=${prevOI.toFixed(2)} new=${oi.toFixed(2)} change=${pctChange.toFixed(4)}%`);
+          }
+        }
+        this.cache.update(symbol, oi);
       }
 
-      return change;
+      return this.cache.getChange(symbol);
     } catch (e) {
+      if (e.response?.status === 429) {
+        console.log(`⚠️ OI rate limited for ${symbol}`);
+      }
       return this.cache.getChange(symbol);
     }
   }
 
-  async processQueue() {
-    if (this.isProcessing) return;
-    this.isProcessing = true;
-
-    const priority = [...this.cache.prioritySymbols].filter(s => this.cache.shouldFetch(s));
-    const rest = this.activeSymbols.filter(s => !this.cache.prioritySymbols.has(s) && this.cache.shouldFetch(s));
-    const queue = [...priority, ...rest].slice(0, 60);
-
-    if (queue.length > 0) {
-      const batches = [];
-      for (let i = 0; i < queue.length; i += MAX_PER_SECOND) {
-        batches.push(queue.slice(i, i + MAX_PER_SECOND));
-      }
-
-      for (const batch of batches) {
-        await Promise.all(batch.map(s => this.fetch(s)));
-        await sleep(1000);
+  async fetchBatch(symbols) {
+    let success = 0;
+    let fail = 0;
+    
+    for (const symbol of symbols) {
+      try {
+        const result = await this.fetchSymbol(symbol);
+        if (result !== 0 || this.cache.get(symbol)?.length > 0) {
+          success++;
+        } else {
+          fail++;
+        }
+      } catch (e) {
+        fail++;
       }
     }
+    
+    if (success > 0 || fail > 0) {
+      console.log(`📊 OI batch: ${success} ok, ${fail} failed`);
+    }
+    
+    return symbols.map(s => this.cache.getChange(s));
+  }
 
-    this.cache.clearPriority();
-    this.isProcessing = false;
+  async runCycle() {
+    const start = this.batchIndex;
+    const end = Math.min(start + MAX_BATCH, this.symbols.length);
+    const batch = this.symbols.slice(start, end);
+    
+    this.batchIndex = end >= this.symbols.length ? 0 : end;
+
+    await this.fetchBatch(batch);
+
+    const stats = this.cache.getStats();
+    const btcChange = this.cache.getChange('BTCUSDT');
+    
+    console.log(`📊 OI: tracked=${stats.tracked} BTC=${btcChange.toFixed(4)}% pos=${stats.positive} neg=${stats.negative}`);
   }
 
   getChange(symbol) {
@@ -326,12 +292,10 @@ class OITracker {
     return this.cache.getStats();
   }
 
-  reset() {
-    this.cache = new OICache();
-    this.flowTracker = new FlowTracker();
-    this.lastOIUpdate.clear();
+  getFlowData(symbol) {
+    return this.flowTracker.data.get(symbol);
   }
 }
 
 export const oiTracker = new OITracker();
-export { FlowTracker };
+export { MAX_TRACKED };

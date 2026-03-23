@@ -81,18 +81,18 @@ class SignalEngine {
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
-    await oiTracker.initialize(wsManager.symbols);
+    await oiTracker.init(wsManager.symbols);
 
     setInterval(async () => {
       orderflowTracker.reset();
     }, 60000);
 
     setInterval(() => {
-      const activeSymbols = wsManager.symbols.slice(0, 50);
-      for (const sym of activeSymbols) {
+      const topSymbols = wsManager.symbols.slice(0, 10);
+      for (const sym of topSymbols) {
         oiTracker.resetFlow(sym);
       }
-    }, 30000);
+    }, 60000);
 
     setInterval(async () => {
       const topSymbols = wsManager.symbols.slice(0, 5);
@@ -103,24 +103,34 @@ class SignalEngine {
 
     setInterval(async () => {
       try {
-        const marketData = marketDataTracker.getAllData();
-        oiTracker.updateMarketData(marketData);
-        await oiTracker.processQueue();
-        
         const stats = oiTracker.getStats();
-        const nonZero = Array.from(oiTracker.cache.data.values()).filter(d => {
-          if (d.history.length < 10) return false;
-          const first = d.history[0];
-          const last = d.history[d.history.length - 1];
-          return first > 0 && Math.abs((last - first) / first) > 0.3;
-        }).length;
-        
         const btcChange = oiTracker.getChange('BTCUSDT');
-        console.log(`📊 OI: tracked=${stats.tracked}/${MAX_TRACKED} BTC=${btcChange.toFixed(3)}% nonZero=${nonZero}`);
+        const btcFake = oiTracker.getFakeOI('BTCUSDT');
+        
+        const btcFlow = oiTracker.getFlowData('BTCUSDT');
+        let flowStatus = 'no data';
+        if (btcFlow) {
+          const currentVol = btcFlow.volume.toFixed(4);
+          const buyAmt = btcFlow.buy.toFixed(4);
+          const sellAmt = btcFlow.sell.toFixed(4);
+          const historyLen = btcFlow.history.length;
+          const fakeOIStr = historyLen >= 3 ? (btcFake > 0 ? '+' : '') + btcFake.toFixed(2) : 'N/A';
+          flowStatus = `F=${fakeOIStr} hist=${historyLen} curV=${currentVol} buy=${buyAmt} sell=${sellAmt}`;
+        }
+        
+        console.log(`📊 OI: tracked=${stats.tracked}/${MAX_TRACKED} BTC=${btcChange.toFixed(4)}% nonZero=${stats.nonZero} | ${flowStatus}`);
       } catch (err) {
         console.error('🔥 OI LOOP ERROR:', err.message);
       }
     }, 15000);
+
+    setInterval(async () => {
+      try {
+        await oiTracker.runCycle();
+      } catch (err) {
+        console.error('🔥 OI FETCH ERROR:', err.message);
+      }
+    }, 5000);
 
     setInterval(() => {
       this.processCycleSignals();
