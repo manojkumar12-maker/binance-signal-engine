@@ -13,6 +13,7 @@ import { updateAdaptiveThresholds } from './engine/adaptiveFilter.js';
 import { orderflowTracker } from './engine/orderflowTracker.js';
 import { oiTracker } from './engine/oiTracker.js';
 import { fundingService } from './engine/fundingService.js';
+import { MAX_TRACKED } from './engine/oiTracker.js';
 
 process.on('uncaughtException', (err) => {
   console.error('🔥 UNCAUGHT EXCEPTION:', err.message);
@@ -71,6 +72,7 @@ class SignalEngine {
     wsManager.onTrade((trade) => {
       marketDataTracker.handleTrade(trade);
       orderflowTracker.handleTrade(trade);
+      oiTracker.handleTrade(trade);
     });
 
     await wsManager.initialize();
@@ -85,6 +87,13 @@ class SignalEngine {
       orderflowTracker.reset();
     }, 60000);
 
+    setInterval(() => {
+      const activeSymbols = wsManager.symbols.slice(0, 50);
+      for (const sym of activeSymbols) {
+        oiTracker.resetFlow(sym);
+      }
+    }, 30000);
+
     setInterval(async () => {
       const topSymbols = wsManager.symbols.slice(0, 5);
       for (const symbol of topSymbols) {
@@ -93,19 +102,24 @@ class SignalEngine {
     }, 10000);
 
     setInterval(async () => {
-      const marketData = marketDataTracker.getAllData();
-      oiTracker.updateMarketData(marketData);
-      await oiTracker.processQueue();
-      
-      const stats = oiTracker.getStats();
-      const nonZero = Array.from(oiTracker.cache.data.values()).filter(d => {
-        if (d.history.length < 10) return false;
-        const first = d.history[0];
-        const last = d.history[d.history.length - 1];
-        return first > 0 && Math.abs((last - first) / first) > 0.3;
-      }).length;
-      
-      console.log(`📊 OI: tracked=${stats.tracked}/${MAX_TRACKED} pos=${stats.positive} neg=${stats.negative} nonZero=${nonZero}`);
+      try {
+        const marketData = marketDataTracker.getAllData();
+        oiTracker.updateMarketData(marketData);
+        await oiTracker.processQueue();
+        
+        const stats = oiTracker.getStats();
+        const nonZero = Array.from(oiTracker.cache.data.values()).filter(d => {
+          if (d.history.length < 10) return false;
+          const first = d.history[0];
+          const last = d.history[d.history.length - 1];
+          return first > 0 && Math.abs((last - first) / first) > 0.3;
+        }).length;
+        
+        const btcChange = oiTracker.getChange('BTCUSDT');
+        console.log(`📊 OI: tracked=${stats.tracked}/${MAX_TRACKED} BTC=${btcChange.toFixed(3)}% nonZero=${nonZero}`);
+      } catch (err) {
+        console.error('🔥 OI LOOP ERROR:', err.message);
+      }
     }, 15000);
 
     setInterval(() => {
@@ -122,13 +136,14 @@ class SignalEngine {
       const samples = topSymbols.map(sym => {
         const of = orderflowTracker.getOrderflow(sym);
         const oi = oiTracker.getChange(sym);
+        const fakeOI = oiTracker.getFakeOI(sym);
         const oiData = oiTracker.getOIData(sym);
-        const ofData = orderflowTracker.getOrderflowData(sym);
-        return `${sym}:OF=${of.toFixed(2)}|OI=${oi >= 0 ? '+' : ''}${oi.toFixed(1)}%(${oiData.trend.substring(0,4)})`;
+        const fakeStr = fakeOI !== null ? `F=${fakeOI >= 0 ? '+' : ''}${fakeOI.toFixed(1)}%` : 'F=--';
+        return `${sym}:OF=${of.toFixed(1)}|OI=${oi >= 0 ? '+' : ''}${oi.toFixed(1)}%(${fakeStr})`;
       }).join(' | ');
       const oiStats = oiTracker.getStats();
       console.log(`📊 DATA: ${samples}`);
-      console.log(`📊 OI Tracker: tracked=${oiStats.tracked} pos=${oiStats.positive} neg=${oiStats.negative} | OF: ${orderflowTracker.getStats().activeSymbols} active`);
+      console.log(`📊 OI: tracked=${oiStats.tracked} | OF: ${orderflowTracker.getStats().activeSymbols} active`);
     }, 20000);
 
     console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);

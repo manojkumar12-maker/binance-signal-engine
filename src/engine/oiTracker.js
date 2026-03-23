@@ -4,10 +4,96 @@ import { config } from '../../config/config.js';
 const BINANCE_API = 'https://fapi.binance.com';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-const MAX_PER_SECOND = 15;
-const TTL_MS = 15000;
-const HISTORY_WINDOW = 60;
-const MAX_TRACKED = 120;
+export const MAX_PER_SECOND = 15;
+export const TTL_MS = 15000;
+export const HISTORY_WINDOW = 60;
+export const MAX_TRACKED = 200;
+
+class FlowTracker {
+  constructor() {
+    this.data = new Map();
+  }
+
+  update(symbol, qty, isBuyerMaker) {
+    if (!this.data.has(symbol)) {
+      this.data.set(symbol, {
+        buy: 0,
+        sell: 0,
+        volume: 0,
+        history: []
+      });
+    }
+
+    const d = this.data.get(symbol);
+    const qtyNum = parseFloat(qty) || 0;
+    
+    if (isBuyerMaker) {
+      d.sell += qtyNum;
+    } else {
+      d.buy += qtyNum;
+    }
+
+    d.volume += qtyNum;
+  }
+
+  get(symbol) {
+    return this.data.get(symbol);
+  }
+
+  reset(symbol) {
+    const d = this.data.get(symbol);
+    if (!d) return;
+
+    d.history.push({
+      buy: d.buy,
+      sell: d.sell,
+      volume: d.volume
+    });
+
+    if (d.history.length > 20) d.history.shift();
+
+    d.buy = 0;
+    d.sell = 0;
+    d.volume = 0;
+  }
+
+  getFakeOI(symbol) {
+    const d = this.data.get(symbol);
+    if (!d || d.history.length < 5) return null;
+
+    const recent = d.history[d.history.length - 1];
+    const prev = d.history[Math.max(0, d.history.length - 5)];
+
+    const total = recent.buy + recent.sell;
+    if (total === 0) return null;
+
+    const imbalance = (recent.buy - recent.sell) / total;
+    const volChange = prev.volume > 0 ? (recent.volume - prev.volume) / prev.volume : 0;
+
+    let fakeOI = 0;
+
+    if (Math.abs(imbalance) > 0.2 && volChange > 0.5) {
+      fakeOI = imbalance * volChange * 5;
+    } else if (Math.abs(imbalance) < 0.1) {
+      fakeOI = 0;
+    } else {
+      fakeOI = imbalance * 2;
+    }
+
+    return fakeOI;
+  }
+
+  classifyFakeOI(priceChange, fakeOI) {
+    if (fakeOI === null) return 'NEUTRAL';
+    
+    if (priceChange > 0 && fakeOI > 0.5) return 'EARLY_LONG';
+    if (priceChange > 0 && fakeOI < -0.5) return 'SHORT_SQUEEZE';
+    if (priceChange < 0 && fakeOI > 0.5) return 'EARLY_SHORT';
+    if (priceChange < 0 && fakeOI < -0.5) return 'LONG_EXIT';
+    
+    return 'NEUTRAL';
+  }
+}
 
 class OICache {
   constructor() {
@@ -132,6 +218,7 @@ class OICache {
 class OITracker {
   constructor() {
     this.cache = new OICache();
+    this.flowTracker = new FlowTracker();
     this.allSymbols = [];
     this.activeSymbols = [];
     this.marketData = {};
@@ -156,6 +243,13 @@ class OITracker {
       .map(([s]) => s);
     
     this.activeSymbols = sorted;
+  }
+
+  handleTrade(trade) {
+    const { symbol, quantity, isBuyerMaker } = trade;
+    if (symbol && this.cache.isValid(symbol)) {
+      this.flowTracker.update(symbol, quantity, isBuyerMaker);
+    }
   }
 
   markPriority(symbol) {
@@ -189,14 +283,13 @@ class OITracker {
 
       this.cache.update(symbol, oi);
 
-      if (symbol === 'BTCUSDT') {
-        const change = this.cache.getChange(symbol);
-        if (Math.abs(change) > 0.05) {
-          console.log(`📊 OI BTC: current=${oi.toFixed(0)} len=${d.history.length} change=${change.toFixed(3)}%`);
-        }
+      const change = this.cache.getChange(symbol);
+      const historyLen = this.cache.get(symbol)?.history.length || 0;
+      if (symbol === 'BTCUSDT' && historyLen % 10 === 0) {
+        console.log(`📊 OI BTC: current=${oi.toFixed(0)} history=${historyLen} change=${change.toFixed(3)}%`);
       }
 
-      return this.cache.getChange(symbol);
+      return change;
     } catch (e) {
       return this.cache.getChange(symbol);
     }
@@ -238,13 +331,28 @@ class OITracker {
     return this.cache.getOIData(symbol);
   }
 
+  getFakeOI(symbol) {
+    return this.flowTracker.getFakeOI(symbol);
+  }
+
+  classifyFakeOI(priceChange, symbol) {
+    const fakeOI = this.flowTracker.getFakeOI(symbol);
+    return this.flowTracker.classifyFakeOI(priceChange, fakeOI);
+  }
+
+  resetFlow(symbol) {
+    this.flowTracker.reset(symbol);
+  }
+
   getStats() {
     return this.cache.getStats();
   }
 
   reset() {
     this.cache = new OICache();
+    this.flowTracker = new FlowTracker();
   }
 }
 
 export const oiTracker = new OITracker();
+export { FlowTracker };

@@ -11,6 +11,7 @@ import { signalRankingEngine } from '../engine/signalRankingEngine.js';
 import { oiTracker } from '../engine/oiTracker.js';
 import { fundingService } from '../engine/fundingService.js';
 import { liquidationEngine } from '../engine/liquidationEngine.js';
+import { liquidityTrapDetector } from '../engine/liquidityTrapDetector.js';
 
 const prePumpDetector = new PrePumpDetector();
 const liquidationService = new LiquidationService();
@@ -39,9 +40,17 @@ class PumpAnalyzer {
     this.lastCycleProcess = Date.now();
   }
 
-  classifyOI(priceChange, oiChange) {
+  classifyOI(priceChange, oiChange, fakeOI = null) {
     const pc = priceChange || 0;
     const oi = oiChange || 0;
+    const fake = fakeOI || 0;
+    
+    if (fakeOI !== null && fakeOI !== 0) {
+      if (pc > 0 && fake > 0.5) return 'EARLY_LONG';
+      if (pc > 0 && fake < -0.5) return 'SHORT_SQUEEZE';
+      if (pc < 0 && fake > 0.5) return 'EARLY_SHORT';
+      if (pc < 0 && fake < -0.5) return 'LONG_EXIT';
+    }
     
     if (Math.abs(oi) < 0.3) return 'NEUTRAL';
     
@@ -53,11 +62,17 @@ class PumpAnalyzer {
     return 'NEUTRAL';
   }
 
-  getOIStateLabel(priceChange, oiChange) {
+  getOIStateLabel(priceChange, oiChange, fakeOI = null) {
     const pc = priceChange || 0;
     const oi = oiChange || 0;
     
-    if (oiChange === null || oiChange === undefined) return { label: '⚪ NO_OI', tag: 'NO_OI' };
+    if (oiChange === null || oiChange === undefined) {
+      if (fakeOI !== null && Math.abs(fakeOI) > 0.5) {
+        const emoji = fakeOI > 0 ? '⚡' : '⚡';
+        return { label: `${emoji} EARLY (${fakeOI > 0 ? '+' : ''}${fakeOI.toFixed(1)}%)`, tag: 'EARLY' };
+      }
+      return { label: '⚪ NO_OI', tag: 'NO_OI' };
+    }
     if (Math.abs(oi) < 0.3) return { label: '🟡 FLAT', tag: 'FLAT' };
     
     if (pc > 0 && oi > 0.5) return { label: '🟢 LONG_BUILDUP', tag: 'LONG_BUILDUP' };
@@ -558,6 +573,7 @@ class PumpAnalyzer {
       orderbookImbalance,
       spoofingRisk,
       signalTime: Date.now(),
+      candle: candles && candles.length > 0 ? candles[candles.length - 1] : null,
       factors: this.getFactors({
         ema50, currentPrice, breakOfStructure, liquiditySweep, sweptReclaimed,
         volumeSpike, momentum, acceleration, strongCandle, volumeTrend, priceChange,
@@ -635,10 +651,14 @@ class PumpAnalyzer {
 
     const orderflowData = orderflowTracker.getOrderflowData(symbol);
     const oiData = oiTracker.getOIData(symbol);
+    const fakeOI = oiTracker.getFakeOI(symbol);
+    const fakeOIClass = oiTracker.classifyFakeOI(priceChange, symbol);
     const fundingData = fundingService.getFundingData(symbol);
     const liqData = liquidationEngine.analyze(symbol, analysis.entryPrice || 0);
     const ofRatio = orderflowData?.ratio || 1;
     const oiChange = oiData?.change ?? 0;
+    
+    const combinedOI = fakeOI !== null ? (oiChange + fakeOI) / 2 : oiChange;
     
     if (oiData.current === 0 && Math.random() < 0.001) {
       console.log(`⚠️ NO OI DATA: ${symbol}`);
@@ -646,6 +666,18 @@ class PumpAnalyzer {
       oiTracker.markPriority(symbol);
     }
     const fundingRate = fundingData?.rate || 0;
+
+    const trapData = {
+      priceChange,
+      volume: volumeSpike,
+      oi: oiChange,
+      fakeOI,
+      candle: analysis.candle,
+      symbol
+    };
+    const trapResult = liquidityTrapDetector.detect(trapData);
+    const trapSkip = liquidityTrapDetector.shouldSkipSignal(symbol, priceChange);
+    const isReversalSetup = liquidityTrapDetector.isReversalSetup(symbol, priceChange);
 
     const prePumpData = {
       priceChange,
@@ -743,25 +775,44 @@ class PumpAnalyzer {
     };
 
     const tryEmit = (type, ex, minScore = 55) => {
-      const oiClass = this.classifyOI(priceChange, oiChange);
-      const isGoodOI = ['LONG_BUILDUP', 'SHORT_BUILDUP', 'SHORT_SQUEEZE'].includes(oiClass);
-      const isBadOI = ['LONG_EXIT', 'SHORT_BUILDUP'].includes(oiClass) && priceChange < 0;
+      if (trapSkip.skip) {
+        if (Math.random() < 0.01) {
+          console.log(`⚠️ TRAP DETECTED: ${symbol} Type: ${trapSkip.type} → ${trapSkip.reason}`);
+        }
+        return null;
+      }
       
-      const rawScore = this.calculatePendingRankScore({ ...enhancedResult, priceChange, volumeSpike, orderflow: ofRatio, momentum: enhancedResult.momentum, oiChange: oiChange || 0, confidence: enhancedResult.confidence, confluence });
+      const oiClass = this.classifyOI(priceChange, oiChange, fakeOI);
+      const fakeClass = fakeOIClass;
+      const isGoodOI = ['LONG_BUILDUP', 'SHORT_BUILDUP', 'SHORT_SQUEEZE', 'EARLY_LONG', 'EARLY_SHORT'].includes(oiClass);
+      const isBadOI = ['LONG_EXIT'].includes(oiClass) && priceChange < 0;
+      
+      let trapBoost = 0;
+      if (isReversalSetup && trapResult.confidence > 70) {
+        trapBoost = 10;
+        console.log(`🔥 REVERSAL SETUP: ${symbol} | ${trapResult.type} | Confidence: ${trapResult.confidence}`);
+        console.log(`   → Reasons: ${trapResult.reasons.join(', ')}`);
+      }
+      
+      const scoreOI = fakeOI !== null ? combinedOI : oiChange;
+      const rawScore = this.calculatePendingRankScore({ ...enhancedResult, priceChange, volumeSpike, orderflow: ofRatio, momentum: enhancedResult.momentum, oiChange: scoreOI || 0, confidence: enhancedResult.confidence + trapBoost, confluence });
 
       if (isGoodOI) {
-        const oiStr = oiChange > 0 ? `+${oiChange.toFixed(1)}%` : `${oiChange.toFixed(1)}%`;
-        const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : '💥';
-        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass}\n  Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+        const oiStr = oiChange > 0.1 ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : fakeOI !== null ? `⚡${fakeOI > 0 ? '+' : ''}${fakeOI.toFixed(1)}%` : '0.0%';
+        const realStr = oiChange > 0.1 ? `|Real OI=${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : '';
+        const emoji = oiClass.includes('LONG') ? '🟢' : oiClass.includes('SHORT') ? '🔴' : '💥';
+        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass}${realStr}\n  Conf=${enhancedResult.confidence + trapBoost} | R:R=${ex.rr1.toFixed(1)}`);
         const signal = buildSignal(type, ex);
+        signal.trapBoost = trapBoost;
+        signal.isReversal = isReversalSetup;
         this.signalCounts[type]++;
         incrementSignalCount();
         return signal;
       }
 
       if (rawScore >= minScore) {
-        const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
-        const emoji = oiClass === 'FLAT' ? '🟡' : oiClass === 'LONG_EXIT' ? '🪤' : '⚪';
+        const oiStr = oiChange !== null && Math.abs(oiChange) > 0.1 ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : fakeOI !== null ? `⚡${fakeOI > 0 ? '+' : ''}${fakeOI.toFixed(1)}%` : 'N/A';
+        const emoji = fakeOI !== null && Math.abs(fakeOI) > 0.5 ? '⚡' : oiClass === 'LONG_EXIT' ? '🪤' : oiClass === 'FLAT' ? '🟡' : '⚪';
         console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type}: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OI=${oiStr} ${emoji} ${oiClass}`);
         const signal = buildSignal(type, ex);
         signal.flags = signal.flags || [];
