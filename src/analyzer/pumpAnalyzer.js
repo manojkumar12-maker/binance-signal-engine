@@ -686,13 +686,14 @@ class PumpAnalyzer {
       oiChange,
       fundingRate,
       imbalance: orderbookImbalance,
-      momentum
+      momentum,
+      fakeOI
     };
     const prePumpResult = prePumpDetector.analyze(symbol, prePumpData);
 
-    const HARD_PUMP_FILTERS = priceChange >= 3 && volumeSpike >= 5 && ofRatio >= 1.5 && Math.abs(oiChange) >= 0.3;
+    const HARD_PUMP_FILTERS = priceChange >= 3 && volumeSpike >= 5 && ofRatio >= 1.5 && (Math.abs(oiChange) >= 0.3 || Math.abs(fakeOI || 0) >= 0.4);
     if (!HARD_PUMP_FILTERS && Math.random() < 0.01) {
-      console.log(`❌ ${symbol} → HardFilter: PC=${priceChange.toFixed(1)}% Vol=${volumeSpike.toFixed(1)}x OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}%`);
+      console.log(`❌ ${symbol} → HardFilter: PC=${priceChange.toFixed(1)}% Vol=${volumeSpike.toFixed(1)}x OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}% F=${(fakeOI || 0).toFixed(2)}`);
     }
 
     let confluence = 0;
@@ -827,24 +828,39 @@ class PumpAnalyzer {
     };
 
     if (priceChange >= 5 && volumeSpike >= 3 && ofRatio >= 1.5 && priceChange <= 15) {
+      const oiValid = Math.abs(oiChange) >= 0.5 || Math.abs(fakeOI || 0) >= 0.6;
+      if (!oiValid) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: OI not valid (OI=${oiChange.toFixed(2)}% fake=${(fakeOI || 0).toFixed(2)})`);
+        return null;
+      }
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER');
       return tryEmit('SNIPER', ex, 55);
     }
 
     if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
+      const oiValid = Math.abs(oiChange) >= 0.3 || Math.abs(fakeOI || 0) >= 0.4;
+      if (!oiValid) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED: OI not valid (OI=${oiChange.toFixed(2)}% fake=${(fakeOI || 0).toFixed(2)})`);
+        return null;
+      }
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'CONFIRMED');
       return tryEmit('CONFIRMED', ex, 55);
     }
 
     if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
+      const fakeValid = fakeOI !== null && Math.abs(fakeOI) >= 0.3;
+      if (!fakeValid) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} PRE_PUMP: fakeOI not valid (fake=${(fakeOI || 0).toFixed(2)})`);
+        return null;
+      }
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
       const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
       const oiClass = this.classifyOI(priceChange, oiChange);
       const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol}\n  PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass}\n   → ${prePumpResult.reasons.join(' | ')}`);
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol}\n  PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)}\n  OI=${oiStr} F=⚡${(fakeOI || 0).toFixed(2)} ${emoji} ${oiClass}\n   → ${prePumpResult.reasons.join(' | ')}`);
       const signal = buildSignal('PRE_PUMP', ex);
       this.signalCounts.PRE_PUMP++;
       incrementSignalCount();

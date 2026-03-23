@@ -44,18 +44,19 @@ class FlowTracker {
     const recent = d.history[d.history.length - 1];
     const prev = d.history[Math.max(0, d.history.length - 3)];
 
-    const total = recent.buy + recent.sell;
-    if (total === 0) return null;
+    if (!recent || !prev) return null;
 
-    const imbalance = (recent.buy - recent.sell) / total;
-    const volChange = prev.volume > 0 ? (recent.volume - prev.volume) / prev.volume : 0;
+    const totalRecent = recent.buy + recent.sell;
+    const totalPrev = prev.buy + prev.sell;
+    
+    if (totalRecent === 0 || totalPrev === 0) return 0;
 
-    if (Math.abs(imbalance) > 0.2 && volChange > 0.3) {
-      return imbalance * volChange * 10;
-    } else if (Math.abs(imbalance) < 0.1) {
-      return 0;
-    }
-    return imbalance * 3;
+    const imbalance = (recent.buy - recent.sell) / totalRecent;
+    const volChange = (totalRecent - totalPrev) / (totalPrev || 1);
+
+    const strength = Math.tanh(imbalance * 3) * Math.tanh(volChange * 2);
+
+    return strength;
   }
 
   classifyFakeOI(priceChange, fakeOI) {

@@ -12,7 +12,8 @@ export class PrePumpDetector {
       oiChange,
       fundingRate,
       imbalance,
-      momentum
+      momentum,
+      fakeOI
     } = data;
 
     let score = 0;
@@ -21,6 +22,11 @@ export class PrePumpDetector {
     if (oiChange > 2 && Math.abs(priceChange) < 3) {
       score += 2;
       reasons.push('OI buildup');
+    }
+
+    if (fakeOI !== undefined && fakeOI !== null && Math.abs(fakeOI) > 0.3 && Math.abs(priceChange) < 3) {
+      score += 2;
+      reasons.push(fakeOI > 0 ? 'Flow accumulation (buy)' : 'Flow accumulation (sell)');
     }
 
     if (orderflow > 1.3 && Math.abs(priceChange) < 3) {
