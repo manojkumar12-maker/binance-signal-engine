@@ -2,6 +2,44 @@ import WebSocket from 'ws';
 import axios from 'axios';
 import { config } from '../../config/config.js';
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function fetchWithRetry(url, options = {}, retries = 3, delay = 2000) {
+  try {
+    const response = await axios.get(url, {
+      ...options,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        ...options.headers
+      },
+      timeout: 15000
+    });
+    return response;
+  } catch (error) {
+    if (retries === 0) {
+      console.error(`❌ ${url} failed after retries`);
+      throw error;
+    }
+    
+    if (error.response?.status === 418) {
+      console.log(`⚠️ Rate limited (418), retry in ${delay}ms... (${retries} left)`);
+    } else {
+      console.log(`⚠️ ${error.message}, retry in ${delay}ms... (${retries} left)`);
+    }
+    
+    await sleep(delay);
+    return fetchWithRetry(url, options, retries - 1, delay * 1.5);
+  }
+}
+
+const FALLBACK_SYMBOLS = [
+  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+  'ADAUSDT', 'DOGEUSDT', 'MATICUSDT', 'DOTUSDT', 'SHIBUSDT',
+  'LTCUSDT', 'AVAXUSDT', 'LINKUSDT', 'ATOMUSDT', 'UNIUSDT',
+  'ETCUSDT', 'XLMUSDT', 'NEARUSDT', 'APTUSDT', 'ARBUSDT',
+  'OPUSDT', 'FILUSDT', 'LDOUSDT', 'VETUSDT', 'ICPUSDT'
+];
+
 class BinanceWebSocketManager {
   constructor() {
     this.ws = null;
@@ -20,19 +58,32 @@ class BinanceWebSocketManager {
     this.isReconnecting = false;
     this.tradeStreamConnecting = false;
     this.tradeStreamReady = false;
+    this.symbolsLoaded = false;
   }
 
   async initialize() {
     console.log('🔌 Initializing Binance WebSocket connection...');
     await this.fetchAllSymbols();
-    this.connect();
-    this.connectTradeStream();
+    
+    if (this.symbols.length > 0) {
+      this.connect();
+      setTimeout(() => {
+        this.connectTradeStream();
+      }, 3000);
+    } else {
+      console.log('⚠️ Using fallback symbols due to API failure');
+      this.symbols = FALLBACK_SYMBOLS;
+      this.connect();
+      setTimeout(() => {
+        this.connectTradeStream();
+      }, 3000);
+    }
   }
 
   async fetchAllSymbols() {
     console.log('🔄 Fetching symbols from Binance API...');
     try {
-      const response = await axios.get(`${config.binance.apiUrl}/fapi/v1/exchangeInfo`, { timeout: 10000 });
+      const response = await fetchWithRetry(`${config.binance.apiUrl}/fapi/v1/exchangeInfo`);
       console.log('📡 API response status:', response.status);
       
       this.symbols = response.data.symbols
@@ -44,14 +95,16 @@ class BinanceWebSocketManager {
         this.symbols = this.symbols.filter(s => !stablecoins.includes(s));
       }
 
+      this.symbolsLoaded = true;
       console.log(`📊 Loaded ${this.symbols.length} USDT perpetual symbols`);
       if (this.symbols.length > 0) {
         console.log('📊 First 5 symbols:', this.symbols.slice(0, 5));
       }
     } catch (error) {
       console.error('❌ Failed to fetch symbols:', error.message);
-      console.error('❌ Error details:', error.response?.status, error.response?.statusText);
-      this.symbols = [];
+      console.error('❌ Using fallback symbols');
+      this.symbols = FALLBACK_SYMBOLS;
+      this.symbolsLoaded = true;
     }
   }
 

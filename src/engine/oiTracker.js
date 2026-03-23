@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { config } from '../../config/config.js';
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const FETCH_DELAY = 50;
+
 export class OITracker {
   constructor() {
     this.prevOI = new Map();
@@ -12,6 +15,7 @@ export class OITracker {
     this.trackedSymbols = new Set();
     this.updateIndex = 0;
     this.allSymbols = [];
+    this.lastFetchTime = 0;
   }
 
   setSymbols(symbols) {
@@ -22,14 +26,25 @@ export class OITracker {
   async fetch(symbol) {
     if (!symbol) return 0;
 
+    const now = Date.now();
+    const timeSinceLastFetch = now - this.lastFetchTime;
+    if (timeSinceLastFetch < FETCH_DELAY) {
+      await sleep(FETCH_DELAY - timeSinceLastFetch);
+    }
+
     try {
       const res = await axios.get(
         `${config.binance.apiUrl}/fapi/v1/openInterest`,
         {
           params: { symbol },
-          timeout: 5000
+          timeout: 5000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
         }
       );
+
+      this.lastFetchTime = Date.now();
 
       if (!res.data || res.data.openInterest === undefined) {
         return this.getChange(symbol);
@@ -46,18 +61,18 @@ export class OITracker {
       
       const prevStored = this.prevOI.get(symbol);
       const lastTime = this.lastUpdate.get(symbol) || 0;
-      const now = Date.now();
+      const currentTime = Date.now();
       
       let change = 0;
       
       if (!prevStored) {
         this.prevOI.set(symbol, currOIValue);
-        this.lastUpdate.set(symbol, now);
+        this.lastUpdate.set(symbol, currentTime);
         change = 0;
-      } else if (now - lastTime >= this.updateWindowMs) {
+      } else if (currentTime - lastTime >= this.updateWindowMs) {
         change = ((currOIValue - prevStored) / prevStored) * 100;
         this.prevOI.set(symbol, currOIValue);
-        this.lastUpdate.set(symbol, now);
+        this.lastUpdate.set(symbol, currentTime);
       } else {
         change = this.changeCache.get(symbol) || 0;
       }
@@ -71,6 +86,7 @@ export class OITracker {
 
       return change;
     } catch (e) {
+      this.lastFetchTime = Date.now();
       return this.getChange(symbol);
     }
   }
@@ -94,16 +110,12 @@ export class OITracker {
   }
 
   async fetchBatch(symbols) {
-    const batchSize = 20;
-    const batches = [];
-    
-    for (let i = 0; i < symbols.length; i += batchSize) {
-      batches.push(symbols.slice(i, i + batchSize));
+    const results = [];
+    for (const symbol of symbols) {
+      const change = await this.fetch(symbol);
+      results.push({ symbol, change });
     }
-    
-    for (const batch of batches) {
-      await Promise.all(batch.map(s => this.fetch(s)));
-    }
+    return results;
   }
 
   getNextBatch() {

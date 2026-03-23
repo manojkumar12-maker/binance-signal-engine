@@ -83,21 +83,31 @@ class SignalEngine {
     start(wsManager.symbols);
     oiTracker.setSymbols(wsManager.symbols);
 
+    setTimeout(() => {
+      console.log('📊 Delayed OI tracking starting...');
+    }, 5000);
+
     setInterval(() => {
       orderflowTracker.reset();
     }, 60000);
 
     setInterval(async () => {
       const batch = oiTracker.getNextBatch();
-      await oiTracker.fetchBatch(batch);
-      await fundingService.fetchBatch(wsManager.symbols.slice(0, 10));
+      if (batch.length > 0) {
+        await oiTracker.fetchBatch(batch);
+      }
+      
+      const topSymbols = wsManager.symbols.slice(0, 5);
+      for (const symbol of topSymbols) {
+        await fundingService.fetch(symbol);
+      }
       
       const oiStats = oiTracker.getStats();
       const nonZeroChanges = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.1).length;
       if (nonZeroChanges > 0) {
         console.log(`📊 OI Tracker: ${nonZeroChanges} symbols with real OI change`);
       }
-    }, 2000);
+    }, 3000);
 
     setInterval(() => {
       this.processCycleSignals();

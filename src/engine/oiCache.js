@@ -8,7 +8,10 @@ let priorityInterval = null;
 let updateIndex = 0;
 let allSymbols = [];
 const UPDATE_WINDOW_MS = 10000;
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 30;
+const FETCH_DELAY_MS = 100;
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function fetchOI(symbol) {
   try {
@@ -26,10 +29,16 @@ async function updateOICache(symbols, isPriority = false) {
   for (const symbol of symbols) {
     try {
       const data = await fetchOI(symbol);
-      if (!data) continue;
+      if (!data) {
+        await sleep(FETCH_DELAY_MS);
+        continue;
+      }
 
       const newOI = parseFloat(data.openInterest);
-      if (isNaN(newOI) || newOI === 0) continue;
+      if (isNaN(newOI) || newOI === 0) {
+        await sleep(FETCH_DELAY_MS);
+        continue;
+      }
 
       const existing = oiCache.get(symbol);
       const lastUpdate = existing?.lastUpdate || 0;
@@ -57,7 +66,10 @@ async function updateOICache(symbols, isPriority = false) {
           console.log(`📊 OICache BTC: oi=${d.oi} prevOi=${d.prevOi} change=${change.toFixed(3)}%`);
         }
       }
+      
+      await sleep(FETCH_DELAY_MS);
     } catch (e) {
+      await sleep(FETCH_DELAY_MS);
       continue;
     }
   }
