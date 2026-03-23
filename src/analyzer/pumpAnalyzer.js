@@ -638,10 +638,12 @@ class PumpAnalyzer {
     const fundingData = fundingService.getFundingData(symbol);
     const liqData = liquidationEngine.analyze(symbol, analysis.entryPrice || 0);
     const ofRatio = orderflowData?.ratio || 1;
-    const oiChange = oiData?.change ?? oiData?.avgChange ?? 0;
+    const oiChange = oiData?.change ?? 0;
     
     if (oiData.current === 0 && Math.random() < 0.001) {
       console.log(`⚠️ NO OI DATA: ${symbol}`);
+    } else {
+      oiTracker.markPriority(symbol);
     }
     const fundingRate = fundingData?.rate || 0;
 

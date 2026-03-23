@@ -76,11 +76,10 @@ class SignalEngine {
     await wsManager.initialize();
     this.stats.symbolsMonitored = wsManager.symbols.length;
 
-    await oiTracker.loadValidSymbols();
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
-    oiTracker.setSymbols(wsManager.symbols);
+    await oiTracker.initialize(wsManager.symbols);
 
     setInterval(async () => {
       orderflowTracker.reset();
@@ -95,11 +94,18 @@ class SignalEngine {
 
     setInterval(async () => {
       const marketData = marketDataTracker.getAllData();
-      const result = await oiTracker.fetchTopByVolume(marketData, 150);
-      const stats = oiTracker.getStats();
-      const nonZero = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.3).length;
+      oiTracker.updateMarketData(marketData);
+      await oiTracker.processQueue();
       
-      console.log(`📊 OI: tracked=${stats.tracked} valid=${stats.validCount} pos=${stats.positive} neg=${stats.negative} nonZero=${nonZero}`);
+      const stats = oiTracker.getStats();
+      const nonZero = Array.from(oiTracker.cache.data.values()).filter(d => {
+        if (d.history.length < 10) return false;
+        const first = d.history[0];
+        const last = d.history[d.history.length - 1];
+        return first > 0 && Math.abs((last - first) / first) > 0.3;
+      }).length;
+      
+      console.log(`📊 OI: tracked=${stats.tracked}/${MAX_TRACKED} pos=${stats.positive} neg=${stats.negative} nonZero=${nonZero}`);
     }, 15000);
 
     setInterval(() => {

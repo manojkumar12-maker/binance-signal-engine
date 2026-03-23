@@ -4,16 +4,17 @@ import { config } from '../../config/config.js';
 const BINANCE_API = 'https://fapi.binance.com';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-class OITracker {
+const MAX_PER_SECOND = 15;
+const TTL_MS = 15000;
+const HISTORY_WINDOW = 60;
+const MAX_TRACKED = 120;
+
+class OICache {
   constructor() {
-    this.currentOI = new Map();
-    this.oiHistory = new Map();
-    this.changeCache = new Map();
-    this.trackedSymbols = new Set();
-    this.symbols = [];
+    this.data = new Map();
     this.validFuturesSymbols = new Set();
-    this.historyWindow = 60;
     this.loaded = false;
+    this.prioritySymbols = new Set();
   }
 
   async loadValidSymbols() {
@@ -31,23 +32,145 @@ class OITracker {
       });
       
       this.loaded = true;
-      console.log(`📊 OI Tracker: loaded ${this.validFuturesSymbols.size} valid futures symbols`);
+      console.log(`📊 OI Cache: loaded ${this.validFuturesSymbols.size} valid futures symbols`);
     } catch (e) {
-      console.log('⚠️ Failed to load valid symbols, using all');
+      console.log('⚠️ Failed to load valid symbols');
       this.loaded = true;
     }
   }
 
-  isValidSymbol(symbol) {
+  isValid(symbol) {
     return this.validFuturesSymbols.has(symbol);
   }
 
-  setSymbols(symbols) {
-    this.symbols = symbols.filter(s => this.isValidSymbol(s));
+  markPriority(symbol) {
+    this.prioritySymbols.add(symbol);
+  }
+
+  clearPriority(symbol) {
+    this.prioritySymbols.delete(symbol);
+  }
+
+  update(symbol, oi) {
+    if (!this.data.has(symbol)) {
+      this.data.set(symbol, {
+        history: [],
+        lastUpdate: 0,
+        lastRequest: 0
+      });
+    }
+
+    const entry = this.data.get(symbol);
+    entry.history.push(oi);
+    if (entry.history.length > HISTORY_WINDOW) entry.history.shift();
+    entry.value = oi;
+    entry.lastUpdate = Date.now();
+  }
+
+  shouldFetch(symbol) {
+    const d = this.data.get(symbol);
+    const now = Date.now();
+    
+    if (!d) return true;
+    if (now - d.lastUpdate > TTL_MS) return true;
+    
+    return false;
+  }
+
+  get(symbol) {
+    return this.data.get(symbol);
+  }
+
+  getChange(symbol) {
+    const d = this.data.get(symbol);
+    if (!d || d.history.length < 10) return 0;
+
+    const first = d.history[0];
+    const last = d.history[d.history.length - 1];
+    if (first <= 0) return 0;
+
+    return ((last - first) / first) * 100;
+  }
+
+  getOIData(symbol) {
+    const d = this.data.get(symbol);
+    const current = d?.value || 0;
+    const change = this.getChange(symbol);
+    
+    let trend = 'NEUTRAL';
+    if (change > 1) trend = 'STRONG_INCREASE';
+    else if (change > 0.5) trend = 'INCREASE';
+    else if (change < -1) trend = 'STRONG_DECREASE';
+    else if (change < -0.5) trend = 'DECREASE';
+
+    return { current, change, trend };
+  }
+
+  getStats() {
+    let positive = 0;
+    let negative = 0;
+    let neutral = 0;
+
+    for (const [symbol] of this.data) {
+      if (!this.isValid(symbol)) continue;
+      const change = this.getChange(symbol);
+      if (change > 0.3) positive++;
+      else if (change < -0.3) negative++;
+      else neutral++;
+    }
+
+    return {
+      tracked: this.data.size,
+      positive,
+      negative,
+      neutral,
+      validCount: this.validFuturesSymbols.size
+    };
+  }
+}
+
+class OITracker {
+  constructor() {
+    this.cache = new OICache();
+    this.allSymbols = [];
+    this.activeSymbols = [];
+    this.marketData = {};
+    this.fetchQueue = [];
+    this.isProcessing = false;
+    this.lastProcessedCount = 0;
+  }
+
+  async initialize(symbols) {
+    await this.cache.loadValidSymbols();
+    this.allSymbols = symbols.filter(s => this.cache.isValid(s));
+    console.log(`📊 OIT: initialized with ${this.allSymbols.length} valid symbols`);
+  }
+
+  updateMarketData(marketData) {
+    this.marketData = marketData || {};
+    
+    const sorted = Object.entries(this.marketData)
+      .filter(([s, d]) => d.volume > 2000000 && this.cache.isValid(s))
+      .sort((a, b) => (b[1]?.volume || 0) - (a[1]?.volume || 0))
+      .slice(0, MAX_TRACKED)
+      .map(([s]) => s);
+    
+    this.activeSymbols = sorted;
+  }
+
+  markPriority(symbol) {
+    this.cache.markPriority(symbol);
   }
 
   async fetch(symbol) {
-    if (!symbol || !this.isValidSymbol(symbol)) return 0;
+    if (!symbol || !this.cache.isValid(symbol)) return 0;
+
+    const d = this.cache.get(symbol);
+    const now = Date.now();
+    
+    if (d && now - d.lastUpdate < TTL_MS) {
+      return this.cache.getChange(symbol);
+    }
 
     try {
       const res = await axios.get(
@@ -61,122 +184,66 @@ class OITracker {
 
       if (!res.data || res.data.openInterest === undefined) return 0;
 
-      const currOI = parseFloat(res.data.openInterest);
-      if (isNaN(currOI) || currOI === 0) return 0;
+      const oi = parseFloat(res.data.openInterest);
+      if (isNaN(oi) || oi === 0) return 0;
 
-      this.trackedSymbols.add(symbol);
-      this.currentOI.set(symbol, currOI);
+      this.cache.update(symbol, oi);
 
-      if (!this.oiHistory.has(symbol)) {
-        this.oiHistory.set(symbol, []);
-      }
-      const history = this.oiHistory.get(symbol);
-      history.push(currOI);
-      if (history.length > this.historyWindow) {
-        history.shift();
-      }
-
-      let change = 0;
-      if (history.length >= 10) {
-        const prevOI = history[0];
-        const latestOI = history[history.length - 1];
-        if (prevOI > 0) {
-          change = ((latestOI - prevOI) / prevOI) * 100;
+      if (symbol === 'BTCUSDT') {
+        const change = this.cache.getChange(symbol);
+        if (Math.abs(change) > 0.05) {
+          console.log(`📊 OI BTC: current=${oi.toFixed(0)} len=${d.history.length} change=${change.toFixed(3)}%`);
         }
       }
 
-      this.changeCache.set(symbol, change);
-      
-      if (symbol === 'BTCUSDT' && Math.abs(change) > 0.1) {
-        console.log(`📊 OI BTC: current=${currOI.toFixed(0)} len=${history.length} change=${change.toFixed(3)}%`);
-      }
-
-      return change;
+      return this.cache.getChange(symbol);
     } catch (e) {
-      return this.changeCache.get(symbol) || 0;
+      return this.cache.getChange(symbol);
     }
   }
 
-  async fetchSymbols(symbols) {
-    const valid = symbols.filter(s => this.isValidSymbol(s)).slice(0, 200);
-    
-    for (const symbol of valid) {
-      await this.fetch(symbol);
-      await sleep(20);
-    }
-    
-    return this.trackedSymbols.size;
-  }
+  async processQueue() {
+    if (this.isProcessing) return;
+    this.isProcessing = true;
 
-  async fetchTopByVolume(marketData, count = 150) {
-    const entries = Object.entries(marketData || {});
-    const active = entries
-      .filter(([s, d]) => d.volume > 500000 && this.isValidSymbol(s))
-      .sort((a, b) => (b[1]?.volume || 0) - (a[1]?.volume || 0))
-      .slice(0, count)
-      .map(([s]) => s);
-    
-    for (const symbol of active) {
-      await this.fetch(symbol);
-      await sleep(20);
+    const priority = [...this.cache.prioritySymbols].filter(s => this.cache.shouldFetch(s));
+    const rest = this.activeSymbols.filter(s => !this.cache.prioritySymbols.has(s) && this.cache.shouldFetch(s));
+    const queue = [...priority, ...rest].slice(0, 50);
+
+    if (queue.length === 0) {
+      this.isProcessing = false;
+      return;
     }
-    
-    return { tracked: this.trackedSymbols.size, active };
+
+    const batches = [];
+    for (let i = 0; i < queue.length; i += MAX_PER_SECOND) {
+      batches.push(queue.slice(i, i + MAX_PER_SECOND));
+    }
+
+    for (const batch of batches) {
+      await Promise.all(batch.map(s => this.fetch(s)));
+      await sleep(1000);
+    }
+
+    this.lastProcessedCount = queue.length;
+    this.cache.prioritySymbols.clear();
+    this.isProcessing = false;
   }
 
   getChange(symbol) {
-    return this.changeCache.get(symbol) || 0;
+    return this.cache.getChange(symbol);
   }
 
   getOIData(symbol) {
-    if (!symbol || !this.isValidSymbol(symbol)) {
-      return { current: 0, previous: 0, change: 0, trend: 'INVALID' };
-    }
-    
-    const current = this.currentOI.get(symbol) || 0;
-    const history = this.oiHistory.get(symbol) || [];
-    const change = this.changeCache.get(symbol) || 0;
-    
-    let prev = current;
-    if (history.length >= 2) {
-      prev = history[0];
-    }
-
-    let trend = 'NEUTRAL';
-    if (change > 0.5) trend = 'STRONG_INCREASE';
-    else if (change > 0.3) trend = 'INCREASE';
-    else if (change < -0.5) trend = 'STRONG_DECREASE';
-    else if (change < -0.3) trend = 'DECREASE';
-
-    return { current, previous: prev, change, trend };
+    return this.cache.getOIData(symbol);
   }
 
   getStats() {
-    let positive = 0;
-    let negative = 0;
-    let neutral = 0;
-
-    for (const [symbol, change] of this.changeCache) {
-      if (!this.isValidSymbol(symbol)) continue;
-      if (change > 0.3) positive++;
-      else if (change < -0.3) negative++;
-      else neutral++;
-    }
-
-    return {
-      tracked: this.trackedSymbols.size,
-      positive,
-      negative,
-      neutral,
-      validCount: this.validFuturesSymbols.size
-    };
+    return this.cache.getStats();
   }
 
   reset() {
-    this.currentOI.clear();
-    this.oiHistory.clear();
-    this.changeCache.clear();
-    this.trackedSymbols.clear();
+    this.cache = new OICache();
   }
 }
 
