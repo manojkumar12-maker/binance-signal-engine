@@ -29,7 +29,7 @@ class PumpAnalyzer {
     this.intraDayHigh = new Map();
     this.intraDayLow = new Map();
     this.lastSignalTime = new Map();
-    this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, PRE_PUMP: 0, lastReset: Date.now() };
+    this.signalCounts = { EARLY: 0, CONFIRMED: 0, SNIPER: 0, PRE_PUMP: 0, PUMP_CONFIRMED: 0, lastReset: Date.now() };
     this.volumeRateHistory = new Map();
     this.quoteVolumeHistory = new Map();
     this.orderbookImbalance = new Map();
@@ -39,6 +39,7 @@ class PumpAnalyzer {
     this.symbols = [];
     this.cycleSignals = [];
     this.lastCycleProcess = Date.now();
+    this.prePumpState = new Map();
   }
 
   classifyOI(priceChange, oiChange, fakeOI = null) {
@@ -830,10 +831,24 @@ class PumpAnalyzer {
       return null;
     };
 
+    const sniperData = {
+      priceChange,
+      volumeSpike,
+      orderFlow: ofRatio,
+      oiChange,
+      fakeOI,
+      momentum
+    };
+
     if (priceChange >= 5 && volumeSpike >= 3 && ofRatio >= 1.5 && priceChange <= 15) {
       const oiValid = Math.abs(oiChange) >= 0.05 || Math.abs(fakeOI || 0) >= 0.6;
       if (!oiValid) {
         if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)})`);
+        return null;
+      }
+      
+      if (this.isTrap(sniperData)) {
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: TRAP DETECTED, skipping`);
         return null;
       }
       
@@ -846,11 +861,21 @@ class PumpAnalyzer {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'SNIPER');
       
+      const confidence = this.calculateSniperConfidence(sniperData);
+      
       signalStateMachine.setState(symbol, STAGES.SNIPER, { 
-        priceChange, volume: volumeSpike, oiChange, fakeOI, confidence: 80 
+        priceChange, volume: volumeSpike, oiChange, fakeOI, confidence 
       });
       
-      return tryEmit('SNIPER', ex, 55);
+      const direction = this.getDirection(priceChange, ofRatio);
+      console.log(`🔴 SNIPER ${direction}: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiChange.toFixed(2)}% F=⚡${(fakeOI || 0).toFixed(2)} | Conf=${confidence}`);
+      
+      const signal = buildSignal('SNIPER', ex);
+      signal.confidence = confidence;
+      signal.direction = direction;
+      this.signalCounts.SNIPER++;
+      incrementSignalCount();
+      return signal;
     }
 
     if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
@@ -874,6 +899,28 @@ class PumpAnalyzer {
       });
       
       return tryEmit('CONFIRMED', ex, 55);
+    }
+
+    if (this.updatePrePumpState(symbol, sniperData)) {
+      const state = this.prePumpState.get(symbol);
+      if (state?.count >= 3 && this.detectPumpConfirmed(sniperData, state)) {
+        signalStateMachine.setState(symbol, STAGES.PUMP_CONFIRMED, {
+          priceChange, volume: volumeSpike, oiChange, fakeOI, confidence: 75
+        });
+        
+        if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PUMP_CONFIRMED')) return null;
+        const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PUMP_CONFIRMED');
+        
+        const direction = this.getDirection(priceChange, ofRatio);
+        console.log(`🔥 PUMP_CONFIRMED ${direction}: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiChange.toFixed(2)}% F=⚡${(fakeOI || 0).toFixed(2)} | PrePump cycles: ${state.count}`);
+        
+        const signal = buildSignal('PUMP_CONFIRMED', ex);
+        signal.direction = direction;
+        signal.prePumpCycles = state.count;
+        this.signalCounts.PUMP_CONFIRMED++;
+        incrementSignalCount();
+        return signal;
+      }
     }
 
     if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
@@ -1080,6 +1127,92 @@ class PumpAnalyzer {
     this.quoteVolumeHistory.delete(symbol);
     this.intraDayHigh.delete(symbol);
     this.intraDayLow.delete(symbol);
+    this.prePumpState.delete(symbol);
+  }
+
+  detectPrePump(data) {
+    const { priceChange, volumeSpike, orderFlow, oiChange, fakeOI } = data;
+    return (
+      Math.abs(priceChange) < 2 &&
+      volumeSpike > 2 &&
+      orderFlow > 1.2 &&
+      (oiChange > 0.03 || (fakeOI !== null && fakeOI > 0.3))
+    );
+  }
+
+  updatePrePumpState(symbol, data) {
+    const state = this.prePumpState.get(symbol) || { count: 0, lastUpdate: 0 };
+    
+    if (this.detectPrePump(data)) {
+      state.count += 1;
+    } else {
+      state.count = Math.max(0, state.count - 1);
+    }
+    state.lastUpdate = Date.now();
+    this.prePumpState.set(symbol, state);
+    
+    return state.count >= 3;
+  }
+
+  detectPumpConfirmed(data, state) {
+    const { priceChange, volumeSpike, orderFlow, oiChange, fakeOI } = data;
+    
+    const breakout = Math.abs(priceChange) > 2.5;
+    const strongFlow = orderFlow > 2;
+    const strongVolume = volumeSpike > 4;
+    const oiValid = oiChange > 0.08 || (fakeOI !== null && fakeOI > 0.5);
+    
+    return (
+      state?.count >= 3 &&
+      breakout &&
+      strongFlow &&
+      strongVolume &&
+      oiValid
+    );
+  }
+
+  isTrap(data) {
+    const { priceChange, orderFlow, oiChange, fakeOI, momentum } = data;
+    
+    if (priceChange > 5 && orderFlow < 1.2) return true;
+    if (priceChange > 4 && oiChange < 0.02 && (fakeOI === null || fakeOI < 0.3)) return true;
+    if (Math.abs(priceChange) > 12) return true;
+    if (momentum !== undefined && momentum < 0.01) return true;
+    
+    return false;
+  }
+
+  isSniper(data) {
+    const { priceChange, volumeSpike, orderFlow, oiChange, fakeOI, momentum } = data;
+    
+    const cleanMove = Math.abs(priceChange) > 3 && Math.abs(priceChange) < 12;
+    const strongVolume = volumeSpike > 4.5;
+    const strongFlow = orderFlow > 2.0;
+    const momentumValid = momentum === undefined || momentum > 0.05;
+    
+    const oiValid = oiChange > 0.08;
+    const fakeValid = fakeOI !== null && fakeOI > 0.6;
+    
+    return cleanMove && strongVolume && strongFlow && momentumValid && (oiValid || fakeValid);
+  }
+
+  getDirection(priceChange, orderFlow) {
+    if (priceChange > 0 && orderFlow > 1) return 'LONG';
+    if (priceChange < 0 && orderFlow < 1) return 'SHORT';
+    return 'NEUTRAL';
+  }
+
+  calculateSniperConfidence(data) {
+    let confidence = 70;
+    const { oiChange, volumeSpike, fakeOI, momentum } = data;
+    
+    if (oiChange > 0.15) confidence += 10;
+    if (volumeSpike > 6) confidence += 5;
+    if (fakeOI !== null && fakeOI > 0.7) confidence += 5;
+    if (!this.isTrap(data)) confidence += 5;
+    if (momentum !== undefined && momentum > 0.1) confidence += 5;
+    
+    return Math.min(confidence, 95);
   }
 }
 
