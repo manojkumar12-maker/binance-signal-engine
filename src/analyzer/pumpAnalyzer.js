@@ -41,14 +41,52 @@ class PumpAnalyzer {
   }
 
   getOIStateLabel(priceChange, oiChange) {
+    if (oiChange === null || oiChange === undefined) return { label: '⚪ NO_OI', tag: 'NO_OI' };
+    if (Math.abs(oiChange) < 0.3) return { label: '🟡 FLAT_OI', tag: 'FLAT_OI' };
+    
     const pc = priceChange || 0;
-    const oi = oiChange || 0;
-    if (Math.abs(oi) < 0.1) return '⚪ NO_OI';
-    if (pc > 0 && oi > 0.3) return '🚀 LONG';
-    if (pc > 0 && oi < -0.3) return '⚠️ SHORT_CVR';
-    if (pc < 0 && oi > 0.3) return '🔻 SHORT';
-    if (pc < 0 && oi < -0.3) return '⚠️ LONG_EXT';
-    return '⚪ NO_OI';
+    if (pc > 0 && oiChange > 0.3) return { label: '🚀 LONG', tag: 'BUILDING' };
+    if (pc > 0 && oiChange < -0.3) return { label: '⚠️ SHORT_CVR', tag: 'SHORT_CVR' };
+    if (pc < 0 && oiChange > 0.3) return { label: '🔻 SHORT', tag: 'SHORT_BLD' };
+    if (pc < 0 && oiChange < -0.3) return { label: '⚠️ LONG_EXT', tag: 'LIQ_EXIT' };
+    return { label: '🟡 FLAT_OI', tag: 'FLAT_OI' };
+  }
+
+  interpretOI(priceChange, oiChange) {
+    if (oiChange === null || oiChange === undefined) return { type: 'NO_DATA', confidenceDelta: 0 };
+    
+    const pc = priceChange || 0;
+    const oi = oiChange;
+    
+    if (Math.abs(oi) < 0.3) return { type: 'FLAT', confidenceDelta: -5 };
+    
+    if (pc > 0 && oi > 0) {
+      return { type: 'REAL_PUMP', confidenceDelta: 15 };
+    }
+    if (pc > 0 && oi < 0) {
+      return { type: 'FAKE_PUMP', confidenceDelta: -20 };
+    }
+    if (pc < 0 && oi > 0) {
+      return { type: 'REAL_DUMP', confidenceDelta: 15 };
+    }
+    if (pc < 0 && oi < 0) {
+      return { type: 'FAKE_DUMP', confidenceDelta: -15 };
+    }
+    
+    return { type: 'FLAT', confidenceDelta: 0 };
+  }
+
+  calculateOIScore(oiChange) {
+    if (oiChange === null || oiChange === undefined) return 0;
+    const oi = Math.abs(oiChange);
+    
+    if (oi > 2) return 20;
+    if (oi > 1) return 10;
+    if (oi > 0.5) return 5;
+    if (oi > 0.3) return 3;
+    if (oi < -1) return -10;
+    if (oi < -0.5) return -5;
+    return 0;
   }
 
   calculatePendingRankScore(d) {
@@ -58,19 +96,11 @@ class PumpAnalyzer {
     const ofScore = Math.min((d.orderflow || 1) * 30, 100);
     const momentumScore = Math.min(Math.abs(d.momentum || 0) * 1000, 100);
     const confluenceScore = ((d.confluence || 0) / 5) * 100;
-
-    let oiScore = 0;
-    const oi = d.oiChange || 0;
-    const pc = d.priceChange || 0;
-    if (Math.abs(oi) < 0.1) oiScore = 0;
-    else if (pc > 0 && oi > 0.3) oiScore = 100;
-    else if (pc < 0 && oi > 0.3) oiScore = 100;
-    else if (pc > 0 && oi < -0.3) oiScore = 30;
-    else if (pc < 0 && oi < -0.3) oiScore = 30;
+    const oiScore = this.calculateOIScore(d.oiChange);
 
     return Math.min(100, Math.max(0,
       conf * 0.25 + volumeScore * 0.20 + priceScore * 0.15 +
-      ofScore * 0.15 + momentumScore * 0.05 + confluenceScore * 0.05 + oiScore * 0.15
+      ofScore * 0.15 + momentumScore * 0.05 + confluenceScore * 0.05 + oiScore
     ));
   }
 
@@ -674,23 +704,35 @@ class PumpAnalyzer {
       return this.validateRiskReward(ex.entry, ex.sl, ex.tp1) && this.validateMinimumMove(ex.entry, ex.tp3);
     };
 
-    const hasOI = Math.abs(oiChange) >= 0.3;
-    const oiStateLabel = this.getOIStateLabel(priceChange, oiChange);
-    const isBadOIState = oiStateLabel === '⚠️ SHORT_CVR' || oiStateLabel === '⚠️ LONG_EXT' || oiStateLabel === '⚪ NO_OI';
-    const isGoodOIState = oiStateLabel === '🚀 LONG' || oiStateLabel === '🔻 SHORT';
+    const oiState = this.getOIStateLabel(priceChange, oiChange);
+    const oiInterpretation = this.interpretOI(priceChange, oiChange);
+    const hasOI = oiChange !== null && Math.abs(oiChange) >= 0.3;
+    const isBadOIState = ['⚠️ SHORT_CVR', '⚠️ LONG_EXT'].includes(oiState.label);
+    const isGoodOIState = ['🚀 LONG', '🔻 SHORT'].includes(oiState.label);
+
+    if (oiInterpretation.type === 'REAL_PUMP' || oiInterpretation.type === 'REAL_DUMP') {
+      enhancedResult.confidence += oiInterpretation.confidenceDelta;
+      enhancedResult.confidence = Math.min(enhancedResult.confidence, 100);
+    } else if (oiInterpretation.type === 'FAKE_PUMP' || oiInterpretation.type === 'FAKE_DUMP') {
+      enhancedResult.confidence += oiInterpretation.confidenceDelta;
+    }
 
     const buildSignal = (type, ex) => {
       if (score > 45 || volumeSpike > 3) {
         addPriority(symbol);
       }
-      return { symbol, type, score, ...enhancedResult, oiChange, priority: type === 'SNIPER' ? 1 : type === 'CONFIRMED' ? 2 : 0, signalTime: Date.now(), signals: ex };
+      return { symbol, type, score, ...enhancedResult, oiChange, oiTag: oiState.tag, priority: type === 'SNIPER' ? 1 : type === 'CONFIRMED' ? 2 : 0, signalTime: Date.now(), signals: ex };
     };
 
     const tryEmit = (type, ex, minScore = 55) => {
-      const rawScore = this.calculatePendingRankScore({ ...enhancedResult, priceChange, volumeSpike, orderflow: ofRatio, momentum: enhancedResult.momentum, oiChange: hasOI && !isBadOIState ? oiChange : 0, confidence: enhancedResult.confidence, confluence });
+      let adjustedOI = hasOI && !isBadOIState ? oiChange : 0;
+      if (oiInterpretation.type === 'NO_DATA') adjustedOI = null;
+      
+      const rawScore = this.calculatePendingRankScore({ ...enhancedResult, priceChange, volumeSpike, orderflow: ofRatio, momentum: enhancedResult.momentum, oiChange: adjustedOI, confidence: enhancedResult.confidence, confluence });
 
-      if (hasOI && !isBadOIState) {
-        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}] | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+      if (isGoodOIState) {
+        const oiStr = oiChange > 0 ? `+${oiChange.toFixed(1)}%` : `${oiChange.toFixed(1)}%`;
+        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiStr} ${oiState.label} | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
         const signal = buildSignal(type, ex);
         this.signalCounts[type]++;
         incrementSignalCount();
@@ -698,17 +740,18 @@ class PumpAnalyzer {
       }
 
       if (rawScore >= minScore) {
-        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⚠️ NO_OI: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OI=N/A | Conf=${enhancedResult.confidence} (downgraded)`);
+        const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
+        const tag = oiState.tag === 'FLAT_OI' ? '⚠️ FLAT' : oiState.tag;
+        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ${tag}: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiStr} | Conf=${enhancedResult.confidence}`);
         const signal = buildSignal(type, ex);
-        signal.confidence -= 10;
         signal.flags = signal.flags || [];
-        signal.flags.push('NO_OI');
+        signal.flags.push(oiState.tag);
         this.signalCounts[type]++;
         incrementSignalCount();
         return signal;
       }
 
-      if (Math.random() < 0.01) console.log(`❌ ${symbol} ${type}: low score ${rawScore.toFixed(0)} + no OI, skipping`);
+      if (Math.random() < 0.01) console.log(`❌ ${symbol} ${type}: low score ${rawScore.toFixed(0)}, skipping`);
       return null;
     };
 
@@ -727,7 +770,8 @@ class PumpAnalyzer {
     if (prePumpResult.isPrePump && prePumpResult.prePumpScore >= 4 && volumeSpike >= 2.5 && ofRatio >= 1.3 && !isFilteredSymbol) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}]`);
+      const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI=${oiStr} ${oiState.label}`);
       console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
       const signal = buildSignal('PRE_PUMP', ex);
       this.signalCounts.PRE_PUMP++;
@@ -738,7 +782,8 @@ class PumpAnalyzer {
     if (priceChange >= 1.5 && volumeSpike >= 2.0 && ofRatio >= 1.2 && momentum > 0 && enhancedResult.confidence >= 45 && priceChange <= 15) {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
-      console.log(`🟡 EARLY 🔎: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiChange.toFixed(1)}% [${oiStateLabel}] | Conf=${enhancedResult.confidence}`);
+      const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
+      console.log(`🟡 EARLY 🔎: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiStr} ${oiState.label} | Conf=${enhancedResult.confidence}`);
       const signal = buildSignal('EARLY', ex);
       this.signalCounts.EARLY++;
       incrementSignalCount();
