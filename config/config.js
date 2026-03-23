@@ -10,6 +10,11 @@ export const config = {
     signalDecayMinutes: 3,
     rollingWindowSize: 50
   },
+  preFilters: {
+    minVolume24h: 500000,
+    maxSpreadPercent: 0.5,
+    excludeStablecoins: true
+  },
   signalTiers: {
     PRE_PUMP: { scoreThreshold: 4, confidenceThreshold: 0, priceChangeMin: 1, priceChangeMax: 5, volumeSpikeThreshold: 2.5 },
     EARLY: { scoreThreshold: 30, confidenceThreshold: 45, priceChangeMin: 1.5, priceChangeMax: 15, volumeSpikeThreshold: 2.0 },

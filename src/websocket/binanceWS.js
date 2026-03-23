@@ -30,8 +30,11 @@ class BinanceWebSocketManager {
   }
 
   async fetchAllSymbols() {
+    console.log('🔄 Fetching symbols from Binance API...');
     try {
-      const response = await axios.get(`${config.binance.apiUrl}/fapi/v1/exchangeInfo`);
+      const response = await axios.get(`${config.binance.apiUrl}/fapi/v1/exchangeInfo`, { timeout: 10000 });
+      console.log('📡 API response status:', response.status);
+      
       this.symbols = response.data.symbols
         .filter(s => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT' && s.status === 'TRADING')
         .map(s => s.symbol);
@@ -42,8 +45,12 @@ class BinanceWebSocketManager {
       }
 
       console.log(`📊 Loaded ${this.symbols.length} USDT perpetual symbols`);
+      if (this.symbols.length > 0) {
+        console.log('📊 First 5 symbols:', this.symbols.slice(0, 5));
+      }
     } catch (error) {
       console.error('❌ Failed to fetch symbols:', error.message);
+      console.error('❌ Error details:', error.response?.status, error.response?.statusText);
       this.symbols = [];
     }
   }
