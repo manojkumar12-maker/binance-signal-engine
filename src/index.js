@@ -76,6 +76,7 @@ class SignalEngine {
     await wsManager.initialize();
     this.stats.symbolsMonitored = wsManager.symbols.length;
 
+    await oiTracker.loadValidSymbols();
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
@@ -93,12 +94,13 @@ class SignalEngine {
     }, 10000);
 
     setInterval(async () => {
-      const tracked = await oiTracker.fetchTopSymbols(200);
+      const marketData = marketDataTracker.getAllData();
+      const result = await oiTracker.fetchTopByVolume(marketData, 150);
       const stats = oiTracker.getStats();
       const nonZero = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.3).length;
       
-      console.log(`📊 OI: tracked=${stats.tracked}/${stats.totalTracked} pos=${stats.positive} neg=${stats.negative} nonZero=${nonZero}`);
-    }, 10000);
+      console.log(`📊 OI: tracked=${stats.tracked} valid=${stats.validCount} pos=${stats.positive} neg=${stats.negative} nonZero=${nonZero}`);
+    }, 15000);
 
     setInterval(() => {
       this.processCycleSignals();

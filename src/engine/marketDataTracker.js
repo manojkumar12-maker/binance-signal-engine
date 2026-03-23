@@ -339,6 +339,15 @@ class MarketDataTracker {
     };
   }
 
+  getAllData() {
+    const result = {};
+    for (const [symbol, data] of this.orderflowHistory.entries()) {
+      const volume = (data.buy || 0) + (data.sell || 0);
+      result[symbol] = { volume, buy: data.buy || 0, sell: data.sell || 0 };
+    }
+    return result;
+  }
+
   getSummary() {
     return {
       trackedSymbols: this.symbols.length,
