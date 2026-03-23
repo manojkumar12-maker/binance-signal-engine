@@ -24,9 +24,12 @@ async function updateOICache(symbols, isPriority = false) {
 
       const prev = oiCache.get(symbol);
 
+      const newOI = parseFloat(data.openInterest);
+      const prevOI = prev?.oi || newOI;
+      
       oiCache.set(symbol, {
-        oi: parseFloat(data.openInterest),
-        prevOi: prev?.oi || 0,
+        oi: newOI,
+        prevOi: prevOI,
         timestamp: Date.now()
       });
     } catch (e) {
@@ -39,7 +42,11 @@ function getOIChange(symbol) {
   const data = oiCache.get(symbol);
   if (!data || !data.prevOi || data.prevOi === 0) return null;
 
-  return ((data.oi - data.prevOi) / data.prevOi) * 100;
+  const change = ((data.oi - data.prevOi) / data.prevOi) * 100;
+  
+  if (Math.abs(change) < 0.05) return 0;
+  
+  return change;
 }
 
 function getOI(symbol) {

@@ -8,7 +8,7 @@ export class OITracker {
     this.changeCache = new Map();
     this.changeHistory = new Map();
     this.lastFetch = new Map();
-    this.fetchInterval = 10000;
+    this.fetchInterval = 2000;
     this.trackedSymbols = new Set();
   }
 

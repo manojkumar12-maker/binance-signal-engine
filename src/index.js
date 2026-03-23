@@ -97,7 +97,7 @@ class SignalEngine {
       if (updatedCount > 0) {
         console.log(`📊 OI Tracker: ${updatedCount} symbols with OI data`);
       }
-    }, 15000);
+    }, 2000);
 
     setInterval(() => {
       this.processCycleSignals();
