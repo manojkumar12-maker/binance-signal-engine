@@ -127,6 +127,15 @@
             border-color: #eab308;
         }
 
+        .filter-btn.pump-confirmed {
+            border-color: #f97316;
+        }
+        .filter-btn.pump-confirmed:hover, .filter-btn.pump-confirmed.active {
+            background: #f97316;
+            color: #fff;
+            border-color: #f97316;
+        }
+        
         .filter-btn {
             padding: 10px 20px;
             background: #1e293b;
@@ -143,6 +152,45 @@
             background: #f0b90b;
             color: #000;
             border-color: #f0b90b;
+        }
+        
+        .panel-section {
+            margin-bottom: 30px;
+        }
+        
+        .panel-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .panel-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        
+        .panel-item {
+            background: linear-gradient(135deg, #1a1f2e 0%, #141920 100%);
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 12px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-item.pump-confirmed {
+            border-color: #f97316;
+            background: linear-gradient(135deg, rgba(249,115,22,0.1) 0%, #141920 100%);
+        }
+        
+        .panel-item.pre-pump {
+            border-color: #8b5cf6;
+            background: linear-gradient(135deg, rgba(139,92,246,0.1) 0%, #141920 100%);
         }
 
         .signals-grid {
@@ -406,9 +454,13 @@
                     <div class="stat-value" id="confirmedSignals">0</div>
                     <div class="stat-label">🟢 Confirmed</div>
                 </div>
+                <div class="stat-item" style="color: #f97316;">
+                    <div class="stat-value" id="pumpConfirmedSignals">0</div>
+                    <div class="stat-label">🚀 Pump</div>
+                </div>
                 <div class="stat-item" style="color: #8b5cf6;">
                     <div class="stat-value" id="prePumpSignals">0</div>
-                    <div class="stat-label">🟣 Pre-Pump</div>
+                    <div class="stat-label">🟣 Pre</div>
                 </div>
                 <div class="stat-item" style="color: #eab308;">
                     <div class="stat-value" id="earlySignals">0</div>
@@ -430,11 +482,31 @@
         <div class="filters">
             <button class="filter-btn active" data-filter="all">All Signals</button>
             <button class="filter-btn" data-filter="sniper">🔴 Sniper</button>
+            <button class="filter-btn pump-confirmed" data-filter="pump-confirmed">🚀 Pump Confirmed</button>
             <button class="filter-btn" data-filter="confirmed">🟢 Confirmed</button>
             <button class="filter-btn pre-pump" data-filter="pre-pump">🟣 Pre-Pump</button>
             <button class="filter-btn" data-filter="early">🟡 Early</button>
         </div>
-        <div class="signals-grid" id="signalsGrid">
+        
+        <div class="panel-section">
+            <div class="panel-title">🚀 PUMP-CONFIRMED PANEL</div>
+            <div class="panel-grid" id="pumpConfirmedPanel">
+                <div class="panel-item pump-confirmed">
+                    <span>Waiting for signals...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="panel-section">
+            <div class="panel-title">🟣 PRE-PUMP PANEL</div>
+            <div class="panel-grid" id="prePumpPanel">
+                <div class="panel-item pre-pump">
+                    <span>Waiting for signals...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="signalsSection"></div>
             <div class="empty-state">
                 <div class="empty-icon">📊</div>
                 <div class="empty-text">No signals yet</div>
@@ -447,13 +519,16 @@
         class SignalDashboard {
             constructor() {
                 this.signals = [];
+                this.prePumpSignals = [];
+                this.pumpConfirmedSignals = [];
                 this.filter = 'all';
                 this.stats = {
                     total: 0,
                     active: 0,
                     sniper: 0,
                     confirmed: 0,
-                    prePump: 0
+                    prePump: 0,
+                    pumpConfirmed: 0
                 };
 
                 this.apiBase = 'https://binance-signal-engine.onrender.com';
@@ -474,6 +549,7 @@
                         this.stats.confirmed = tiers.CONFIRMED || 0;
                         this.stats.prePump = tiers.PRE_PUMP || 0;
                         this.stats.early = tiers.EARLY || 0;
+                        this.stats.pumpConfirmed = tiers.PUMP_CONFIRMED || 0;
                         this.updateStats();
                     }
                 } catch (error) {
@@ -488,6 +564,9 @@
                     if (response.ok) {
                         const data = await response.json();
                         this.signals = data.signals || [];
+                        this.prePumpSignals = this.signals.filter(s => s.tier === 'PRE_PUMP').slice(0, 10);
+                        this.pumpConfirmedSignals = this.signals.filter(s => s.tier === 'PUMP_CONFIRMED' || s.type === 'PUMP_CONFIRMED').slice(0, 10);
+                        this.renderPanels();
                         this.renderSignals();
                         this.fetchStats();
                     }
@@ -495,6 +574,33 @@
                     console.log('Waiting for connection...');
                 }
                 setTimeout(() => this.fetchSignals(), 5000);
+            }
+
+            renderPanels() {
+                const pumpPanel = document.getElementById('pumpConfirmedPanel');
+                const prePanel = document.getElementById('prePumpPanel');
+                
+                if (this.pumpConfirmedSignals.length > 0) {
+                    pumpPanel.innerHTML = this.pumpConfirmedSignals.map(s => `
+                        <div class="panel-item pump-confirmed">
+                            <span>⚡ ${s.symbol}</span>
+                            <span style="color: ${s.priceChange > 0 ? '#10b981' : '#ef4444'}">${(s.priceChange || 0).toFixed(1)}%</span>
+                        </div>
+                    `).join('');
+                } else {
+                    pumpPanel.innerHTML = '<div class="panel-item pump-confirmed"><span>No pump signals detected</span></div>';
+                }
+                
+                if (this.prePumpSignals.length > 0) {
+                    prePanel.innerHTML = this.prePumpSignals.map(s => `
+                        <div class="panel-item pre-pump">
+                            <span>📊 ${s.symbol}</span>
+                            <span style="color: ${s.priceChange > 0 ? '#10b981' : '#ef4444'}">${(s.priceChange || 0).toFixed(1)}%</span>
+                        </div>
+                    `).join('');
+                } else {
+                    prePanel.innerHTML = '<div class="panel-item pre-pump"><span>No pre-pump signals detected</span></div>';
+                }
             }
 
             showNotification(message) {
@@ -525,6 +631,8 @@
                         return this.signals.filter(s => s.tier === 'CONFIRMED');
                     case 'pre-pump':
                         return this.signals.filter(s => s.tier === 'PRE_PUMP');
+                    case 'pump-confirmed':
+                        return this.signals.filter(s => s.tier === 'PUMP_CONFIRMED' || s.type === 'PUMP_CONFIRMED');
                     case 'early':
                         return this.signals.filter(s => s.tier === 'EARLY');
                     default:
@@ -533,7 +641,7 @@
             }
 
             renderSignals() {
-                const grid = document.getElementById('signalsGrid');
+                const section = document.getElementById('signalsSection');
                 const filtered = this.getFilteredSignals();
 
                 if (filtered.length === 0) {
@@ -541,25 +649,35 @@
                         sniper: 'No Sniper signals yet',
                         confirmed: 'No Confirmed signals yet',
                         'pre-pump': 'No Pre-Pump signals yet',
+                        'pump-confirmed': 'No Pump Confirmed signals yet',
                         early: 'No Early signals yet',
                         all: 'No signals found'
                     };
-                    grid.innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-icon">📊</div>
-                            <div class="empty-text">${messages[this.filter] || 'No signals found'}</div>
-                            <div class="empty-subtext">Waiting for pump signals...</div>
+                    section.innerHTML = `
+                        <div class="signals-grid">
+                            <div class="empty-state">
+                                <div class="empty-icon">📊</div>
+                                <div class="empty-text">${messages[this.filter] || 'No signals found'}</div>
+                                <div class="empty-subtext">Waiting for pump signals...</div>
+                            </div>
                         </div>
                     `;
                     return;
                 }
 
+                const tierColors = {
+                    'SNIPER': '#ef4444',
+                    'PUMP_CONFIRMED': '#f97316',
+                    'CONFIRMED': '#10b981',
+                    'EARLY': '#eab308',
+                    'PRE_PUMP': '#8b5cf6'
+                };
                 
-                grid.innerHTML = filtered.map(signal => `
+                section.innerHTML = '<div class="signals-grid">' + filtered.map(signal => `
                     <div class="signal-card">
-                        <div class="signal-header">
+                        <div class="signal-header" style="background: ${tierColors[signal.tier] || '#f0b90b'}">
                             <span class="signal-symbol">${signal.symbol}</span>
-                            <span class="signal-badge" style="background: ${signal.tier === 'SNIPER' ? '#ef4444' : signal.tier === 'CONFIRMED' ? '#10b981' : signal.tier === 'EARLY' ? '#eab308' : '#8b5cf6'}; color: ${signal.tier === 'EARLY' ? '#000' : '#fff'};">${signal.tier} ${signal.status}</span>
+                            <span class="signal-badge" style="background: rgba(0,0,0,0.2); color: #fff;">${signal.tier} ${signal.status || ''}</span>
                         </div>
                         <div class="signal-body">
                             <div class="signal-price">
@@ -589,17 +707,17 @@
                             <div class="signal-footer">
                                 <span class="signal-time">${new Date(signal.timestamp).toLocaleString()}</span>
                                 <div class="signal-rank" title="Rank Score">🏆 ${(signal.rankScore || 0).toFixed(0)}</div>
-                                <div class="signal-oi">OI: ${(signal.oiChange || 0).toFixed(1)}%</div>
+                                <div class="signal-oi">OI: ${(signal.oiChange || signal.metrics?.oiChange || 0).toFixed(1)}%</div>
                                 <div class="signal-strength">
                                     <div class="strength-bar">
-                                        <div class="strength-fill" style="width: ${signal.metrics?.score || 0}%"></div>
+                                        <div class="strength-fill" style="width: ${signal.confidence || signal.metrics?.score || 0}%"></div>
                                     </div>
-                                    <span class="strength-value">${Math.round(signal.metrics?.score || 0)}%</span>
+                                    <span class="strength-value">${Math.round(signal.confidence || signal.metrics?.score || 0)}%</span>
                                 </div>
                             </div>
                         </div>
                     </div>
-                `).join('');
+                `).join('') + '</div>';
             }
 
             updateStats() {
@@ -609,6 +727,7 @@
                 document.getElementById('confirmedSignals').textContent = this.stats.confirmed;
                 document.getElementById('prePumpSignals').textContent = this.stats.prePump;
                 document.getElementById('earlySignals').textContent = this.stats.early || 0;
+                document.getElementById('pumpConfirmedSignals').textContent = this.stats.pumpConfirmed || 0;
             }
 
             async saveSignals() {
