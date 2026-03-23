@@ -11,7 +11,6 @@ import { signalRankingEngine } from '../engine/signalRankingEngine.js';
 import { oiTracker } from '../engine/oiTracker.js';
 import { fundingService } from '../engine/fundingService.js';
 import { liquidationEngine } from '../engine/liquidationEngine.js';
-import { oiCache, getOIChange, addPriority } from '../engine/oiCache.js';
 
 const prePumpDetector = new PrePumpDetector();
 const liquidationService = new LiquidationService();
@@ -622,8 +621,11 @@ class PumpAnalyzer {
     const fundingData = fundingService.getFundingData(symbol);
     const liqData = liquidationEngine.analyze(symbol, analysis.entryPrice || 0);
     const ofRatio = orderflowData?.ratio || 1;
-    const cachedOI = getOIChange(symbol);
-    const oiChange = cachedOI ?? oiData?.change ?? oiData?.avgChange ?? 0;
+    const oiChange = oiData?.change ?? oiData?.avgChange ?? 0;
+    
+    if (oiData.current === 0 && Math.random() < 0.001) {
+      console.log(`⚠️ NO OI DATA: ${symbol}`);
+    }
     const fundingRate = fundingData?.rate || 0;
 
     const prePumpData = {
@@ -718,9 +720,6 @@ class PumpAnalyzer {
     }
 
     const buildSignal = (type, ex) => {
-      if (score > 45 || volumeSpike > 3) {
-        addPriority(symbol);
-      }
       return { symbol, type, score, ...enhancedResult, oiChange, oiTag: oiState.tag, priority: type === 'SNIPER' ? 1 : type === 'CONFIRMED' ? 2 : 0, signalTime: Date.now(), signals: ex };
     };
 

@@ -93,12 +93,12 @@ class SignalEngine {
     }, 10000);
 
     setInterval(async () => {
-      const updated = await oiTracker.fetchTopSymbols(30);
+      const updated = await oiTracker.fetchTopSymbols(100);
       const stats = oiTracker.getStats();
       const nonZero = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.1).length;
       
       if (stats.tracked > 0) {
-        console.log(`📊 OI: tracked=${stats.tracked} pos=${stats.positive} neg=${stats.negative} | nonZero=${nonZero}`);
+        console.log(`📊 OI: tracked=${stats.tracked} pos=${stats.positive} neg=${stats.negative} nonZero=${nonZero}`);
       }
     }, 5000);
 
