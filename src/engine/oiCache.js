@@ -5,6 +5,10 @@ let prioritySymbols = new Set();
 let isRunning = false;
 let normalInterval = null;
 let priorityInterval = null;
+let updateIndex = 0;
+let allSymbols = [];
+const UPDATE_WINDOW_MS = 10000;
+const BATCH_SIZE = 50;
 
 async function fetchOI(symbol) {
   try {
@@ -17,25 +21,58 @@ async function fetchOI(symbol) {
 }
 
 async function updateOICache(symbols, isPriority = false) {
+  const now = Date.now();
+  
   for (const symbol of symbols) {
     try {
       const data = await fetchOI(symbol);
       if (!data) continue;
 
-      const prev = oiCache.get(symbol);
-
       const newOI = parseFloat(data.openInterest);
-      const prevOI = prev?.oi || newOI;
+      if (isNaN(newOI) || newOI === 0) continue;
+
+      const existing = oiCache.get(symbol);
+      const lastUpdate = existing?.lastUpdate || 0;
       
+      let prevOI;
+      
+      if (!existing) {
+        prevOI = newOI;
+      } else if (now - lastUpdate >= UPDATE_WINDOW_MS) {
+        prevOI = existing.oi;
+      } else {
+        prevOI = existing.prevOi;
+      }
+
       oiCache.set(symbol, {
         oi: newOI,
         prevOi: prevOI,
-        timestamp: Date.now()
+        lastUpdate: now
       });
+
+      if (symbol === 'BTCUSDT') {
+        const d = oiCache.get(symbol);
+        const change = d.prevOi > 0 ? ((d.oi - d.prevOi) / d.prevOi) * 100 : 0;
+        if (Math.abs(change) > 0.05) {
+          console.log(`📊 OICache BTC: oi=${d.oi} prevOi=${d.prevOi} change=${change.toFixed(3)}%`);
+        }
+      }
     } catch (e) {
       continue;
     }
   }
+}
+
+function getNextBatch() {
+  if (!allSymbols || allSymbols.length === 0) return [];
+  
+  const start = updateIndex;
+  const end = Math.min(start + BATCH_SIZE, allSymbols.length);
+  const batch = allSymbols.slice(start, end);
+  
+  updateIndex = end >= allSymbols.length ? 0 : end;
+  
+  return batch;
 }
 
 function getOIChange(symbol) {
@@ -43,8 +80,6 @@ function getOIChange(symbol) {
   if (!data || !data.prevOi || data.prevOi === 0) return null;
 
   const change = ((data.oi - data.prevOi) / data.prevOi) * 100;
-  
-  if (Math.abs(change) < 0.05) return 0;
   
   return change;
 }
@@ -56,7 +91,7 @@ function getOI(symbol) {
 function getOIStateLabel(priceChange, oiChange) {
   const pc = priceChange || 0;
   const oi = oiChange || 0;
-  if (Math.abs(oi) < 0.1) return '⚪ NO_OI';
+  if (Math.abs(oi) < 0.3) return '⚪ NO_OI';
   if (pc > 0 && oi > 0.3) return '🚀 LONG';
   if (pc > 0 && oi < -0.3) return '⚠️ SHORT_CVR';
   if (pc < 0 && oi > 0.3) return '🔻 SHORT';
@@ -71,6 +106,8 @@ function setPrioritySymbols(symbols) {
 function start(symbols) {
   if (isRunning) return;
   isRunning = true;
+  allSymbols = symbols;
+  updateIndex = 0;
 
   priorityInterval = setInterval(async () => {
     if (prioritySymbols.size > 0) {
@@ -79,11 +116,11 @@ function start(symbols) {
   }, 3000);
 
   normalInterval = setInterval(async () => {
-    const normalSymbols = symbols.filter(s => !prioritySymbols.has(s));
-    if (normalSymbols.length > 0) {
-      await updateOICache(normalSymbols, false);
+    const batch = getNextBatch();
+    if (batch.length > 0) {
+      await updateOICache(batch, false);
     }
-  }, 10000);
+  }, 2000);
 }
 
 function stop() {
@@ -106,7 +143,7 @@ function getStats() {
   const now = Date.now();
   for (const [_, data] of oiCache) {
     if (data.oi > 0) withData++;
-    if (now - data.timestamp > 30000) stale++;
+    if (now - data.lastUpdate > 30000) stale++;
   }
   return {
     total: oiCache.size,

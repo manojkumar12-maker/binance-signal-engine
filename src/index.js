@@ -81,21 +81,21 @@ class SignalEngine {
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
     start(wsManager.symbols);
+    oiTracker.setSymbols(wsManager.symbols);
 
     setInterval(() => {
       orderflowTracker.reset();
     }, 60000);
 
     setInterval(async () => {
-      const topSymbols = wsManager.symbols.slice(0, 30);
-      for (const symbol of topSymbols) {
-        await oiTracker.fetch(symbol);
-        await fundingService.fetch(symbol);
-      }
+      const batch = oiTracker.getNextBatch();
+      await oiTracker.fetchBatch(batch);
+      await fundingService.fetchBatch(wsManager.symbols.slice(0, 10));
+      
       const oiStats = oiTracker.getStats();
-      const updatedCount = Array.from(oiTracker.changeCache.values()).filter(v => v !== 0).length;
-      if (updatedCount > 0) {
-        console.log(`📊 OI Tracker: ${updatedCount} symbols with OI data`);
+      const nonZeroChanges = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.1).length;
+      if (nonZeroChanges > 0) {
+        console.log(`📊 OI Tracker: ${nonZeroChanges} symbols with real OI change`);
       }
     }, 2000);
 
