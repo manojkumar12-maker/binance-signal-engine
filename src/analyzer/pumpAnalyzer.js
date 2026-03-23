@@ -39,16 +39,33 @@ class PumpAnalyzer {
     this.lastCycleProcess = Date.now();
   }
 
-  getOIStateLabel(priceChange, oiChange) {
-    if (oiChange === null || oiChange === undefined) return { label: '⚪ NO_OI', tag: 'NO_OI' };
-    if (Math.abs(oiChange) < 0.3) return { label: '🟡 FLAT_OI', tag: 'FLAT_OI' };
-    
+  classifyOI(priceChange, oiChange) {
     const pc = priceChange || 0;
-    if (pc > 0 && oiChange > 0.3) return { label: '🚀 LONG', tag: 'BUILDING' };
-    if (pc > 0 && oiChange < -0.3) return { label: '⚠️ SHORT_CVR', tag: 'SHORT_CVR' };
-    if (pc < 0 && oiChange > 0.3) return { label: '🔻 SHORT', tag: 'SHORT_BLD' };
-    if (pc < 0 && oiChange < -0.3) return { label: '⚠️ LONG_EXT', tag: 'LIQ_EXIT' };
-    return { label: '🟡 FLAT_OI', tag: 'FLAT_OI' };
+    const oi = oiChange || 0;
+    
+    if (Math.abs(oi) < 0.3) return 'NEUTRAL';
+    
+    if (pc > 0 && oi > 0.5) return 'LONG_BUILDUP';
+    if (pc > 0 && oi < -0.3) return 'SHORT_SQUEEZE';
+    if (pc < 0 && oi > 0.5) return 'SHORT_BUILDUP';
+    if (pc < 0 && oi < -0.3) return 'LONG_EXIT';
+    
+    return 'NEUTRAL';
+  }
+
+  getOIStateLabel(priceChange, oiChange) {
+    const pc = priceChange || 0;
+    const oi = oiChange || 0;
+    
+    if (oiChange === null || oiChange === undefined) return { label: '⚪ NO_OI', tag: 'NO_OI' };
+    if (Math.abs(oi) < 0.3) return { label: '🟡 FLAT', tag: 'FLAT' };
+    
+    if (pc > 0 && oi > 0.5) return { label: '🟢 LONG_BUILDUP', tag: 'LONG_BUILDUP' };
+    if (pc > 0 && oi < -0.3) return { label: '💥 SHORT_SQUEEZE', tag: 'SHORT_SQUEEZE' };
+    if (pc < 0 && oi > 0.5) return { label: '🔴 SHORT_BUILDUP', tag: 'SHORT_BUILDUP' };
+    if (pc < 0 && oi < -0.3) return { label: '🪤 LONG_EXIT', tag: 'LONG_EXIT' };
+    
+    return { label: '🟡 FLAT', tag: 'FLAT' };
   }
 
   interpretOI(priceChange, oiChange) {
@@ -57,34 +74,34 @@ class PumpAnalyzer {
     const pc = priceChange || 0;
     const oi = oiChange;
     
-    if (Math.abs(oi) < 0.3) return { type: 'FLAT', confidenceDelta: -5 };
+    if (Math.abs(oi) < 0.3) return { type: 'FLAT', confidenceDelta: 0 };
     
-    if (pc > 0 && oi > 0) {
-      return { type: 'REAL_PUMP', confidenceDelta: 15 };
+    if (pc > 0 && oi > 0.5) {
+      return { type: 'LONG_BUILDUP', confidenceDelta: 20, description: 'Smart money entering long' };
     }
-    if (pc > 0 && oi < 0) {
-      return { type: 'FAKE_PUMP', confidenceDelta: -20 };
+    if (pc > 0 && oi < -0.3) {
+      return { type: 'SHORT_SQUEEZE', confidenceDelta: 15, description: 'Shorts getting liquidated' };
     }
-    if (pc < 0 && oi > 0) {
-      return { type: 'REAL_DUMP', confidenceDelta: 15 };
+    if (pc < 0 && oi > 0.5) {
+      return { type: 'SHORT_BUILDUP', confidenceDelta: 10, description: 'Bearish accumulation' };
     }
-    if (pc < 0 && oi < 0) {
-      return { type: 'FAKE_DUMP', confidenceDelta: -15 };
+    if (pc < 0 && oi < -0.3) {
+      return { type: 'LONG_EXIT', confidenceDelta: -10, description: 'Longs being liquidated' };
     }
     
-    return { type: 'FLAT', confidenceDelta: 0 };
+    return { type: 'NEUTRAL', confidenceDelta: 0 };
   }
 
   calculateOIScore(oiChange) {
     if (oiChange === null || oiChange === undefined) return 0;
     const oi = Math.abs(oiChange);
     
-    if (oi > 2) return 20;
-    if (oi > 1) return 10;
-    if (oi > 0.5) return 5;
-    if (oi > 0.3) return 3;
-    if (oi < -1) return -10;
-    if (oi < -0.5) return -5;
+    if (oi > 2) return 25;
+    if (oi > 1) return 15;
+    if (oi > 0.5) return 10;
+    if (oi > 0.3) return 5;
+    if (oi < -1) return -15;
+    if (oi < -0.5) return -10;
     return 0;
   }
 
@@ -724,14 +741,16 @@ class PumpAnalyzer {
     };
 
     const tryEmit = (type, ex, minScore = 55) => {
-      let adjustedOI = hasOI && !isBadOIState ? oiChange : 0;
-      if (oiInterpretation.type === 'NO_DATA') adjustedOI = null;
+      const oiClass = this.classifyOI(priceChange, oiChange);
+      const isGoodOI = ['LONG_BUILDUP', 'SHORT_BUILDUP', 'SHORT_SQUEEZE'].includes(oiClass);
+      const isBadOI = ['LONG_EXIT', 'SHORT_BUILDUP'].includes(oiClass) && priceChange < 0;
       
-      const rawScore = this.calculatePendingRankScore({ ...enhancedResult, priceChange, volumeSpike, orderflow: ofRatio, momentum: enhancedResult.momentum, oiChange: adjustedOI, confidence: enhancedResult.confidence, confluence });
+      const rawScore = this.calculatePendingRankScore({ ...enhancedResult, priceChange, volumeSpike, orderflow: ofRatio, momentum: enhancedResult.momentum, oiChange: oiChange || 0, confidence: enhancedResult.confidence, confluence });
 
-      if (isGoodOIState) {
+      if (isGoodOI) {
         const oiStr = oiChange > 0 ? `+${oiChange.toFixed(1)}%` : `${oiChange.toFixed(1)}%`;
-        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiStr} ${oiState.label} | Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
+        const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : '💥';
+        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass}\n  Conf=${enhancedResult.confidence} | R:R=${ex.rr1.toFixed(1)}`);
         const signal = buildSignal(type, ex);
         this.signalCounts[type]++;
         incrementSignalCount();
@@ -740,11 +759,11 @@ class PumpAnalyzer {
 
       if (rawScore >= minScore) {
         const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
-        const tag = oiState.tag === 'FLAT_OI' ? '⚠️ FLAT' : oiState.tag;
-        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ${tag}: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiStr} | Conf=${enhancedResult.confidence}`);
+        const emoji = oiClass === 'FLAT' ? '🟡' : oiClass === 'LONG_EXIT' ? '🪤' : '⚪';
+        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type}: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OI=${oiStr} ${emoji} ${oiClass}`);
         const signal = buildSignal(type, ex);
         signal.flags = signal.flags || [];
-        signal.flags.push(oiState.tag);
+        signal.flags.push(oiClass);
         this.signalCounts[type]++;
         incrementSignalCount();
         return signal;
@@ -770,8 +789,9 @@ class PumpAnalyzer {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PRE_PUMP');
       const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol} | PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)} | OI=${oiStr} ${oiState.label}`);
-      console.log(`   → ${prePumpResult.reasons.join(' | ')}`);
+      const oiClass = this.classifyOI(priceChange, oiChange);
+      const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
+      console.log(`🟣 PRE-PUMP 🚀: ${symbol}\n  PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass}\n   → ${prePumpResult.reasons.join(' | ')}`);
       const signal = buildSignal('PRE_PUMP', ex);
       this.signalCounts.PRE_PUMP++;
       incrementSignalCount();
@@ -782,7 +802,9 @@ class PumpAnalyzer {
       if (!checkRR(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY')) return null;
       const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'EARLY');
       const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : 'N/A';
-      console.log(`🟡 EARLY 🔎: ${symbol} | PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)} | OI=${oiStr} ${oiState.label} | Conf=${enhancedResult.confidence}`);
+      const oiClass = this.classifyOI(priceChange, oiChange);
+      const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
+      console.log(`🟡 EARLY 🔎: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass} | Conf=${enhancedResult.confidence}`);
       const signal = buildSignal('EARLY', ex);
       this.signalCounts.EARLY++;
       incrementSignalCount();
