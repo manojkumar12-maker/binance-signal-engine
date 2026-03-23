@@ -13,7 +13,6 @@ import { updateAdaptiveThresholds } from './engine/adaptiveFilter.js';
 import { orderflowTracker } from './engine/orderflowTracker.js';
 import { oiTracker } from './engine/oiTracker.js';
 import { fundingService } from './engine/fundingService.js';
-import { oiCache, start, stop, getStats } from './engine/oiCache.js';
 
 process.on('uncaughtException', (err) => {
   console.error('🔥 UNCAUGHT EXCEPTION:', err.message);
@@ -80,34 +79,28 @@ class SignalEngine {
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
-    start(wsManager.symbols);
     oiTracker.setSymbols(wsManager.symbols);
 
-    setTimeout(() => {
-      console.log('📊 Delayed OI tracking starting...');
-    }, 5000);
-
-    setInterval(() => {
+    setInterval(async () => {
       orderflowTracker.reset();
     }, 60000);
 
     setInterval(async () => {
-      const batch = oiTracker.getNextBatch();
-      if (batch.length > 0) {
-        await oiTracker.fetchBatch(batch);
-      }
-      
       const topSymbols = wsManager.symbols.slice(0, 5);
       for (const symbol of topSymbols) {
         await fundingService.fetch(symbol);
       }
+    }, 10000);
+
+    setInterval(async () => {
+      const updated = await oiTracker.fetchTopSymbols(30);
+      const stats = oiTracker.getStats();
+      const nonZero = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.1).length;
       
-      const oiStats = oiTracker.getStats();
-      const nonZeroChanges = Array.from(oiTracker.changeCache.values()).filter(v => Math.abs(v) > 0.1).length;
-      if (nonZeroChanges > 0) {
-        console.log(`📊 OI Tracker: ${nonZeroChanges} symbols with real OI change`);
+      if (stats.tracked > 0) {
+        console.log(`📊 OI: tracked=${stats.tracked} pos=${stats.positive} neg=${stats.negative} | nonZero=${nonZero}`);
       }
-    }, 3000);
+    }, 5000);
 
     setInterval(() => {
       this.processCycleSignals();
@@ -125,12 +118,11 @@ class SignalEngine {
         const oi = oiTracker.getChange(sym);
         const oiData = oiTracker.getOIData(sym);
         const ofData = orderflowTracker.getOrderflowData(sym);
-        return `${sym}:OF=${of.toFixed(2)}(b=${ofData.buyVolume.toFixed(0)}s=${ofData.sellVolume.toFixed(0)})|OI=${oi.toFixed(1)}%(${oiData.trend})`;
+        return `${sym}:OF=${of.toFixed(2)}|OI=${oi >= 0 ? '+' : ''}${oi.toFixed(1)}%(${oiData.trend.substring(0,4)})`;
       }).join(' | ');
       const oiStats = oiTracker.getStats();
-      const cacheStats = getStats();
-      console.log(`📊 DATA CHECK: ${samples}`);
-      console.log(`📊 OI Cache: total=${cacheStats.total} withData=${cacheStats.withData} priority=${cacheStats.priorityCount} | OI Tracker: tracked=${oiStats.tracked} pos=${oiStats.positive} neg=${oiStats.negative} | OF: active=${orderflowTracker.getStats().activeSymbols}`);
+      console.log(`📊 DATA: ${samples}`);
+      console.log(`📊 OI Tracker: tracked=${oiStats.tracked} pos=${oiStats.positive} neg=${oiStats.negative} | OF: ${orderflowTracker.getStats().activeSymbols} active`);
     }, 20000);
 
     console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
@@ -284,7 +276,7 @@ class SignalEngine {
     console.log('\n🛑 Stopping Signal Engine...');
     wsManager.disconnect();
     orderBookAnalyzer.stop();
-    stop();
+    oiTracker.reset();
     await closeDatabase();
     console.log('✅ Engine stopped');
   }

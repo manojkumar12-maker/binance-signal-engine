@@ -1,93 +1,72 @@
 import axios from 'axios';
-import { config } from '../../config/config.js';
 
+const BINANCE_API = 'https://fapi.binance.com';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const FETCH_DELAY = 50;
 
-export class OITracker {
+class OITracker {
   constructor() {
-    this.prevOI = new Map();
     this.currentOI = new Map();
-    this.changeCache = new Map();
+    this.prevOI = new Map();
     this.changeHistory = new Map();
-    this.lastUpdate = new Map();
-    this.updateWindowMs = 10000;
+    this.changeCache = new Map();
     this.trackedSymbols = new Set();
-    this.updateIndex = 0;
-    this.allSymbols = [];
-    this.lastFetchTime = 0;
+    this.updateTimestamps = new Map();
+    this.updateInterval = 15000;
+    this.batchSize = 10;
+    this.symbols = [];
+    this.batchIndex = 0;
   }
 
   setSymbols(symbols) {
-    this.allSymbols = symbols;
-    this.updateIndex = 0;
+    this.symbols = symbols;
+    this.batchIndex = 0;
   }
 
   async fetch(symbol) {
     if (!symbol) return 0;
 
-    const now = Date.now();
-    const timeSinceLastFetch = now - this.lastFetchTime;
-    if (timeSinceLastFetch < FETCH_DELAY) {
-      await sleep(FETCH_DELAY - timeSinceLastFetch);
-    }
-
     try {
       const res = await axios.get(
-        `${config.binance.apiUrl}/fapi/v1/openInterest`,
+        `${BINANCE_API}/fapi/v1/openInterest`,
         {
           params: { symbol },
           timeout: 5000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
+          headers: { 'User-Agent': 'Mozilla/5.0' }
         }
       );
 
-      this.lastFetchTime = Date.now();
+      if (!res.data || res.data.openInterest === undefined) return 0;
 
-      if (!res.data || res.data.openInterest === undefined) {
-        return this.getChange(symbol);
-      }
-
-      const currOIValue = parseFloat(res.data.openInterest);
-
-      if (isNaN(currOIValue) || currOIValue === 0) {
-        return this.getChange(symbol);
-      }
+      const currOI = parseFloat(res.data.openInterest);
+      if (isNaN(currOI) || currOI === 0) return 0;
 
       this.trackedSymbols.add(symbol);
-      this.currentOI.set(symbol, currOIValue);
-      
-      const prevStored = this.prevOI.get(symbol);
-      const lastTime = this.lastUpdate.get(symbol) || 0;
-      const currentTime = Date.now();
-      
+      this.currentOI.set(symbol, currOI);
+
+      const prev = this.prevOI.get(symbol);
+      const lastUpdate = this.updateTimestamps.get(symbol) || 0;
+      const now = Date.now();
+
       let change = 0;
-      
-      if (!prevStored) {
-        this.prevOI.set(symbol, currOIValue);
-        this.lastUpdate.set(symbol, currentTime);
+
+      if (prev === undefined) {
+        this.prevOI.set(symbol, currOI);
+        this.updateTimestamps.set(symbol, now);
         change = 0;
-      } else if (currentTime - lastTime >= this.updateWindowMs) {
-        change = ((currOIValue - prevStored) / prevStored) * 100;
-        this.prevOI.set(symbol, currOIValue);
-        this.lastUpdate.set(symbol, currentTime);
+      } else if (now - lastUpdate >= this.updateInterval) {
+        change = ((currOI - prev) / prev) * 100;
+        this.prevOI.set(symbol, currOI);
+        this.updateTimestamps.set(symbol, now);
       } else {
         change = this.changeCache.get(symbol) || 0;
       }
-      
+
       this.changeCache.set(symbol, change);
       this.addToHistory(symbol, change);
 
-      if (symbol === 'BTCUSDT' && Math.abs(change) > 0.1) {
-        console.log(`📊 OI DEBUG BTC: curr=${currOIValue} prev=${prevStored} change=${change.toFixed(3)}%`);
-      }
-
       return change;
     } catch (e) {
-      this.lastFetchTime = Date.now();
-      return this.getChange(symbol);
+      return this.changeCache.get(symbol) || 0;
     }
   }
 
@@ -97,62 +76,44 @@ export class OITracker {
     }
     const history = this.changeHistory.get(symbol);
     history.push(change);
-    if (history.length > 30) history.shift();
+    if (history.length > 20) history.shift();
   }
 
   getAverageChange(symbol) {
     const history = this.changeHistory.get(symbol);
-    if (!history || history.length === 0) return 0;
-    
-    const recent = history.slice(-10);
-    const sum = recent.reduce((a, b) => a + b, 0);
-    return sum / recent.length;
+    if (!history || history.length < 2) return 0;
+    const recent = history.slice(-5);
+    return recent.reduce((a, b) => a + b, 0) / recent.length;
   }
 
-  async fetchBatch(symbols) {
-    const results = [];
-    for (const symbol of symbols) {
+  async fetchTopSymbols(count = 50) {
+    const topSymbols = this.symbols.slice(0, count);
+    let updated = 0;
+
+    for (const symbol of topSymbols) {
       const change = await this.fetch(symbol);
-      results.push({ symbol, change });
+      if (change !== 0) updated++;
+      await sleep(30);
     }
-    return results;
-  }
 
-  getNextBatch() {
-    if (!this.allSymbols || this.allSymbols.length === 0) return [];
-    
-    const batchSize = 50;
-    const start = this.updateIndex;
-    const end = Math.min(start + batchSize, this.allSymbols.length);
-    const batch = this.allSymbols.slice(start, end);
-    
-    this.updateIndex = end >= this.allSymbols.length ? 0 : end;
-    
-    return batch;
+    return updated;
   }
 
   getChange(symbol) {
-    if (!symbol) return 0;
     return this.changeCache.get(symbol) || 0;
   }
 
-  getCurrent(symbol) {
-    if (!symbol) return 0;
-    return this.currentOI.get(symbol) || 0;
-  }
-
   getOIData(symbol) {
-    if (!symbol) return { current: 0, previous: 0, change: 0, avgChange: 0, trend: 'NEUTRAL' };
     const current = this.currentOI.get(symbol) || 0;
     const prev = this.prevOI.get(symbol) || current;
     const change = this.changeCache.get(symbol) || 0;
     const avgChange = this.getAverageChange(symbol);
 
     let trend = 'NEUTRAL';
-    if (avgChange > 2) trend = 'STRONG_INCREASE';
-    else if (avgChange > 0.3) trend = 'INCREASE';
+    if (avgChange > 0.5) trend = 'INCREASE';
+    else if (avgChange > 2) trend = 'STRONG_INCREASE';
+    else if (avgChange < -0.5) trend = 'DECREASE';
     else if (avgChange < -2) trend = 'STRONG_DECREASE';
-    else if (avgChange < -0.3) trend = 'DECREASE';
 
     return { current, previous: prev, change, avgChange, trend };
   }
@@ -178,13 +139,12 @@ export class OITracker {
   }
 
   reset() {
-    this.prevOI.clear();
     this.currentOI.clear();
-    this.changeCache.clear();
+    this.prevOI.clear();
     this.changeHistory.clear();
-    this.lastUpdate.clear();
+    this.changeCache.clear();
     this.trackedSymbols.clear();
-    this.updateIndex = 0;
+    this.updateTimestamps.clear();
   }
 }
 
