@@ -351,4 +351,16 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-engine.start().catch(console.error);
+process.on('exit', (code) => {
+  console.log(`🔴 Process exiting with code: ${code}`);
+});
+
+console.log('🔰 Starting engine...');
+engine.start().catch(err => {
+  console.error('❌ FATAL: Engine start failed:', err);
+  process.exit(1);
+});
+
+setTimeout(() => {
+  console.log('🔰 Process still running after 5s...');
+}, 5000);
