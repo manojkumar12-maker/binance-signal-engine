@@ -147,6 +147,109 @@ function getVelocity(data) {
   return (data.priceAcceleration || 0) + (data.momentumAcceleration || 0);
 }
 
+function estimateBreakoutTime(data) {
+  if (!data) return null;
+  
+  let score = 0;
+
+  if (data.fakeOI > 0.4) score += 2;
+  if (data.orderFlow > 1.8) score += 2;
+  if (data.volume > 3) score += 2;
+
+  if (data.priceAcceleration > 0.15) score += 2;
+  if (data.priceAcceleration > 0.25) score += 3;
+
+  if (data.momentum > 0) score += 1;
+  if (data.momentumAcceleration > 0) score += 1;
+
+  const normOI = normalizeOI(data.oiChange || 0, data.symbol);
+  if (normOI > 0.3) score += 1;
+
+  if (score >= 10) return 'IMMINENT';
+  if (score >= 8) return 'VERY_SOON';
+  if (score >= 6) return 'SOON';
+  if (score >= 4) return 'BUILDING';
+
+  return null;
+}
+
+function isBreakingOut(data) {
+  if (!data) return false;
+  return (
+    data.priceAcceleration > 0.15 &&
+    data.volume > 2.5 &&
+    data.orderFlow > 1.4
+  );
+}
+
+function getSniperEntry(data, price) {
+  if (!data || !price) return null;
+
+  const isLong = data.priceChange > 0;
+  const isShort = data.priceChange < 0;
+
+  const volatility = data.atr || price * 0.002;
+  
+  if (isLong) {
+    return {
+      type: 'LONG',
+      entryTrigger: price + volatility * 0.5,
+      entryRetest: price + volatility * 0.1,
+      stopLoss: price - volatility * 1.5,
+      invalidation: price - volatility * 2
+    };
+  }
+
+  if (isShort) {
+    return {
+      type: 'SHORT',
+      entryTrigger: price - volatility * 0.5,
+      entryRetest: price - volatility * 0.1,
+      stopLoss: price + volatility * 1.5,
+      invalidation: price + volatility * 2
+    };
+  }
+
+  return null;
+}
+
+function validateSniperEntry(data) {
+  if (!data) return false;
+
+  if (data.volume < 2.5) return false;
+  if (data.orderFlow < 1.3) return false;
+
+  const normOI = normalizeOI(data.oiChange || 0, data.symbol);
+  if (normOI < 0.2 && (data.fakeOI || 0) < 0.3) return false;
+
+  if (data.trap) return false;
+
+  return true;
+}
+
+function getPrePumpType(data) {
+  if (!data) return 'PRE_PUMP';
+  
+  if (data.fakeOI > 0.35 && Math.abs(data.priceChange || 0) < 1.5 && (data.volume || 0) > 2) {
+    return 'PRE_PUMP_STEALTH';
+  }
+  if ((data.volume || 0) > 3 && (data.orderFlow || 0) > 1.5 && (data.fakeOI || 0) > 0.4) {
+    return 'PRE_PUMP_AGGRESSIVE';
+  }
+  if ((data.oiChange || 0) < 0 && (data.priceChange || 0) > 0 && (data.fakeOI || 0) > 0.3) {
+    return 'PRE_PUMP_SQUEEZE';
+  }
+  
+  return 'PRE_PUMP';
+}
+
+function calculatePositionSize(balance, riskPercent, entry, stop) {
+  const riskAmount = balance * riskPercent;
+  const stopDistance = Math.abs(entry - stop);
+  if (stopDistance === 0) return 0;
+  return riskAmount / stopDistance;
+}
+
 function getWeightedOI(oiChange) {
   const absOI = Math.abs(oiChange) * 10;
   if (absOI > 5) return 3;
@@ -346,7 +449,7 @@ function detectTrap(data) {
 }
 
 function detectPrePump(data, state) {
-  if (data.trap) return { isPrePump: false, score: 0, reasons: ['Trap detected'] };
+  if (data.trap) return { isPrePump: false, score: 0, reasons: ['Trap detected'], type: null, breakoutTime: null };
   
   const smartOI = normalizeOI(data.oiChange, data.symbol);
   const stableFakeOI = isStableFakeOI(data.fakeOI, data.priceChange, data.volume);
@@ -355,7 +458,12 @@ function detectPrePump(data, state) {
   const reasons = [];
 
   if (data.volume > 2 && data.orderFlow > 1.3 && (data.fakeOI > 0.25 || smartOI > 0.2)) {
-    return { isPrePump: true, score: 10, reasons: ['Early breakout trigger'] };
+    const breakoutTime = estimateBreakoutTime(data);
+    return { isPrePump: true, score: 10, reasons: ['Early breakout trigger'], type: getPrePumpType(data), breakoutTime };
+  }
+
+  if (data.volume < 1.5 && (data.fakeOI || 0) < 0.2 && Math.abs(data.priceChange || 0) < 1) {
+    return { isPrePump: false, score: 0, reasons: ['Weak signal'], type: null, breakoutTime: null };
   }
 
   if (smartOI > 0.1) { score += 2; reasons.push('Smart OI buildup'); }
@@ -375,23 +483,33 @@ function detectPrePump(data, state) {
 
   if (state?.persistence >= 2) { score += 2; reasons.push('Persistence confirmed'); }
 
-  return { isPrePump: score >= 3, score, reasons };
+  const breakoutTime = score >= 4 ? estimateBreakoutTime(data) : null;
+  
+  return { 
+    isPrePump: score >= 3, 
+    score, 
+    reasons, 
+    type: getPrePumpType(data),
+    breakoutTime 
+  };
 }
 
 function detectPumpConfirmed(data, state) {
   if (state?.stage !== STAGES.PRE_PUMP) return false;
 
-  const breakoutImminent = isBreakoutImminent(data);
+  const breakingOut = isBreakingOut(data);
+  const breakoutImminent = estimateBreakoutTime(data);
   
   const smartOI = normalizeOI(data.oiChange, data.symbol);
-  const fakeOIPrimary = data.fakeOI > 0.3;
+  const fakeOIPrimary = (data.fakeOI || 0) > 0.25;
   
-  const volumeValid = data.volume > 2;
-  const orderFlowValid = data.orderFlow > 1.3;
-  const priceAccelValid = data.priceAcceleration > 0.1;
-  const oiValid = fakeOIPrimary || smartOI > 0.2;
+  const volumeValid = (data.volume || 0) > 1.8;
+  const orderFlowValid = (data.orderFlow || 1) > 1.2;
+  const priceAccelValid = (data.priceAcceleration || 0) > 0.08;
+  const oiValid = fakeOIPrimary || smartOI > 0.15;
 
-  if (breakoutImminent && volumeValid && orderFlowValid) return true;
+  if (breakingOut && volumeValid && orderFlowValid) return true;
+  if (breakoutImminent === 'IMMINENT' || breakoutImminent === 'VERY_SOON') return true;
 
   return volumeValid && orderFlowValid && priceAccelValid && oiValid;
 }
