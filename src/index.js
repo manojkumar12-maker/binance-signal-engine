@@ -52,49 +52,49 @@ class SignalEngine {
   }
 
   async start() {
-    try {
-      console.log(`
+    console.log(`
 ╔══════════════════════════════════════════════╗
 ║     🚀 BINANCE FUTURES SIGNAL ENGINE v3.0 🚀        
 ╠══════════════════════════════════════════════╣
 ║  🧠 Auto-Tuner | 📊 Orderbook Edge | 🔴 SNIPER     ║
 ║  🟢 CONFIRMED | 🟡 EARLY                            ║
 ╚══════════════════════════════════════════════╝
-      `);
+    `);
 
-      await initDatabase();
-      this.stats.startedAt = Date.now();
-      
-      try {
-        await apiServer.start();
-      } catch (e) {
-        console.error('❌ API Server failed to start:', e.message);
-      }
+    await initDatabase();
+    this.stats.startedAt = Date.now();
+    
+    try {
+      await apiServer.start();
+      console.log('✅ API Server started');
+    } catch (e) {
+      console.error('❌ API Server failed to start:', e.message);
+    }
 
-      try {
-        wsManager.onTicker((ticker) => {
-          this.processTicker(ticker);
-        });
+    try {
+      wsManager.onTicker((ticker) => {
+        this.processTicker(ticker);
+      });
 
-        wsManager.onTrade((trade) => {
-          marketDataTracker.handleTrade(trade);
-          orderflowTracker.handleTrade(trade);
-          oiTracker.handleTrade(trade);
-        });
+      wsManager.onTrade((trade) => {
+        marketDataTracker.handleTrade(trade);
+        orderflowTracker.handleTrade(trade);
+        oiTracker.handleTrade(trade);
+      });
 
-        await wsManager.initialize();
-        this.stats.symbolsMonitored = wsManager.symbols.length;
+      await wsManager.initialize();
+      this.stats.symbolsMonitored = wsManager.symbols.length;
 
-        pumpAnalyzer.initialize(wsManager.symbols);
-        marketDataTracker.initialize(wsManager.symbols);
-        orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
-        await oiTracker.init(wsManager.symbols);
-        setOITracker(oiTracker);
+      pumpAnalyzer.initialize(wsManager.symbols);
+      marketDataTracker.initialize(wsManager.symbols);
+      orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
+      await oiTracker.init(wsManager.symbols);
+      setOITracker(oiTracker);
 
-        console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
-      } catch (e) {
-        console.error('❌ Engine initialization error:', e.message);
-      }
+      console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
+    } catch (e) {
+      console.error('❌ Engine initialization error:', e.message);
+    }
 
     setInterval(async () => {
       orderflowTracker.reset();
