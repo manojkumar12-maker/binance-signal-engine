@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { redis } from '../database/redis.js';
 
 const BINANCE_API = 'https://fapi.binance.com';
 
@@ -105,48 +104,6 @@ function getOIHistoryLength(symbol) {
   return arr ? arr.length : 0;
 }
 
-async function updateRedisOI(symbol, value) {
-  if (!redis) return;
-  
-  try {
-    const key = `oi_hist:${symbol}`;
-    const data = JSON.stringify({ value, time: Date.now() });
-    
-    await redis.lpush(key, data);
-    await redis.ltrim(key, 0, HISTORY_SIZE - 1);
-    await redis.expire(key, 300);
-  } catch (e) {
-  }
-}
-
-async function getRedisOIHistory(symbol) {
-  if (!redis) return null;
-  
-  try {
-    const key = `oi_hist:${symbol}`;
-    const data = await redis.lrange(key, 0, -1);
-    
-    if (!data || data.length === 0) return null;
-    
-    return data.map(x => JSON.parse(x));
-  } catch (e) {
-    return null;
-  }
-}
-
-async function getOIChangeFromRedis(symbol) {
-  const data = await getRedisOIHistory(symbol);
-  
-  if (!data || data.length < 5) return null;
-  
-  const first = data[data.length - 1].value;
-  const last = data[0].value;
-  
-  if (!first || first === 0) return 0;
-  
-  return ((last - first) / first) * 100;
-}
-
 class OICache {
   constructor() {
     this.cache = new Map();
@@ -189,7 +146,6 @@ class OICache {
     }
 
     updateMemoryOI(symbol, oi);
-    updateRedisOI(symbol, oi);
   }
 
   get(symbol) {
