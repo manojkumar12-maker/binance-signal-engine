@@ -1,14 +1,15 @@
-# Binance Signal Engine - v3.0
+# Binance Signal Engine v2.0 — Railway
 FROM node:18-alpine
 
 WORKDIR /app
 
 COPY package*.json ./
 
-RUN rm -rf node_modules && npm install
+RUN rm -rf node_modules && npm install --production
 
 COPY . .
 
-EXPOSE 3000
+# Railway sets PORT dynamically
+EXPOSE ${PORT:-3000}
 
 CMD ["node", "src/index.js"]

@@ -1,6 +1,43 @@
 services:
   web:
     build: .
-    port: 3000
+    ports:
+      - "3000:3000"
     restart: unless-stopped
-    command: node src/index.js
+    command: node -r dotenv/config src/index.js
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/signals
+      - REDIS_URL=redis://redis:6379
+      - PORT=3000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: signals
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:

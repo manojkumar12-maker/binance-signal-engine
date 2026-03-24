@@ -7,6 +7,10 @@ node_modules/
 # Data files
 data/
 
+# Database
+prisma/
+*.db
+
 # IDE
 .vscode/
 .idea/
