@@ -17,22 +17,35 @@ class SignalAPIServer {
   }
 
   async start() {
-    this.server = createServer((req, res) => {
-      this.handleRequest(req, res);
-    });
+    return new Promise((resolve, reject) => {
+      this.server = createServer((req, res) => {
+        this.handleRequest(req, res);
+      });
 
-    this.wss = new WebSocketServer({ server: this.server });
+      this.wss = new WebSocketServer({ server: this.server });
 
-    this.wss.on('connection', (ws) => {
-      this.clients.add(ws);
-      ws.on('close', () => this.clients.delete(ws));
-      ws.on('error', () => this.clients.delete(ws));
-      
-      ws.send(JSON.stringify({ type: 'CONNECTED', message: 'Dashboard connected' }));
-    });
+      this.wss.on('connection', (ws) => {
+        this.clients.add(ws);
+        ws.on('close', () => this.clients.delete(ws));
+        ws.on('error', () => this.clients.delete(ws));
+        
+        ws.send(JSON.stringify({ type: 'CONNECTED', message: 'Dashboard connected' }));
+      });
 
-    this.server.listen(PORT, () => {
-      console.log(`🚀 API Server running on port ${PORT}`);
+      const timeout = setTimeout(() => {
+        reject(new Error('Server start timeout'));
+      }, 5000);
+
+      this.server.listen(PORT, () => {
+        clearTimeout(timeout);
+        console.log(`🚀 API Server running on port ${PORT}`);
+        resolve();
+      });
+
+      this.server.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
     });
   }
 
