@@ -510,4 +510,4 @@ class SignalPipeline {
 }
 
 export const signalPipeline = new SignalPipeline();
-export { STAGES, signalStateMachine, getSniperScore, getSmartOI };
+export { STAGES, signalStateMachine, getSniperScore, getSmartOI, setOITracker };
