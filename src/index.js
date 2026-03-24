@@ -61,16 +61,42 @@ class SignalEngine {
 ╚══════════════════════════════════════════════╝
     `);
 
-    initDatabase().catch(err => console.log('⚠️ DB init failed, continuing:', err.message));
-    this.stats.startedAt = Date.now();
+    console.log('🔥 SERVER STARTING...');
     
     try {
       await apiServer.start();
-      console.log('✅ API Server started');
+      console.log('✅ HEALTHCHECK READY');
     } catch (e) {
       console.error('❌ API Server failed to start:', e.message);
     }
 
+    this.stats.startedAt = Date.now();
+    
+    initDatabase().catch(err => console.log('⚠️ DB init failed, continuing:', err.message));
+
+    this.initEngine().catch(err => console.log('⚠️ Engine init failed:', err.message));
+  }
+
+  shouldGenerateSignal(analysis) {
+    const { type, priceChange, score } = analysis;
+    
+    const ENTRY_WINDOW = {
+      EARLY: { min: 1, max: 15 },
+      CONFIRMED: { min: 2, max: 12 },
+      SNIPER: { min: 2.5, max: 10 }
+    };
+    
+    const window = ENTRY_WINDOW[type];
+    if (!window) return false;
+    
+    if (priceChange < window.min || priceChange > window.max) {
+      return false;
+    }
+    
+    return true;
+  }
+
+  async initEngine() {
     try {
       wsManager.onTicker((ticker) => {
         this.processTicker(ticker);
@@ -91,104 +117,83 @@ class SignalEngine {
       await oiTracker.init(wsManager.symbols);
       setOITracker(oiTracker);
 
+      setInterval(async () => {
+        orderflowTracker.reset();
+      }, 60000);
+
+      setInterval(() => {
+        const topSymbols = wsManager.symbols.slice(0, 10);
+        for (const sym of topSymbols) {
+          oiTracker.resetFlow(sym);
+        }
+      }, 60000);
+
+      setInterval(async () => {
+        const topSymbols = wsManager.symbols.slice(0, 5);
+        for (const symbol of topSymbols) {
+          await fundingService.fetch(symbol);
+        }
+      }, 10000);
+
+      setInterval(async () => {
+        try {
+          const stats = oiTracker.getStats();
+          const btcChange = oiTracker.getChange('BTCUSDT');
+          const btcFake = oiTracker.getFakeOI('BTCUSDT');
+          
+          const btcFlow = oiTracker.getFlowData('BTCUSDT');
+          let flowStatus = 'no data';
+          if (btcFlow) {
+            const currentVol = btcFlow.volume.toFixed(4);
+            const buyAmt = btcFlow.buy.toFixed(4);
+            const sellAmt = btcFlow.sell.toFixed(4);
+            const historyLen = btcFlow.history.length;
+            const fakeOIStr = historyLen >= 3 ? (btcFake > 0 ? '+' : '') + btcFake.toFixed(2) : 'N/A';
+            flowStatus = `F=${fakeOIStr} hist=${historyLen} curV=${currentVol} buy=${buyAmt} sell=${sellAmt}`;
+          }
+          
+          console.log(`📊 OI: tracked=${stats.tracked}/${MAX_TRACKED} BTC=${btcChange.toFixed(4)}% nonZero=${stats.nonZero} | ${flowStatus}`);
+        } catch (err) {
+          console.error('🔥 OI LOOP ERROR:', err.message);
+        }
+      }, 15000);
+
+      setInterval(async () => {
+        try {
+          await oiTracker.runCycle();
+        } catch (err) {
+          console.error('🔥 OI FETCH ERROR:', err.message);
+        }
+      }, 5000);
+
+      setInterval(() => {
+        this.processCycleSignals();
+        updateAdaptiveThresholds();
+      }, 5000);
+
+      setInterval(() => {
+        this.showStats();
+      }, 60000);
+
+      setInterval(() => {
+        const topSymbols = wsManager.symbols.slice(0, 5);
+        const samples = topSymbols.map(sym => {
+          const of = orderflowTracker.getOrderflow(sym);
+          const oi = oiTracker.getChange(sym);
+          const fakeOI = oiTracker.getFakeOI(sym);
+          const oiData = oiTracker.getOIData(sym);
+          const fakeStr = fakeOI !== null ? `F=${fakeOI >= 0 ? '+' : ''}${fakeOI.toFixed(1)}%` : 'F=--';
+          return `${sym}:OF=${of.toFixed(1)}|OI=${oi >= 0 ? '+' : ''}${oi.toFixed(1)}%(${fakeStr})`;
+        }).join(' | ');
+        const oiStats = oiTracker.getStats();
+        console.log(`📊 DATA: ${samples}`);
+        console.log(`📊 OI: tracked=${oiStats.tracked} | OF: ${orderflowTracker.getStats().activeSymbols} active`);
+      }, 20000);
+
       console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
     } catch (e) {
       console.error('❌ Engine initialization error:', e.message);
     }
-
-    setInterval(async () => {
-      orderflowTracker.reset();
-    }, 60000);
-
-    setInterval(() => {
-      const topSymbols = wsManager.symbols.slice(0, 10);
-      for (const sym of topSymbols) {
-        oiTracker.resetFlow(sym);
-      }
-    }, 60000);
-
-    setInterval(async () => {
-      const topSymbols = wsManager.symbols.slice(0, 5);
-      for (const symbol of topSymbols) {
-        await fundingService.fetch(symbol);
-      }
-    }, 10000);
-
-    setInterval(async () => {
-      try {
-        const stats = oiTracker.getStats();
-        const btcChange = oiTracker.getChange('BTCUSDT');
-        const btcFake = oiTracker.getFakeOI('BTCUSDT');
-        
-        const btcFlow = oiTracker.getFlowData('BTCUSDT');
-        let flowStatus = 'no data';
-        if (btcFlow) {
-          const currentVol = btcFlow.volume.toFixed(4);
-          const buyAmt = btcFlow.buy.toFixed(4);
-          const sellAmt = btcFlow.sell.toFixed(4);
-          const historyLen = btcFlow.history.length;
-          const fakeOIStr = historyLen >= 3 ? (btcFake > 0 ? '+' : '') + btcFake.toFixed(2) : 'N/A';
-          flowStatus = `F=${fakeOIStr} hist=${historyLen} curV=${currentVol} buy=${buyAmt} sell=${sellAmt}`;
-        }
-        
-        console.log(`📊 OI: tracked=${stats.tracked}/${MAX_TRACKED} BTC=${btcChange.toFixed(4)}% nonZero=${stats.nonZero} | ${flowStatus}`);
-      } catch (err) {
-        console.error('🔥 OI LOOP ERROR:', err.message);
-      }
-    }, 15000);
-
-    setInterval(async () => {
-      try {
-        await oiTracker.runCycle();
-      } catch (err) {
-        console.error('🔥 OI FETCH ERROR:', err.message);
-      }
-    }, 5000);
-
-    setInterval(() => {
-      this.processCycleSignals();
-      updateAdaptiveThresholds();
-    }, 5000);
-
-    setInterval(() => {
-      this.showStats();
-    }, 60000);
-
-    setInterval(() => {
-      const topSymbols = wsManager.symbols.slice(0, 5);
-      const samples = topSymbols.map(sym => {
-        const of = orderflowTracker.getOrderflow(sym);
-        const oi = oiTracker.getChange(sym);
-        const fakeOI = oiTracker.getFakeOI(sym);
-        const oiData = oiTracker.getOIData(sym);
-        const fakeStr = fakeOI !== null ? `F=${fakeOI >= 0 ? '+' : ''}${fakeOI.toFixed(1)}%` : 'F=--';
-        return `${sym}:OF=${of.toFixed(1)}|OI=${oi >= 0 ? '+' : ''}${oi.toFixed(1)}%(${fakeStr})`;
-      }).join(' | ');
-      const oiStats = oiTracker.getStats();
-      console.log(`📊 DATA: ${samples}`);
-      console.log(`📊 OI: tracked=${oiStats.tracked} | OF: ${orderflowTracker.getStats().activeSymbols} active`);
-    }, 20000);
-
-    console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
-  }
-
-  shouldGenerateSignal(analysis) {
-    const { type, priceChange, score } = analysis;
-    
-    const ENTRY_WINDOW = {
-      EARLY: { min: 1, max: 15 },
-      CONFIRMED: { min: 2, max: 12 },
-      SNIPER: { min: 2.5, max: 10 }
-    };
-    
-    const window = ENTRY_WINDOW[type];
-    if (!window) return false;
-    
-    if (priceChange < window.min || priceChange > window.max) {
-      return false;
-    }
-    
-    return true;
   }
 
   async processTicker(ticker) {
