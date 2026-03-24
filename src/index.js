@@ -1,19 +1,52 @@
+console.log('📦 Loading modules...');
+
 import { wsManager } from './websocket/binanceWS.js';
+console.log('✅ wsManager loaded');
+
 import { pumpAnalyzer } from './analyzer/pumpAnalyzer.js';
+console.log('✅ pumpAnalyzer loaded');
+
 import { signalGenerator } from './signals/signalGenerator.js';
+console.log('✅ signalGenerator loaded');
+
 import { notifier } from './notifiers/notificationManager.js';
+console.log('✅ notifier loaded');
+
 import { apiServer } from './api/server.js';
+console.log('✅ apiServer loaded');
+
 import { autoTuner } from './engine/autoTuner.js';
+console.log('✅ autoTuner loaded');
+
 import { orderBookAnalyzer } from './engine/orderBookAnalyzer.js';
+console.log('✅ orderBookAnalyzer loaded');
+
 import { marketDataTracker } from './engine/marketDataTracker.js';
+console.log('✅ marketDataTracker loaded');
+
 import { tradeLogger } from './engine/tradeLogger.js';
+console.log('✅ tradeLogger loaded');
+
 import { initDatabase, closeDatabase, createSignal as dbCreateSignal } from './database/db.js';
+console.log('✅ db loaded');
+
 import { state, canTrigger, strongCanTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
+console.log('✅ state loaded');
+
 import { updateAdaptiveThresholds } from './engine/adaptiveFilter.js';
+console.log('✅ adaptiveFilter loaded');
+
 import { orderflowTracker } from './engine/orderflowTracker.js';
+console.log('✅ orderflowTracker loaded');
+
 import { oiTracker, MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS } from './engine/oiTracker.js';
+console.log('✅ oiTracker loaded');
+
 import { fundingService } from './engine/fundingService.js';
+console.log('✅ fundingService loaded');
+
 import { signalPipeline, setOITracker } from './engine/signalPipeline.js';
+console.log('✅ signalPipeline loaded');
 
 process.on('uncaughtException', (err) => {
   console.error('🔥 UNCAUGHT EXCEPTION:', err.message);
