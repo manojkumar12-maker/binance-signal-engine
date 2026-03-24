@@ -11,9 +11,9 @@ import { initDatabase, closeDatabase, createSignal as dbCreateSignal } from './d
 import { state, canTrigger, strongCanTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
 import { updateAdaptiveThresholds } from './engine/adaptiveFilter.js';
 import { orderflowTracker } from './engine/orderflowTracker.js';
-import { oiTracker } from './engine/oiTracker.js';
+import { oiTracker, MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS } from './engine/oiTracker.js';
 import { fundingService } from './engine/fundingService.js';
-import { MAX_TRACKED } from './engine/oiTracker.js';
+import { signalPipeline, setOITracker } from './engine/signalPipeline.js';
 
 process.on('uncaughtException', (err) => {
   console.error('🔥 UNCAUGHT EXCEPTION:', err.message);
@@ -82,6 +82,7 @@ class SignalEngine {
     marketDataTracker.initialize(wsManager.symbols);
     orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
     await oiTracker.init(wsManager.symbols);
+    setOITracker(oiTracker);
 
     setInterval(async () => {
       orderflowTracker.reset();
