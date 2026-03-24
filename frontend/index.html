@@ -531,9 +531,8 @@
                     pumpConfirmed: 0
                 };
 
-                // ⚡ Set your Railway backend URL here after deployment
-                // Example: 'https://binance-signal-engine-production.up.railway.app'
-                this.apiBase = window.BACKEND_URL || window.location.origin;
+                // ⚡ Set your Railway backend URL here
+                this.apiBase = 'https://binance-signal-engine-production.up.railway.app';
                 this.fetchStats();
                 this.fetchSignals();
                 this.initFilters();
