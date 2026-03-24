@@ -61,7 +61,7 @@ class SignalEngine {
 ╚══════════════════════════════════════════════╝
     `);
 
-    await initDatabase();
+    initDatabase().catch(err => console.log('⚠️ DB init failed, continuing:', err.message));
     this.stats.startedAt = Date.now();
     
     try {
