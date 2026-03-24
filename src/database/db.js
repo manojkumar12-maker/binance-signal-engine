@@ -82,7 +82,6 @@ async function initPostgres() {
     return false;
   }
 }
-}
 
 // ─── JSON Fallback ────────────────────────────────────────────
 
