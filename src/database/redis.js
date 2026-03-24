@@ -27,7 +27,7 @@ export async function initRedis() {
         if (times > 5) return null;
         return Math.min(times * 200, 2000);
       },
-      lazyConnect: false,
+      lazyConnect: true,
       connectTimeout: 10000
     });
 
@@ -84,6 +84,24 @@ export async function cacheDelete(key) {
   }
 }
 
+export async function safeGet(key) {
+  if (!redis || !isConnected) return null;
+  try {
+    return await redis.get(key);
+  } catch {
+    return null;
+  }
+}
+
+export async function safeSet(key, value, ttl) {
+  if (!redis || !isConnected) return;
+  try {
+    await redis.set(key, value, 'EX', ttl || CACHE_TTL.signals);
+  } catch {
+    // silent fail
+  }
+}
+
 export async function invalidateSignalCache() {
   await cacheDelete('signals:recent');
   await cacheDelete('signals:stats');
@@ -99,4 +117,5 @@ export async function closeRedis() {
   }
 }
 
-export { CACHE_TTL, isConnected as redisConnected, redis as redisClient };
+export const redisClient = () => redis;
+export { CACHE_TTL, isConnected as redisConnected };

@@ -63,7 +63,7 @@ async function initPostgres() {
     
     pool = new pg.Pool({
       connectionString: databaseUrl,
-      ssl: databaseUrl.includes('railway') ? { rejectUnauthorized: false } : false,
+      ssl: { rejectUnauthorized: false },
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000

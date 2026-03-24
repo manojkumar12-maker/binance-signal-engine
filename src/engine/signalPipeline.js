@@ -125,6 +125,69 @@ function getSmartOI(oiChange) {
   return oiChange * 10;
 }
 
+function getWeightedOI(oiChange) {
+  const absOI = Math.abs(oiChange);
+  if (absOI > 1) return 3;
+  if (absOI > 0.5) return 2;
+  if (absOI > 0.2) return 1;
+  return 0;
+}
+
+function getMomentumBurst(data) {
+  return data.priceAcceleration > 0.2 && data.momentumAcceleration > 0.2;
+}
+
+function detectShortSetup(data) {
+  return (
+    data.priceChange < 0 &&
+    data.orderFlow < 0.8 &&
+    data.oiChange < -0.3
+  );
+}
+
+function getSignalDirection(data) {
+  if (detectShortSetup(data)) return 'SHORT';
+  if (data.priceChange > 0) return 'LONG';
+  return 'LONG';
+}
+
+function isConfirmedScore(data) {
+  let score = 0;
+
+  if (data.priceChange > 3) score += 2;
+  if (data.volume > 2.5) score += 2;
+  if (data.orderFlow > 1.3) score += 2;
+  if (Math.abs(data.oiChange) > 0.2) score += 2;
+  if (Math.abs(data.fakeOI) > 0.3) score += 1;
+
+  score += getWeightedOI(data.oiChange);
+
+  if (data.volume < 1) score -= 2;
+
+  return score >= 6;
+}
+
+function isSniperScore(data) {
+  let score = 0;
+
+  if (data.priceChange > 4) score += 2;
+  if (data.volume > 3) score += 2;
+  if (data.orderFlow > 1.5) score += 2;
+  if (Math.abs(data.oiChange) > 0.3) score += 2;
+  if (Math.abs(data.fakeOI) > 0.5) score += 1;
+
+  score += getWeightedOI(data.oiChange);
+
+  const momentumBurst = getMomentumBurst(data);
+  if (momentumBurst) score += 2;
+
+  if (data.momentumAcceleration > 0.3) score += 1;
+
+  if (data.volume < 1) score -= 2;
+
+  return score >= 7;
+}
+
 let oiTrackerModule = null;
 
 export function setOITracker(tracker) {
@@ -165,10 +228,12 @@ function detectPrePump(data, state) {
   const reasons = [];
 
   if (smartOI > 0.1) { score += 2; reasons.push('Smart OI buildup'); }
-  if (data.fakeOI > 0.3) { score += 2; reasons.push('Flow accumulation'); }
-  if (data.orderFlow > 1.3) { score += 1; reasons.push('Stealth accumulation'); }
+  if (Math.abs(data.fakeOI) > 0.3) { score += 2; reasons.push('Flow accumulation'); }
+  if (data.orderFlow > 1.3 || data.orderFlow < 0.7) { score += 1; reasons.push('Stealth accumulation'); }
   if (data.volume > 2.5) { score += 1; reasons.push('Volume rising'); }
-  if (data.momentumAcceleration > 0) { score += 1; reasons.push('Momentum building'); }
+  if (data.momentumAcceleration > 0 || data.momentumAcceleration < 0) { score += 1; reasons.push('Momentum building'); }
+
+  score += getWeightedOI(data.oiChange);
 
   if (state?.persistence >= 3) { score += 2; reasons.push('Persistence confirmed'); }
 
@@ -176,17 +241,17 @@ function detectPrePump(data, state) {
 }
 
 function detectPumpConfirmed(data, state) {
+  if (state?.stage !== STAGES.PRE_PUMP || state.persistence < 2) return false;
+
   const smartOI = getSmartOI(data.oiChange);
   const smartOIValid = smartOI > 0.2 || data.fakeOI > 0.5;
   
-  return (
-    state?.stage === STAGES.PRE_PUMP &&
-    state.persistence >= 2 &&
-    data.volume > 4 &&
-    data.orderFlow > 2 &&
-    smartOIValid &&
-    data.priceAcceleration > 0.3
-  );
+  const volumeValid = data.volume > 3.5;
+  const orderFlowValid = data.orderFlow > 2;
+  const priceAccelValid = data.priceAcceleration > 0.25;
+  const oiValid = data.oiChange > 0.3 || data.fakeOI > 0.4;
+
+  return volumeValid && orderFlowValid && priceAccelValid && (smartOIValid || oiValid);
 }
 
 function detectEarly(data, state) {
@@ -201,34 +266,19 @@ function detectEarly(data, state) {
 }
 
 function detectConfirmed(data, state) {
-  const smartOI = getSmartOI(data.oiChange);
-  const oiValid = smartOI > 0.15 || data.fakeOI > 0.4;
-
-  return (
-    state?.stage === STAGES.EARLY &&
-    data.priceChange > 3 &&
-    data.volume > 3 &&
-    data.orderFlow > 1.5 &&
-    oiValid &&
-    data.momentum > 0
-  );
+  if (state?.stage !== STAGES.EARLY) return false;
+  return isConfirmedScore(data);
 }
 
 function detectSniper(data, state) {
-  const smartOI = getSmartOI(data.oiChange);
-  const oiValid = smartOI > 0.2 || data.fakeOI > 0.6;
-
-  return (
-    (state?.stage === STAGES.CONFIRMED || state?.stage === STAGES.PUMP_CONFIRMED) &&
-    state.persistence >= 2 &&
-    data.priceChange > 3 &&
-    data.priceChange < 10 &&
-    data.volume > 4 &&
-    data.orderFlow > 2 &&
-    oiValid &&
-    !data.trap &&
-    data.priceAcceleration > 0.4
-  );
+  if (!state) return false;
+  const validStage = state.stage === STAGES.CONFIRMED || state.stage === STAGES.PUMP_CONFIRMED;
+  if (!validStage) return false;
+  if (state.persistence < 2) return false;
+  if (data.trap) return false;
+  if (data.priceChange < 0 || data.priceChange > 15) return false;
+  
+  return isSniperScore(data);
 }
 
 function getSniperScore(data) {
@@ -324,7 +374,7 @@ class SignalPipeline {
         });
 
         this.prePumpPanel.push({
-          type: d.priceChange > 0 ? 'LONG' : 'SHORT',
+          type: getSignalDirection(d),
           strength: 'PRE_PUMP',
           symbol,
           confidence: 50,
@@ -351,7 +401,7 @@ class SignalPipeline {
         });
 
         this.pumpConfirmedPanel.push({
-          type: d.priceChange > 0 ? 'LONG' : 'SHORT',
+          type: getSignalDirection(d),
           strength: 'PUMP_CONFIRMED',
           symbol,
           confidence: 75
@@ -379,7 +429,7 @@ class SignalPipeline {
         });
 
         this.earlySignals.push({
-          type: d.priceChange > 0 ? 'LONG' : 'SHORT',
+          type: getSignalDirection(d),
           strength: 'EARLY',
           symbol,
           confidence: 50
@@ -404,7 +454,7 @@ class SignalPipeline {
         });
 
         this.confirmedSignals.push({
-          type: d.priceChange > 0 ? 'LONG' : 'SHORT',
+          type: getSignalDirection(d),
           strength: 'CONFIRMED',
           symbol,
           confidence: 65
@@ -438,7 +488,7 @@ class SignalPipeline {
         });
 
         this.sniperSignals.push({
-          type: d.priceChange > 0 ? 'LONG' : 'SHORT',
+          type: getSignalDirection(d),
           strength: 'SNIPER',
           symbol,
           confidence,
