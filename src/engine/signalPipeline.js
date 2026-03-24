@@ -154,25 +154,25 @@ function getSignalDirection(data) {
 function getOIStrength(symbol) {
   if (!oiTrackerModule) return 0;
   
-  const history = oiTrackerModule.getOIHistory?.(symbol);
-  if (!history || history.length < 5) return 0;
-
-  const recent = history[history.length - 1];
-  const prev = history[history.length - 5];
-
-  if (!recent || !prev) return 0;
-
-  const change = (recent - prev) / (Math.abs(prev) || 1);
-  const accel = (history[history.length - 1] - history[history.length - 2]) - 
-                (history[history.length - 2] - history[history.length - 3]);
-
-  let score = 0;
-  if (change > 0.3) score += 1;
-  if (change > 0.6) score += 2;
-  if (accel > 0) score += 1;
-  if (accel > 0.1) score += 1;
-
-  return score;
+  try {
+    const historyLen = oiTrackerModule.getOIHistoryLength?.(symbol) || 0;
+    if (historyLen < 5) return 0;
+    
+    const oiChange = oiTrackerModule.getChange?.(symbol) || 0;
+    const fakeOI = oiTrackerModule.getFakeOI?.(symbol);
+    
+    if (oiChange === 0) return 0;
+    
+    let score = 0;
+    if (Math.abs(oiChange) > 0.3) score += 1;
+    if (Math.abs(oiChange) > 0.6) score += 2;
+    if (fakeOI && Math.abs(fakeOI) > 0.3) score += 1;
+    if (fakeOI && Math.abs(fakeOI) > 0.5) score += 1;
+    
+    return score;
+  } catch (e) {
+    return 0;
+  }
 }
 
 function isBreakoutImminent(data) {
