@@ -125,11 +125,15 @@ function getSmartOI(oiChange) {
   return oiChange * 10;
 }
 
+function normalizeOI(oiChange) {
+  return oiChange * 10;
+}
+
 function getWeightedOI(oiChange) {
-  const absOI = Math.abs(oiChange);
-  if (absOI > 1) return 3;
-  if (absOI > 0.5) return 2;
-  if (absOI > 0.2) return 1;
+  const absOI = Math.abs(oiChange) * 10;
+  if (absOI > 5) return 3;
+  if (absOI > 2) return 2;
+  if (absOI > 0.5) return 1;
   return 0;
 }
 
@@ -137,15 +141,33 @@ function getMomentumBurst(data) {
   return data.priceAcceleration > 0.2 && data.momentumAcceleration > 0.2;
 }
 
+function detectSqueeze(data) {
+  if (data.oiChange < 0 && data.priceChange > 0) {
+    return 'SHORT_SQUEEZE';
+  }
+  if (data.oiChange < 0 && data.priceChange < 0) {
+    return 'LONG_EXIT';
+  }
+  if (data.oiChange > 0 && data.priceChange < 0) {
+    return 'SHORT_BUILDUP';
+  }
+  if (data.oiChange > 0 && data.priceChange > 0) {
+    return 'LONG_BUILDUP';
+  }
+  return null;
+}
+
 function detectShortSetup(data) {
   return (
     data.priceChange < 0 &&
     data.orderFlow < 0.8 &&
-    data.oiChange < -0.3
+    normalizeOI(data.oiChange) < -0.2
   );
 }
 
 function getSignalDirection(data) {
+  const squeeze = detectSqueeze(data);
+  if (squeeze === 'SHORT_SQUEEZE' || squeeze === 'SHORT_BUILDUP') return 'SHORT';
   if (detectShortSetup(data)) return 'SHORT';
   if (data.priceChange > 0) return 'LONG';
   return 'LONG';
@@ -216,45 +238,51 @@ function isConfirmedScore(data) {
   let score = 0;
 
   if (data.priceChange > 3) score += 2;
-  if (data.volume > 2.5) score += 2;
+  if (data.volume > 2) score += 2;
   if (data.orderFlow > 1.3) score += 2;
-  if (Math.abs(data.oiChange) > 0.2) score += 2;
-  if (Math.abs(data.fakeOI) > 0.3) score += 1;
+  if (normalizeOI(Math.abs(data.oiChange)) > 0.3 || Math.abs(data.fakeOI) > 0.3) score += 2;
+
+  if (data.fakeOI > 0.4) score += 2;
 
   score += getWeightedOI(data.oiChange);
 
+  const squeeze = detectSqueeze(data);
+  if (squeeze === 'LONG_BUILDUP' || squeeze === 'SHORT_SQUEEZE') score += 3;
+
   if (data.volume < 1) score -= 2;
 
-  return score >= 6;
+  return score >= 5;
 }
 
 function isSniperScore(data, symbol) {
   let score = 0;
 
-  if (data.priceChange > 4) score += 2;
-  if (data.volume > 3) score += 2;
+  if (data.priceChange > 3) score += 2;
+  if (data.volume > 2.5) score += 2;
   if (data.orderFlow > 1.5) score += 2;
-  if (Math.abs(data.oiChange) > 0.3) score += 2;
-  if (Math.abs(data.fakeOI) > 0.5) score += 1;
+  if (normalizeOI(Math.abs(data.oiChange)) > 0.5 || Math.abs(data.fakeOI) > 0.4) score += 2;
 
   score += getWeightedOI(data.oiChange);
 
   const momentumBurst = getMomentumBurst(data);
   if (momentumBurst) score += 2;
 
-  if (data.momentumAcceleration > 0.3) score += 1;
+  if (data.momentumAcceleration > 0.15) score += 1;
 
   if (isSniperEntry(data)) score += 3;
 
   const oiStrength = getOIStrength(symbol);
   score += oiStrength;
 
-  if (data.oiChange > 1) score += 2;
-  if (data.fakeOI > 0.6) score += 2;
+  if (normalizeOI(data.oiChange) > 0.8) score += 2;
+  if (data.fakeOI > 0.5) score += 3;
+
+  const squeeze = detectSqueeze(data);
+  if (squeeze === 'SHORT_SQUEEZE' || squeeze === 'LONG_BUILDUP') score += 4;
 
   if (data.volume < 1) score -= 2;
 
-  return score >= 8;
+  return score >= 7;
 }
 
 let oiTrackerModule = null;
@@ -293,26 +321,30 @@ function detectTrap(data) {
 function detectPrePump(data, state) {
   if (data.trap) return { isPrePump: false, score: 0, reasons: ['Trap detected'] };
   
-  const smartOI = getSmartOI(data.oiChange);
+  const smartOI = normalizeOI(data.oiChange);
   const stableFakeOI = isStableFakeOI(data.fakeOI, data.priceChange, data.volume);
   
   let score = 0;
   const reasons = [];
 
   if (smartOI > 0.1) { score += 2; reasons.push('Smart OI buildup'); }
-  if (Math.abs(data.fakeOI) > 0.3) { 
+  if (Math.abs(data.fakeOI) > 0.2) { 
     score += stableFakeOI ? 3 : 1; 
     reasons.push(stableFakeOI ? 'Stable flow accumulation' : 'Flow accumulation'); 
   }
-  if (data.orderFlow > 1.3 || data.orderFlow < 0.7) { score += 1; reasons.push('Stealth accumulation'); }
-  if (data.volume > 2.5) { score += 1; reasons.push('Volume rising'); }
+  if (data.orderFlow > 1.1 || data.orderFlow < 0.9) { score += 1; reasons.push('Stealth accumulation'); }
+  if (data.volume > 1.5) { score += 1; reasons.push('Volume rising'); }
   if (data.momentumAcceleration > 0 || data.momentumAcceleration < 0) { score += 1; reasons.push('Momentum building'); }
 
   score += getWeightedOI(data.oiChange);
 
+  if (data.priceChange < 2) { score += 1; reasons.push('Pre-move consolidation'); }
+
+  if (data.priceAcceleration > 0.15) { score += 2; reasons.push('Breakout imminent'); }
+
   if (state?.persistence >= 3) { score += 2; reasons.push('Persistence confirmed'); }
 
-  return { isPrePump: score >= 5, score, reasons };
+  return { isPrePump: score >= 4, score, reasons };
 }
 
 function detectPumpConfirmed(data, state) {
@@ -320,13 +352,13 @@ function detectPumpConfirmed(data, state) {
 
   const breakoutImminent = isBreakoutImminent(data);
   
-  const smartOI = getSmartOI(data.oiChange);
-  const smartOIValid = smartOI > 0.2 || data.fakeOI > 0.5;
+  const smartOI = normalizeOI(data.oiChange);
+  const smartOIValid = smartOI > 0.2 || data.fakeOI > 0.3;
   
-  const volumeValid = data.volume > 3.5;
-  const orderFlowValid = data.orderFlow > 2;
-  const priceAccelValid = data.priceAcceleration > 0.25;
-  const oiValid = data.oiChange > 0.5 || data.fakeOI > 0.5;
+  const volumeValid = data.volume > 2.5;
+  const orderFlowValid = data.orderFlow > 1.5;
+  const priceAccelValid = data.priceAcceleration > 0.15;
+  const oiValid = normalizeOI(data.oiChange) > 0.3 || data.fakeOI > 0.3;
 
   if (breakoutImminent && volumeValid && orderFlowValid) return true;
 
@@ -335,12 +367,12 @@ function detectPumpConfirmed(data, state) {
 
 function detectEarly(data, state) {
   if (state?.stage !== STAGES.IDLE) return false;
-  if (data.fakeOI !== undefined && data.fakeOI < 0.2) return false;
+  if (data.fakeOI !== undefined && data.fakeOI < -0.3) return false;
 
   return (
-    Math.abs(data.priceChange) > 2 &&
-    data.volume > 2 &&
-    data.orderFlow > 1.2
+    Math.abs(data.priceChange) > 1.5 &&
+    data.volume > 1.5 &&
+    data.orderFlow > 1.1
   );
 }
 
