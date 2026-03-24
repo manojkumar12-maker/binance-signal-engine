@@ -125,6 +125,22 @@ function getSmartOI(oiChange) {
   return oiChange * 10;
 }
 
+let oiTrackerModule = null;
+
+export function setOITracker(tracker) {
+  oiTrackerModule = tracker;
+}
+
+function isOIReady(symbol) {
+  if (!oiTrackerModule) return true;
+  return oiTrackerModule.isOIReady(symbol);
+}
+
+function getOIHistoryLength(symbol) {
+  if (!oiTrackerModule) return 0;
+  return oiTrackerModule.getOIHistoryLength(symbol);
+}
+
 function detectTrap(data) {
   if (!data.candle) return null;
   
@@ -437,6 +453,8 @@ class SignalPipeline {
 
   processSymbol(symbol, marketData) {
     const d = this.buildMarketData(symbol, marketData);
+    
+    const oiHistoryLen = getOIHistoryLength(symbol);
     
     d.trap = detectTrap(d);
     if (d.trap) {

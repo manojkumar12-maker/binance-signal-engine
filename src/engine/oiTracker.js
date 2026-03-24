@@ -1,11 +1,15 @@
 import axios from 'axios';
+import { redis } from '../database/redis.js';
 
 const BINANCE_API = 'https://fapi.binance.com';
 
 const MAX_BATCH = 50;
 const FETCH_INTERVAL = 5000;
-const HISTORY_SIZE = 20;
+const HISTORY_SIZE = 60;
 const MAX_TRACKED = 200;
+const MIN_HISTORY_FOR_SIGNALS = 10;
+
+const oiMemory = new Map();
 
 class FlowTracker {
   constructor() {
@@ -71,6 +75,78 @@ class FlowTracker {
   }
 }
 
+function updateMemoryOI(symbol, value) {
+  if (!oiMemory.has(symbol)) {
+    oiMemory.set(symbol, []);
+  }
+
+  const arr = oiMemory.get(symbol);
+  arr.push({ value, time: Date.now() });
+
+  if (arr.length > HISTORY_SIZE) {
+    arr.shift();
+  }
+}
+
+function getOIChangeFast(symbol) {
+  const arr = oiMemory.get(symbol);
+  if (!arr || arr.length < 5) return 0;
+
+  const first = arr[0].value;
+  const last = arr[arr.length - 1].value;
+
+  if (!first || first === 0) return 0;
+
+  return ((last - first) / first) * 100;
+}
+
+function getOIHistoryLength(symbol) {
+  const arr = oiMemory.get(symbol);
+  return arr ? arr.length : 0;
+}
+
+async function updateRedisOI(symbol, value) {
+  if (!redis) return;
+  
+  try {
+    const key = `oi_hist:${symbol}`;
+    const data = JSON.stringify({ value, time: Date.now() });
+    
+    await redis.lpush(key, data);
+    await redis.ltrim(key, 0, HISTORY_SIZE - 1);
+    await redis.expire(key, 300);
+  } catch (e) {
+  }
+}
+
+async function getRedisOIHistory(symbol) {
+  if (!redis) return null;
+  
+  try {
+    const key = `oi_hist:${symbol}`;
+    const data = await redis.lrange(key, 0, -1);
+    
+    if (!data || data.length === 0) return null;
+    
+    return data.map(x => JSON.parse(x));
+  } catch (e) {
+    return null;
+  }
+}
+
+async function getOIChangeFromRedis(symbol) {
+  const data = await getRedisOIHistory(symbol);
+  
+  if (!data || data.length < 5) return null;
+  
+  const first = data[data.length - 1].value;
+  const last = data[0].value;
+  
+  if (!first || first === 0) return 0;
+  
+  return ((last - first) / first) * 100;
+}
+
 class OICache {
   constructor() {
     this.cache = new Map();
@@ -111,6 +187,9 @@ class OICache {
     if (arr.length > HISTORY_SIZE) {
       arr.shift();
     }
+
+    updateMemoryOI(symbol, oi);
+    updateRedisOI(symbol, oi);
   }
 
   get(symbol) {
@@ -118,6 +197,9 @@ class OICache {
   }
 
   getChange(symbol) {
+    const fastChange = getOIChangeFast(symbol);
+    if (fastChange !== 0) return fastChange;
+
     const arr = this.cache.get(symbol);
     if (!arr || arr.length < 2) return 0;
 
@@ -131,6 +213,7 @@ class OICache {
 
   getOIData(symbol) {
     const arr = this.cache.get(symbol);
+    const historyLen = getOIHistoryLength(symbol);
     const current = arr?.length > 0 ? arr[arr.length - 1].oi : 0;
     const change = this.getChange(symbol);
     
@@ -140,17 +223,21 @@ class OICache {
     else if (change > 1) trend = 'STRONG_INCREASE';
     else if (change < -1) trend = 'STRONG_DECREASE';
 
-    return { current, change, trend };
+    return { current, change, trend, historyLen };
   }
 
   getStats() {
     let positive = 0;
     let negative = 0;
     let nonZero = 0;
+    let ready = 0;
 
     for (const [symbol, arr] of this.cache) {
       if (!this.isValid(symbol)) continue;
       if (arr.length < 2) continue;
+      
+      const historyLen = getOIHistoryLength(symbol);
+      if (historyLen >= MIN_HISTORY_FOR_SIGNALS) ready++;
       
       const change = this.getChange(symbol);
       if (Math.abs(change) > 0.001) nonZero++;
@@ -158,7 +245,11 @@ class OICache {
       else if (change < -0.01) negative++;
     }
 
-    return { tracked: this.cache.size, positive, negative, nonZero };
+    return { tracked: this.cache.size, positive, negative, nonZero, ready };
+  }
+
+  isReady(symbol) {
+    return getOIHistoryLength(symbol) >= MIN_HISTORY_FOR_SIGNALS;
   }
 }
 
@@ -185,7 +276,6 @@ class OITracker {
   }
 
   markPriority(symbol) {
-    // priority handled in fetch
   }
 
   async fetchSymbol(symbol) {
@@ -264,8 +354,9 @@ class OITracker {
 
     const stats = this.cache.getStats();
     const btcChange = this.cache.getChange('BTCUSDT');
+    const btcHistoryLen = getOIHistoryLength('BTCUSDT');
     
-    console.log(`📊 OI: tracked=${stats.tracked} BTC=${btcChange.toFixed(4)}% pos=${stats.positive} neg=${stats.negative}`);
+    console.log(`📊 OI: tracked=${stats.tracked} BTC=${btcChange.toFixed(4)}% len=${btcHistoryLen} pos=${stats.positive} neg=${stats.negative} ready=${stats.ready}`);
   }
 
   getChange(symbol) {
@@ -285,6 +376,14 @@ class OITracker {
     return this.flowTracker.classifyFakeOI(priceChange, fakeOI);
   }
 
+  isOIReady(symbol) {
+    return this.cache.isReady(symbol);
+  }
+
+  getOIHistoryLength(symbol) {
+    return getOIHistoryLength(symbol);
+  }
+
   resetFlow(symbol) {
     this.flowTracker.reset(symbol);
   }
@@ -299,4 +398,4 @@ class OITracker {
 }
 
 export const oiTracker = new OITracker();
-export { MAX_TRACKED };
+export { MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS };

@@ -757,6 +757,13 @@ class PumpAnalyzer {
       return null;
     }
 
+    const oiHistoryLen = oiTracker.getOIHistoryLength(symbol);
+    const oiReady = oiHistoryLen >= 10;
+    
+    if (!oiReady && Math.random() < 0.01) {
+      console.log(`⏳ ${symbol}: OI building ${oiHistoryLen}/10, waiting...`);
+    }
+
     const checkRR = (entry, atr, atrPct, tier) => {
       const ex = this.generateEntryExit(entry, atr, atrPct, tier);
       return this.validateRiskReward(ex.entry, ex.sl, ex.tp1) && this.validateMinimumMove(ex.entry, ex.tp3);
@@ -841,9 +848,9 @@ class PumpAnalyzer {
     };
 
     if (priceChange >= 5 && volumeSpike >= 3 && ofRatio >= 1.5 && priceChange <= 15) {
-      const oiValid = Math.abs(oiChange) >= 0.05 || Math.abs(fakeOI || 0) >= 0.6;
+      const oiValid = (Math.abs(oiChange) >= 0.05 || Math.abs(fakeOI || 0) >= 0.6) && (oiReady || (fakeOI && Math.abs(fakeOI) > 0.5));
       if (!oiValid) {
-        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)})`);
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)} ready=${oiReady})`);
         return null;
       }
       
@@ -879,9 +886,9 @@ class PumpAnalyzer {
     }
 
     if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
-      const oiValid = Math.abs(oiChange) >= 0.03 || Math.abs(fakeOI || 0) >= 0.4;
+      const oiValid = (Math.abs(oiChange) >= 0.03 || Math.abs(fakeOI || 0) >= 0.4) && (oiReady || fakeOI);
       if (!oiValid) {
-        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)})`);
+        if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)} ready=${oiReady})`);
         return null;
       }
       
