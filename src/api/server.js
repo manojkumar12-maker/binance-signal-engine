@@ -7,7 +7,7 @@ import { getSignals, getSignalStats, createSignal as dbCreateSignal, updateSigna
 import { state, getRecentSignals } from '../state.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
 
 class SignalAPIServer {
   constructor() {
@@ -17,6 +17,8 @@ class SignalAPIServer {
   }
 
   async start() {
+    console.log(`🔧 Starting server on port ${PORT} (env PORT=${process.env.PORT})...`);
+    
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => {
         this.handleRequest(req, res);
@@ -33,19 +35,23 @@ class SignalAPIServer {
       });
 
       const timeout = setTimeout(() => {
+        console.error('❌ Server start timeout!');
         reject(new Error('Server start timeout'));
-      }, 5000);
+      }, 10000);
 
-      this.server.listen(PORT, () => {
+      this.server.on('listening', () => {
         clearTimeout(timeout);
-        console.log(`🚀 API Server running on port ${PORT}`);
+        console.log(`✅ Server listening on port ${PORT}`);
         resolve();
       });
 
       this.server.on('error', (err) => {
         clearTimeout(timeout);
+        console.error('❌ Server error:', err.message);
         reject(err);
       });
+
+      this.server.listen(PORT, '0.0.0.0');
     });
   }
 
