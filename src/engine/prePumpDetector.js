@@ -1,10 +1,12 @@
+import { getSmartOI } from './signalPipeline.js';
+
 export class PrePumpDetector {
   constructor() {
     this.history = new Map();
     this.symbolStates = new Map();
   }
 
-  analyze(symbol, data) {
+  analyze(symbol, data, state = null) {
     const {
       priceChange,
       volumeSpike,
@@ -16,12 +18,14 @@ export class PrePumpDetector {
       fakeOI
     } = data;
 
+    const smartOI = getSmartOI(oiChange || 0);
+
     let score = 0;
     const reasons = [];
 
-    if (oiChange > 2 && Math.abs(priceChange) < 3) {
+    if (smartOI > 0.1 && Math.abs(priceChange) < 3) {
       score += 2;
-      reasons.push('OI buildup');
+      reasons.push('Smart OI buildup');
     }
 
     if (fakeOI !== undefined && fakeOI !== null && Math.abs(fakeOI) > 0.3 && Math.abs(priceChange) < 3) {
@@ -54,7 +58,12 @@ export class PrePumpDetector {
       reasons.push('Momentum building');
     }
 
-    const isPrePump = score >= 4;
+    if (state?.persistence >= 3) {
+      score += 2;
+      reasons.push('Persistence confirmed');
+    }
+
+    const isPrePump = score >= 5;
     const isBuilding = score >= 3;
 
     this.symbolStates.set(symbol, {
@@ -62,7 +71,8 @@ export class PrePumpDetector {
       isBuilding,
       score,
       reasons,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      persistence: state?.persistence || 0
     });
 
     return {
@@ -70,28 +80,30 @@ export class PrePumpDetector {
       isBuilding,
       prePumpScore: score,
       reasons,
-      direction: this.detectDirection(data)
+      direction: this.detectDirection(data),
+      persistence: state?.persistence || 0
     };
   }
 
   detectDirection(data) {
     const { orderflow, oiChange, priceChange, momentum } = data;
-    
-    if (orderflow > 1.5 && oiChange > 2 && (priceChange > 0 || momentum > 0)) {
+    const smartOI = getSmartOI(oiChange || 0);
+
+    if (orderflow > 1.5 && smartOI > 0.1 && (priceChange > 0 || momentum > 0)) {
       return 'LONG';
     }
-    
-    if (orderflow < 0.7 && oiChange < -2 && (priceChange < 0 || momentum < 0)) {
+
+    if (orderflow < 0.7 && smartOI < -0.1 && (priceChange < 0 || momentum < 0)) {
       return 'SHORT';
     }
-    
+
     return 'NEUTRAL';
   }
 
   getPrePumpSignals() {
     const signals = [];
     const now = Date.now();
-    
+
     for (const [symbol, state] of this.symbolStates.entries()) {
       if ((state.isPrePump || state.isBuilding) && now - state.timestamp < 300000) {
         signals.push({
@@ -100,7 +112,7 @@ export class PrePumpDetector {
         });
       }
     }
-    
+
     return signals.sort((a, b) => b.score - a.score);
   }
 

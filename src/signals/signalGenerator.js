@@ -2,6 +2,7 @@ import { config } from '../../config/config.js';
 import { createSignal as dbCreateSignal } from '../database/db.js';
 import { addToActive } from '../state.js';
 import { riskManager } from '../engine/riskManager.js';
+import { getSmartOI } from '../engine/signalPipeline.js';
 
 class SignalGenerator {
   constructor() {
