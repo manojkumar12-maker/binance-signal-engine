@@ -53,9 +53,14 @@ const CREATE_TABLE_SQL = `
 
 async function initPostgres() {
   const databaseUrl = process.env.DATABASE_URL;
+  
+  console.log('🔍 DATABASE_URL available:', !!databaseUrl);
+  
   if (!databaseUrl) return false;
 
   try {
+    console.log('🔄 Attempting PostgreSQL connection...');
+    
     pool = new pg.Pool({
       connectionString: databaseUrl,
       ssl: databaseUrl.includes('railway') ? { rejectUnauthorized: false } : false,
@@ -64,7 +69,6 @@ async function initPostgres() {
       connectionTimeoutMillis: 10000
     });
 
-    // Test connection
     const client = await pool.connect();
     await client.query(CREATE_TABLE_SQL);
     client.release();
@@ -77,6 +81,7 @@ async function initPostgres() {
     pool = null;
     return false;
   }
+}
 }
 
 // ─── JSON Fallback ────────────────────────────────────────────

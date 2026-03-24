@@ -14,9 +14,12 @@ export async function initRedis() {
   
   if (!redisUrl) {
     console.log('⚠️ REDIS_URL not set — Redis caching disabled');
+    console.log('🔍 Available env vars:', Object.keys(process.env).filter(k => k.includes('REDIS') || k.includes('DATABASE')));
     return false;
   }
 
+  console.log('🔄 Attempting Redis connection...');
+  
   try {
     redis = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
@@ -24,7 +27,8 @@ export async function initRedis() {
         if (times > 5) return null;
         return Math.min(times * 200, 2000);
       },
-      lazyConnect: true
+      lazyConnect: false,
+      connectTimeout: 10000
     });
 
     redis.on('connect', () => {
@@ -41,10 +45,12 @@ export async function initRedis() {
       isConnected = false;
     });
 
-    await redis.connect();
+    await redis.ping();
+    console.log('✅ Redis ping successful');
     return true;
   } catch (error) {
     console.error('⚠️ Redis connection failed:', error.message);
+    console.error('🔍 Redis URL pattern:', redisUrl?.substring(0, 30) + '...');
     isConnected = false;
     return false;
   }
@@ -93,4 +99,4 @@ export async function closeRedis() {
   }
 }
 
-export { CACHE_TTL, isConnected as redisConnected };
+export { CACHE_TTL, isConnected as redisConnected, redis as redisClient };
