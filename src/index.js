@@ -175,7 +175,7 @@ class SignalEngine {
     }
 
     const analysis = pumpAnalyzer.analyze(ticker);
-    if (!analysis || !analysis.atr || isNaN(analysis.atr)) {
+    if (!analysis || !analysis.symbol) {
       return;
     }
 
@@ -190,10 +190,15 @@ class SignalEngine {
       momentum: analysis.momentum || 0,
       price: ticker.price,
       entryPrice: ticker.price,
-      atr: analysis.atr,
+      atr: analysis.atr || 0,
       tradeCount: analysis.tradeCount || 0,
       usdVolume: analysis.usdVolume || 0
     };
+
+    // Debug: log key tickers occasionally
+    if (Math.random() < 0.001 && marketData.volume > 2) {
+      console.log(`📊 TICKER ${ticker.symbol}: PC=${marketData.priceChange.toFixed(1)}% Vol=${marketData.volume.toFixed(1)}x OF=${marketData.orderFlow.toFixed(2)} OI=${marketData.oiChange.toFixed(2)}% F=${marketData.fakeOI.toFixed(3)}`);
+    }
 
     const result = processSymbol(ticker.symbol, marketData);
 

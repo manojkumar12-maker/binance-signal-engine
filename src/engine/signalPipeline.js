@@ -12,7 +12,7 @@ const patternMemory = [];
 const MAX_PATTERN_MEMORY = 100;
 
 const lastSignalTime = {};
-const SIGNAL_COOLDOWN = 5 * 60 * 1000;
+const SIGNAL_COOLDOWN = 3 * 60 * 1000;
 
 let btcPriceChange = 0;
 
@@ -31,10 +31,10 @@ function getMarketRegime() {
 }
 
 function detectSqueeze(d) {
-  if (d.oiChange < -0.2 && d.priceChange > 0) {
+  if (d.oiChange < -0.05 && d.priceChange > 0) {
     return 'SHORT_SQUEEZE';
   }
-  if (d.oiChange > 0.2 && d.priceChange > 0) {
+  if (d.oiChange > 0.05 && d.priceChange > 0) {
     return 'LONG_BUILDUP';
   }
   return null;
@@ -42,67 +42,62 @@ function detectSqueeze(d) {
 
 function isAbsorption(d) {
   return (
-    d.priceChange < 1 &&
+    d.priceChange < 2 &&
     d.volume > 2 &&
-    d.orderFlow > 1.5
+    d.orderFlow > 1.3
   );
 }
 
 function isExplosive(d) {
-  return d.priceAcceleration > 0.3 && d.momentum > 0.2;
+  return d.priceAcceleration > 0.15 && d.momentum > 0.1;
 }
 
 function isRealVolume(d) {
-  return d.volume > 2.5;
-}
-
-function isPerfectEntry(d) {
-  return true;
+  return d.volume > 2;
 }
 
 function getEffectiveOI(d) {
-  if (Math.abs(d.oiChange) > 0.1) return d.oiChange;
+  if (Math.abs(d.oiChange) > 0.01) return d.oiChange;
   return d.fakeOI || 0;
 }
 
 function isTrap(d) {
   return (
-    (d.priceChange > 3 && d.orderFlow < 1.2) ||
-    (d.priceChange < -3 && d.orderFlow < 1.2)
+    (d.priceChange > 5 && d.orderFlow < 1.1) ||
+    (d.priceChange < -5 && d.orderFlow < 1.1)
   );
 }
 
 function isAccumulation(d) {
   const effectiveOI = getEffectiveOI(d);
   return (
-    d.volume > 1.8 &&
-    Math.abs(d.priceChange) < 2 &&
-    (Math.abs(d.fakeOI || 0) > 0.15 || Math.abs(d.oiChange || 0) > 0.1) &&
-    d.orderFlow > 1.1
+    d.volume > 1.5 &&
+    Math.abs(d.priceChange) < 3 &&
+    (Math.abs(d.fakeOI || 0) > 0.05 || Math.abs(d.oiChange || 0) > 0.01) &&
+    d.orderFlow > 1.05
   );
 }
 
 function isPumpIncoming(d) {
   const effectiveOI = getEffectiveOI(d);
   return (
-    d.volume > 2 &&
-    d.orderFlow > 1.3 &&
-    Math.abs(effectiveOI) > 0.15
+    d.volume > 1.8 &&
+    d.orderFlow > 1.2 &&
+    Math.abs(effectiveOI) > 0.01
   );
 }
 
 function getBreakoutTimer(d) {
-  if (d.fakeOI > 0.4 && d.volume > 3) return '5-10 sec';
-  if (d.fakeOI > 0.3) return '10-30 sec';
-  if (d.fakeOI > 0.2 || Math.abs(d.oiChange || 0) > 0.2) return '30-60 sec';
-  return null;
+  if (d.fakeOI > 0.2 && d.volume > 3) return '5-10 sec';
+  if (d.fakeOI > 0.1) return '10-30 sec';
+  if (Math.abs(d.oiChange || 0) > 0.05 || Math.abs(d.fakeOI || 0) > 0.05) return '30-60 sec';
+  return 'soon';
 }
 
 function isExplosiveSetup(d) {
   return (
-    d.volume > 3 &&
-    d.orderFlow > 1.5 &&
-    (d.fakeOI > 0.25 || Math.abs(d.oiChange || 0) > 0.15)
+    d.volume > 2.5 &&
+    d.orderFlow > 1.3
   );
 }
 
@@ -112,27 +107,22 @@ function isSniper(d) {
   
   const effectiveOI = getEffectiveOI(d);
   return (
-    d.priceAcceleration > 0.2 &&
-    d.volume > 2.5 &&
-    d.orderFlow > 1.3 &&
-    Math.abs(effectiveOI) > 0.1 &&
+    d.priceAcceleration > 0.1 &&
+    d.volume > 1.8 &&
+    d.orderFlow > 1.1 &&
+    Math.abs(effectiveOI) > 0.005 &&
     !isTrap(d)
   );
 }
 
 function matchPattern(d) {
-  if (patternMemory.length < 5) return false;
+  if (patternMemory.length < 3) return false;
   
-  const recent = patternMemory.slice(-10);
+  const recent = patternMemory.slice(-5);
   return recent.some(p =>
-    Math.abs(p.volume - d.volume) < 1 &&
-    Math.abs(p.oi - d.oiChange) < 0.2 &&
+    Math.abs(p.volume - d.volume) < 0.5 &&
     p.result === 'WIN'
   );
-}
-
-function isHighPrioritySymbol(d) {
-  return true;
 }
 
 function canTrade(symbol) {
@@ -158,33 +148,35 @@ function recordPattern(d, result) {
 }
 
 function calculateConfidence(d) {
-  let conf = 40;
+  let conf = 30;
   const regime = getMarketRegime();
 
-  if (Math.abs(d.oiChange || 0) > 0.3) conf += 15;
-  else if (Math.abs(d.oiChange || 0) > 0.1) conf += 10;
+  if (Math.abs(d.oiChange || 0) > 0.1) conf += 15;
+  else if (Math.abs(d.oiChange || 0) > 0.02) conf += 10;
   
-  if (d.volume > 3) conf += 15;
-  else if (d.volume > 2) conf += 10;
+  if (d.volume > 3) conf += 20;
+  else if (d.volume > 2) conf += 15;
+  else if (d.volume > 1.5) conf += 10;
   
-  if (d.orderFlow > 1.8) conf += 10;
-  else if (d.orderFlow > 1.3) conf += 5;
+  if (d.orderFlow > 1.8) conf += 15;
+  else if (d.orderFlow > 1.3) conf += 10;
+  else if (d.orderFlow > 1.05) conf += 5;
   
-  if (Math.abs(d.fakeOI || 0) > 0.4) conf += 15;
-  else if (Math.abs(d.fakeOI || 0) > 0.2) conf += 10;
+  if (Math.abs(d.fakeOI || 0) > 0.3) conf += 20;
+  else if (Math.abs(d.fakeOI || 0) > 0.1) conf += 15;
+  else if (Math.abs(d.fakeOI || 0) > 0.03) conf += 5;
 
   const squeeze = detectSqueeze(d);
-  if (squeeze === 'SHORT_SQUEEZE') conf += 15;
-  if (squeeze === 'LONG_BUILDUP') conf += 5;
+  if (squeeze === 'SHORT_SQUEEZE') conf += 20;
+  if (squeeze === 'LONG_BUILDUP') conf += 10;
 
-  if (isAbsorption(d)) conf += 5;
-  if (isExplosive(d)) conf += 10;
+  if (isAbsorption(d)) conf += 10;
+  if (isExplosive(d)) conf += 15;
   if (isExplosiveSetup(d)) conf += 10;
   
   if (matchPattern(d)) conf += 10;
 
-  if (regime === 'RANGE') conf -= 5;
-  if (regime === 'BULL') conf += 5;
+  if (regime === 'BULL') conf += 10;
 
   return Math.min(conf, 95);
 }
@@ -213,10 +205,6 @@ export function processSymbol(symbol, marketData) {
   const d = buildMarketData(symbol, marketData);
   const state = stateMap.get(symbol) || { stage: STAGES.IDLE };
 
-  if (!isHighPrioritySymbol(d)) {
-    return null;
-  }
-
   if (isTrap(d)) {
     stateMap.set(symbol, { stage: STAGES.IDLE });
     return null;
@@ -224,17 +212,17 @@ export function processSymbol(symbol, marketData) {
 
   if (state.stage === STAGES.IDLE) {
     if (isAccumulation(d)) {
-      let score = 0;
-      if (isAbsorption(d)) score += 2;
-      
       state.stage = STAGES.ACCUMULATION;
       state.accTime = Date.now();
       stateMap.set(symbol, state);
       lastSignalTime[symbol] = Date.now();
       
       const breakoutTimer = getBreakoutTimer(d);
+      const confidence = calculateConfidence(d);
       
-      return { type: 'ACCUMULATION', symbol, confidence: 40, data: d, score, breakoutTimer };
+      console.log(`🟠 ACCUMULATION: ${symbol} | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(2)} | OI=${d.oiChange.toFixed(2)}% | F=${d.fakeOI.toFixed(3)} | Conf=${confidence}% | ⏱️${breakoutTimer}`);
+      
+      return { type: 'ACCUMULATION', symbol, confidence, data: d, breakoutTimer };
     }
   }
 
@@ -244,7 +232,11 @@ export function processSymbol(symbol, marketData) {
       state.stage = STAGES.PREDICT;
       state.predictTime = Date.now();
       stateMap.set(symbol, state);
-      return { type: 'PREDICT', symbol, confidence: 60, data: d, breakoutTimer };
+      const confidence = calculateConfidence(d);
+      
+      console.log(`🟠 PUMP INCOMING: ${symbol} | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(2)} | OI=${d.oiChange.toFixed(2)}% | F=${d.fakeOI.toFixed(3)} | Conf=${confidence}% | ⏱️${breakoutTimer}`);
+      
+      return { type: 'PREDICT', symbol, confidence, data: d, breakoutTimer };
     }
   }
 
@@ -252,13 +244,14 @@ export function processSymbol(symbol, marketData) {
     if (isSniper(d)) {
       const confidence = calculateConfidence(d);
       
-      if (confidence < 65) {
+      if (confidence < 50) {
+        console.log(`❌ ${symbol} → LowConf: conf=${confidence}%`);
         stateMap.set(symbol, { stage: STAGES.IDLE });
         return null;
       }
 
       const entry = d.price;
-      const risk = entry * 0.03;
+      const risk = entry * 0.025;
       const sl = entry - risk;
 
       state.stage = STAGES.SNIPER;
@@ -267,6 +260,8 @@ export function processSymbol(symbol, marketData) {
 
       const squeeze = detectSqueeze(d);
       const breakoutTimer = getBreakoutTimer(d);
+      
+      console.log(`🔴 SNIPER: ${symbol} | Entry=${entry.toFixed(6)} | SL=${sl.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(2)} | OI=${d.oiChange.toFixed(2)}% | F=${d.fakeOI.toFixed(3)} | Conf=${confidence}% | ${squeeze || ''}`);
       
       return {
         type: 'SNIPER',
@@ -316,7 +311,7 @@ export function getSmartOI(oiChange) {
 }
 
 export function getEffectiveOIFromPipeline(data) {
-  if (Math.abs(data.oiChange) > 0.1) return data.oiChange;
+  if (Math.abs(data.oiChange) > 0.01) return data.oiChange;
   return data.fakeOI || 0;
 }
 
