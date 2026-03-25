@@ -2,7 +2,7 @@ import { config } from '../../config/config.js';
 import { createSignal as dbCreateSignal } from '../database/db.js';
 import { addToActive } from '../state.js';
 import { riskManager } from '../engine/riskManager.js';
-import { getSmartOI } from '../engine/signalPipeline.js';
+import { getSmartOI, calculatePriorityScore, getEffectiveOI } from '../engine/signalPipeline.js';
 
 class SignalGenerator {
   constructor() {
@@ -56,6 +56,17 @@ class SignalGenerator {
       rr3: signals.rr3,
       risk: signals.risk
     } : null;
+
+    const effectiveOI = getEffectiveOI(analysis);
+    const priorityScore = calculatePriorityScore({
+      oiChange: effectiveOI,
+      fakeOI: analysis.fakeOI,
+      orderFlow: analysis.orderflow,
+      volume: analysis.volumeSpike,
+      priceAcceleration: analysis.acceleration,
+      momentum: analysis.momentum,
+      momentumAcceleration: analysis.momentumAcceleration || 0
+    });
     
     const signal = {
       id: `sig_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -69,6 +80,7 @@ class SignalGenerator {
       riskAmount,
       positionSize: positionCalc,
       rankScore: analysis.rankScore || 0,
+      priorityScore,
       quality: this.getQuality(analysis.confidence || 0),
       targets: {
         tp1: signals?.tp1 || signalSL ? signalEntry + (signalEntry - signalSL) * 1 : null,
@@ -150,12 +162,15 @@ class SignalGenerator {
     
     let prePumpSection = '';
     if (signal.prePump && signal.tier === 'PRE_PUMP') {
+      const breakoutETA = signal.prePump.breakoutETA;
+      const etaText = breakoutETA?.eta ? `${breakoutETA.eta} ⚡` : 'N/A';
+      const urgencyText = breakoutETA?.urgency || '';
       prePumpSection = `
 ⚠️ PRE-PUMP INDICATORS:
-   Score: ${signal.prePump.prePumpScore || 0}
+   Score: ${signal.prePump.score || 0}
    Direction: ${signal.prePump.direction || 'NEUTRAL'}
    Reasons: ${(signal.prePump.reasons || []).join(', ')}
-⏱️ Expect move in 5-10 minutes
+⏱️ Pump ETA: ${etaText} ${urgencyText}
 `;
     }
     
@@ -187,7 +202,7 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
 📊 Symbol: ${signal.symbol}
 🕐 Time: ${new Date(signal.timestamp).toLocaleString()}
 ${prePumpSection}${riskSection}${trailingSection}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 RANK: ${(signal.rankScore || 0).toFixed(0)} | Quality: ${signal.quality || 'N/A'}
+🏆 RANK: ${(signal.rankScore || 0).toFixed(0)} | Priority: ${(signal.priorityScore || 0).toFixed(0)} | Quality: ${signal.quality || 'N/A'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 ENTRY: ${entryDisplay}
 🛑 STOP LOSS: ${slDisplay}

@@ -1,3 +1,13 @@
+import { 
+  calculatePriorityScore, 
+  getEffectiveOI, 
+  isPerfectSniper, 
+  isTrapAdvanced, 
+  predictBreakout, 
+  applySniperFilter,
+  calculateSniperConfidence 
+} from './priorityEngine.js';
+
 const STAGES = {
   IDLE: 'IDLE',
   EARLY: 'EARLY',
@@ -337,13 +347,10 @@ function isStableFakeOI(fakeOI, priceChange, volumeTrend) {
 function isSniperEntry(data) {
   if (!data) return false;
   
-  const momentumGood = data.momentum > 0 && data.momentumAcceleration > 0;
-  const priceAccelGood = data.priceAcceleration > 0.3;
-  const volumeGood = data.volume > 4;
-  const flowGood = data.orderFlow > 1.8;
-  const noTrap = !data.trap;
-
-  return momentumGood && priceAccelGood && volumeGood && flowGood && noTrap;
+  const priorityScore = calculatePriorityScore(data);
+  if (priorityScore < 60) return false;
+  
+  return isPerfectSniper(data);
 }
 
 function rankSignal(data, confidence) {
@@ -449,21 +456,23 @@ function detectTrap(data) {
 }
 
 function detectPrePump(data, state) {
-  if (data.trap) return { isPrePump: false, score: 0, reasons: ['Trap detected'], type: null, breakoutTime: null };
+  const trapCheck = isTrapAdvanced(data);
+  if (trapCheck.isTrap) return { isPrePump: false, score: 0, reasons: [trapCheck.reason], type: null, breakoutTime: null, breakoutETA: null };
   
   const smartOI = normalizeOI(data.oiChange, data.symbol);
   const stableFakeOI = isStableFakeOI(data.fakeOI, data.priceChange, data.volume);
+  const effectiveOI = getEffectiveOI(data);
   
   let score = 0;
   const reasons = [];
 
-  if (data.volume > 2 && data.orderFlow > 1.3 && (data.fakeOI > 0.25 || smartOI > 0.2)) {
-    const breakoutTime = estimateBreakoutTime(data);
-    return { isPrePump: true, score: 10, reasons: ['Early breakout trigger'], type: getPrePumpType(data), breakoutTime };
+  if (data.volume > 2 && data.orderFlow > 1.3 && (Math.abs(effectiveOI) > 0.25 || smartOI > 0.2)) {
+    const breakoutETA = predictBreakout(data);
+    return { isPrePump: true, score: 10, reasons: ['Early breakout trigger'], type: getPrePumpType(data), breakoutTime: breakoutETA?.eta || null, breakoutETA };
   }
 
-  if (data.volume < 1.5 && (data.fakeOI || 0) < 0.2 && Math.abs(data.priceChange || 0) < 1) {
-    return { isPrePump: false, score: 0, reasons: ['Weak signal'], type: null, breakoutTime: null };
+  if (data.volume < 1.5 && Math.abs(data.fakeOI || 0) < 0.2 && Math.abs(data.priceChange || 0) < 1) {
+    return { isPrePump: false, score: 0, reasons: ['Weak signal'], type: null, breakoutTime: null, breakoutETA: null };
   }
 
   if (smartOI > 0.1) { score += 2; reasons.push('Smart OI buildup'); }
@@ -483,14 +492,16 @@ function detectPrePump(data, state) {
 
   if (state?.persistence >= 2) { score += 2; reasons.push('Persistence confirmed'); }
 
-  const breakoutTime = score >= 4 ? estimateBreakoutTime(data) : null;
+  const breakoutETA = score >= 3 ? predictBreakout(data) : null;
+  const breakoutTime = breakoutETA?.eta || null;
   
   return { 
     isPrePump: score >= 3, 
     score, 
     reasons, 
     type: getPrePumpType(data),
-    breakoutTime 
+    breakoutTime,
+    breakoutETA
   };
 }
 
@@ -535,28 +546,33 @@ function detectSniper(data, state) {
   const validStage = state.stage === STAGES.CONFIRMED || state.stage === STAGES.PUMP_CONFIRMED;
   if (!validStage) return false;
   if (state.persistence < 2) return false;
-  if (data.trap) return false;
+  
+  const trapCheck = isTrapAdvanced(data);
+  if (trapCheck.isTrap) return false;
+  
   if (data.priceChange < 0 || data.priceChange > 15) return false;
   
-  const symbol = data.symbol;
-  return isSniperScore(data, symbol);
+  const filterResult = applySniperFilter(data);
+  if (!filterResult.pass) return false;
+  
+  const priorityScore = calculatePriorityScore(data);
+  if (priorityScore < 60) return false;
+  
+  return true;
 }
 
 function getSniperScore(data) {
-  let score = 70;
+  const filterResult = applySniperFilter(data);
+  if (!filterResult.pass) {
+    return 0;
+  }
 
-  if (data.fakeOI > 0.6) score += 10;
-  if (getSmartOI(data.oiChange) > 0.2) score += 10;
-  if (data.volume > 5) score += 5;
-  if (data.orderFlow > 2.5) score += 5;
-  if (data.priceAcceleration > 0.5) score += 5;
-  if (isSniperEntry(data)) score += 10;
-  if (isBreakoutImminent(data)) score += 10;
+  const priorityScore = calculatePriorityScore(data);
+  if (priorityScore < 60) {
+    return 0;
+  }
 
-  const rank = rankSignal(data, score);
-  if (rank < 60) return Math.min(score, 50);
-
-  return Math.min(score, 95);
+  return calculateSniperConfidence(data);
 }
 
 class SignalPipeline {
@@ -826,4 +842,4 @@ class SignalPipeline {
 }
 
 export const signalPipeline = new SignalPipeline();
-export { STAGES, signalStateMachine, getSniperScore, getSmartOI };
+export { STAGES, signalStateMachine, getSniperScore, getSmartOI, calculatePriorityScore, getEffectiveOI, isPerfectSniper, isTrapAdvanced, predictBreakout, applySniperFilter, calculateSniperConfidence };
