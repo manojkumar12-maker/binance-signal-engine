@@ -308,3 +308,27 @@ export const signalPipeline = {
 };
 
 export { STAGES, detectSqueeze, getBreakoutTimer };
+
+export const signalStateMachine = {
+  getState(symbol) {
+    return stateMap.get(symbol) || { stage: STAGES.IDLE, score: 0, data: null };
+  },
+  setState(symbol, stage, data = {}) {
+    const current = stateMap.get(symbol) || { stage: STAGES.IDLE };
+    stateMap.set(symbol, { ...current, stage, ...data });
+    return stateMap.get(symbol);
+  },
+  checkTimeout(symbol) {
+    const state = stateMap.get(symbol);
+    if (state && state.stage !== STAGES.IDLE && Date.now() - (state.lastUpdate || 0) > 300000) {
+      stateMap.set(symbol, { stage: STAGES.IDLE });
+      return true;
+    }
+    return false;
+  },
+  getActiveSignals() {
+    return Array.from(stateMap.entries())
+      .filter(([_, s]) => s.stage !== STAGES.IDLE)
+      .map(([symbol, state]) => ({ symbol, ...state }));
+  }
+};
