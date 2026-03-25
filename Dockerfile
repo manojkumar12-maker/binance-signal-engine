@@ -9,7 +9,6 @@ RUN rm -rf node_modules && npm install --production
 
 COPY . .
 
-# Railway sets PORT dynamically
-EXPOSE ${PORT:-3000}
+EXPOSE ${PORT:-8080}
 
 CMD ["node", "src/index.js"]
