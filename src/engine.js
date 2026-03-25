@@ -1,85 +1,45 @@
-import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
+console.log('Starting...');
 
-const PORT = process.env.PORT || 8080;
+const { wsManager } = await import('./websocket/binanceWS.js');
+const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
+const { processSymbol, setOITracker, updateBTCPrice } = await import('./engine/signalPipeline.js');
+const { oiTracker } = await import('./engine/oiTracker.js');
+const { orderflowTracker } = await import('./engine/orderflowTracker.js');
 
-const server = createServer((req, res) => {
-  const url = req.url.split('?')[0];
+wsManager.onTicker(ticker => {
+  if (ticker.symbol === 'BTCUSDT') updateBTCPrice(ticker.priceChange || 0);
   
-  if (url === '/api/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok' }));
-    return;
-  }
+  const a = pumpAnalyzer.analyze(ticker);
+  if (!a?.symbol) return;
   
-  res.writeHead(404);
-  res.end('Not found');
+  const r = processSymbol(ticker.symbol, {
+    symbol: ticker.symbol,
+    priceChange: a.priceChange || 0,
+    volume: a.volumeSpike || 1,
+    orderFlow: a.orderflow?.ratio || 1,
+    oiChange: a.openInterest?.change || 0,
+    fakeOI: a.fakeOI || 0,
+    priceAcceleration: a.acceleration || 0,
+    momentum: a.momentum || 0,
+    price: ticker.price,
+    atr: a.atr || 0
+  });
+  
+  if (r?.type === 'SNIPER') console.log('🔴', r.symbol);
 });
 
-const wss = new WebSocketServer({ server });
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('✅ Server ready');
-  
-  setTimeout(() => {
-    startEngine().catch(e => console.error('Engine failed:', e.message));
-  }, 3000);
+wsManager.onTrade(trade => {
+  orderflowTracker.handleTrade(trade);
+  oiTracker.handleTrade(trade);
 });
 
-async function startEngine() {
-  console.log('🔄 Starting engine...');
-  
-  const { wsManager } = await import('./websocket/binanceWS.js');
-  const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
-  const { signalGenerator } = await import('./signals/signalGenerator.js');
-  const { addSignal } = await import('./state.js');
-  const { orderflowTracker } = await import('./engine/orderflowTracker.js');
-  const { oiTracker } = await import('./engine/oiTracker.js');
-  const { processSymbol, setOITracker, updateBTCPrice } = await import('./engine/signalPipeline.js');
+await wsManager.initialize();
+console.log('Connected:', wsManager.symbols.length);
 
-  wsManager.onTicker(ticker => {
-    if (ticker.symbol === 'BTCUSDT') updateBTCPrice(ticker.priceChange || 0);
-    
-    const analysis = pumpAnalyzer.analyze(ticker);
-    if (!analysis?.symbol) return;
-    
-    const result = processSymbol(ticker.symbol, {
-      symbol: ticker.symbol,
-      priceChange: analysis.priceChange || 0,
-      volume: analysis.volumeSpike || 1,
-      orderFlow: analysis.orderflow?.ratio || 1,
-      oiChange: analysis.openInterest?.change || 0,
-      fakeOI: analysis.fakeOI || 0,
-      priceAcceleration: analysis.acceleration || 0,
-      momentum: analysis.momentum || 0,
-      price: ticker.price,
-      atr: analysis.atr || 0
-    });
-    
-    if (result?.type === 'SNIPER') {
-      signalGenerator.generateSignal(ticker.symbol, result).then(sig => {
-        if (sig) {
-          addSignal(sig);
-          console.log('🔴 SNIPER:', sig.symbol);
-          wss.clients.forEach(c => c.readyState === 1 && c.send(JSON.stringify({ signal: sig })));
-        }
-      });
-    }
-  });
+pumpAnalyzer.initialize(wsManager.symbols);
+await oiTracker.init(wsManager.symbols);
+setOITracker(oiTracker);
 
-  wsManager.onTrade(trade => {
-    orderflowTracker.handleTrade(trade);
-    oiTracker.handleTrade(trade);
-  });
+setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
 
-  await wsManager.initialize();
-  console.log('✅ Connected:', wsManager.symbols.length, 'symbols');
-  
-  pumpAnalyzer.initialize(wsManager.symbols);
-  await oiTracker.init(wsManager.symbols);
-  setOITracker(oiTracker);
-  
-  setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
-  
-  console.log('✅ Engine running!');
-}
+console.log('Running');
