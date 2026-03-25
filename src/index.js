@@ -28,15 +28,41 @@ const server = createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 server.listen(PORT, '0.0.0.0', () => console.log('OK', PORT));
 
-console.log('Loading engine...');
+console.log('Starting...');
 
 const STAGES = { IDLE: 'IDLE', PRESSURE: 'PRESSURE', SNIPER: 'SNIPER' };
 const stateMap = new Map();
 const cooldowns = new Map();
+const flowData = new Map();
 
 function canTrade(sym) {
   const last = cooldowns.get(sym) || 0;
   return Date.now() - last > 120000;
+}
+
+function processTrade(symbol, qty, isBuyerMaker) {
+  if (!flowData.has(symbol)) {
+    flowData.set(symbol, { buy: 0, sell: 0, time: Date.now() });
+  }
+  const f = flowData.get(symbol);
+  if (isBuyerMaker) f.sell += qty;
+  else f.buy += qty;
+  f.time = Date.now();
+}
+
+function getFlow(symbol) {
+  const f = flowData.get(symbol);
+  if (!f || (f.buy + f.sell) < 10) return { ratio: 1, buy: 0, sell: 0 };
+  const total = f.buy + f.sell;
+  const ratio = f.buy / (f.sell || 1);
+  return { ratio: Math.max(0.5, Math.min(3, ratio)), buy: f.buy, sell: f.sell };
+}
+
+function resetFlow() {
+  for (const [sym, f] of flowData) {
+    f.buy = 0;
+    f.sell = 0;
+  }
 }
 
 function isNoise(d) {
@@ -44,23 +70,23 @@ function isNoise(d) {
 }
 
 function detectPressure(d) {
-  return d.volume > 2 && d.orderFlow > 1.4 && (d.fakeOI > 0.2 || Math.abs(d.oiChange || 0) > 0.08);
+  return d.volume > 2 && d.flow > 1.3 && ((d.fakeOI || 0) > 0.15 || Math.abs(d.oiChange || 0) > 0.05);
 }
 
 function detectSniper(d) {
-  return d.volume > 2.5 && d.orderFlow > 1.5 && (d.fakeOI > 0.3 || Math.abs(d.oiChange || 0) > 0.12) && (d.priceAcceleration || 0) > 0.15;
+  return d.volume > 2.5 && d.flow > 1.4 && ((d.fakeOI || 0) > 0.2 || Math.abs(d.oiChange || 0) > 0.08) && (d.accel || 0) > 0.1;
 }
 
-function score(d) {
-  let s = 0;
+function calcScore(d) {
+  let s = 30;
   if (d.volume > 3) s += 15;
-  if (d.volume > 2) s += 10;
-  if (d.orderFlow > 1.6) s += 15;
-  if (d.orderFlow > 1.4) s += 10;
-  if ((d.fakeOI || 0) > 0.4) s += 20;
-  if ((d.fakeOI || 0) > 0.25) s += 15;
-  if (Math.abs(d.oiChange || 0) > 0.2) s += 20;
-  if (Math.abs(d.oiChange || 0) > 0.1) s += 10;
+  else if (d.volume > 2) s += 10;
+  if (d.flow > 1.6) s += 15;
+  else if (d.flow > 1.3) s += 10;
+  if ((d.fakeOI || 0) > 0.3) s += 20;
+  else if ((d.fakeOI || 0) > 0.15) s += 10;
+  if (Math.abs(d.oiChange || 0) > 0.15) s += 15;
+  else if (Math.abs(d.oiChange || 0) > 0.05) s += 8;
   return s;
 }
 
@@ -72,18 +98,33 @@ async function start() {
     
     console.log('Modules loaded');
 
+    wsManager.onTrade((trade) => {
+      processTrade(trade.symbol, trade.quantity || trade.q || 0, trade.isBuyerMaker || trade.m);
+    });
+
+    let tradeCount = 0;
+    setInterval(() => {
+      const activeFlows = flowData.size;
+      console.log('📊 Trades:', tradeCount, 'Flows:', activeFlows);
+      tradeCount = 0;
+      resetFlow();
+    }, 10000);
+
     wsManager.onTicker(ticker => {
-      const a = pumpAnalyzer.analyze(ticker);
-      if (!a?.symbol) return;
+      tradeCount++;
+      
+      const flow = getFlow(ticker.symbol);
+      const oi = oiTracker.getChange(ticker.symbol) || 0;
+      const fake = oiTracker.getFakeOI(ticker.symbol) || 0;
       
       const d = {
         symbol: ticker.symbol,
-        priceChange: a.priceChange || 0,
-        volume: a.volumeSpike || 1,
-        orderFlow: a.orderflow?.ratio || 1,
-        oiChange: a.openInterest?.change || 0,
-        fakeOI: a.fakeOI || 0,
-        priceAcceleration: a.acceleration || 0,
+        priceChange: ticker.priceChange || 0,
+        volume: ticker.volume || 1,
+        flow: flow.ratio,
+        oiChange: oi,
+        fakeOI: fake,
+        accel: ticker.acceleration || 0,
         price: ticker.price
       };
       
@@ -93,22 +134,23 @@ async function start() {
       const state = stateMap.get(d.symbol) || { stage: STAGES.IDLE };
       
       if (state.stage === STAGES.IDLE && detectPressure(d)) {
-        const s = score(d);
+        const s = calcScore(d);
         state.stage = STAGES.PRESSURE;
         state.score = s;
         stateMap.set(d.symbol, state);
-        console.log('🟣', d.symbol, 'V=' + d.volume.toFixed(1), 'OF=' + d.orderFlow.toFixed(1), 'F=' + (d.fakeOI||0).toFixed(2), 'S=' + s);
+        
+        console.log('🟣', d.symbol, 'PC=' + d.priceChange.toFixed(1) + '%', 'V=' + d.volume.toFixed(1), 'F=' + d.flow.toFixed(1), 'Fak=' + fake.toFixed(2), 'S=' + s);
         wss.clients.forEach(c => c.send(JSON.stringify({ type: 'pressure', data: { symbol: d.symbol, score: s } })));
       }
       
       if (state.stage === STAGES.PRESSURE && detectSniper(d)) {
-        const s = score(d);
-        if (s < 45) return;
+        const s = calcScore(d);
+        if (s < 40) return;
         
         const risk = d.price * 0.02;
         cooldowns.set(d.symbol, Date.now());
         
-        console.log('🔴 SNIPER:', d.symbol, 'V=' + d.volume.toFixed(1), 'S=' + s);
+        console.log('🔴 SNIPER:', d.symbol, 'V=' + d.volume.toFixed(1), 'F=' + d.flow.toFixed(1), 'S=' + s);
         
         const signal = {
           type: 'SNIPER',
@@ -130,7 +172,7 @@ async function start() {
     console.log('Connected:', wsManager.symbols.length);
     pumpAnalyzer.initialize(wsManager.symbols);
     await oiTracker.init(wsManager.symbols);
-    console.log('Engine running');
+    console.log('Running');
   } catch (e) {
     console.error('Error:', e.message, e.stack);
   }
