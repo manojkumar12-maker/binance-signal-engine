@@ -11,7 +11,7 @@ import { state, canTrigger, strongCanTrigger, addSignal, updateSignalStatus, isS
 import { orderflowTracker } from './engine/orderflowTracker.js';
 import { oiTracker, MAX_TRACKED } from './engine/oiTracker.js';
 import { fundingService } from './engine/fundingService.js';
-import { processSymbol, setOITracker, getState } from './engine/signalPipeline.js';
+import { processSymbol, setOITracker, getState, updateBTCPrice, recordWin, recordLoss } from './engine/signalPipeline.js';
 import { emitSignal, startDashboardServer } from './api/dashboardServer.js';
 
 console.log('✅ All modules loaded');
@@ -56,9 +56,10 @@ class SignalEngine {
   async start() {
     console.log(`
 ╔══════════════════════════════════════════════╗
-║     🚀 SNIPER SIGNAL ENGINE v4.0 🚀        
+║     🚀 SNIPER SIGNAL ENGINE v5.0 🚀        
 ╠══════════════════════════════════════════════╣
 ║  🔴 SNIPER | 🟠 PREDICT | ⚡ ACCUMULATION    ║
+║  💎 Squeeze | Absorption | Memory System     ║
 ╚══════════════════════════════════════════════╝
     `);
 
@@ -83,6 +84,9 @@ class SignalEngine {
   async initEngine() {
     try {
       wsManager.onTicker((ticker) => {
+        if (ticker.symbol === 'BTCUSDT') {
+          updateBTCPrice(ticker.priceChange || 0);
+        }
         this.processTicker(ticker);
       });
 
@@ -157,6 +161,13 @@ class SignalEngine {
       const updatedSignal = signalGenerator.updateSignal(ticker.symbol, ticker.price);
       if (updatedSignal && updatedSignal.status !== 'ACTIVE' && updatedSignal.status !== 'WATCHLIST') {
         console.log(`\n📊 ${ticker.symbol}: ${updatedSignal.status} at ${updatedSignal.closedPrice?.toFixed(6)}\n`);
+        
+        if (updatedSignal.status?.startsWith('TP')) {
+          recordWin(ticker.symbol);
+        } else if (updatedSignal.status === 'STOPPED_OUT') {
+          recordLoss(ticker.symbol);
+        }
+        
         updateSignalStatus(ticker.symbol, updatedSignal.status, updatedSignal.closedPrice);
         apiServer.updateSignalStatus(ticker.symbol, updatedSignal.status, updatedSignal.closedPrice).catch(() => {});
       }
@@ -179,7 +190,9 @@ class SignalEngine {
       momentum: analysis.momentum || 0,
       price: ticker.price,
       entryPrice: ticker.price,
-      atr: analysis.atr
+      atr: analysis.atr,
+      tradeCount: analysis.tradeCount || 0,
+      usdVolume: analysis.usdVolume || 0
     };
 
     const result = processSymbol(ticker.symbol, marketData);
@@ -202,7 +215,10 @@ class SignalEngine {
           this.stats.signalsGenerated++;
           this.stats.sniperSignals++;
           
+          const squeezeEmoji = result.squeeze === 'SHORT_SQUEEZE' ? '💥' : '';
           console.log(signalGenerator.formatSignal(signal));
+          console.log(`   ${squeezeEmoji} Squeeze: ${result.squeeze || 'N/A'} | Conf: ${result.confidence}%`);
+          
           emitSignal(signal);
           notifier.sendSignal(signal).catch(() => {});
           apiServer.addSignal(signal).catch(() => {});
@@ -218,7 +234,7 @@ class SignalEngine {
     console.clear();
     console.log(`
 ╔══════════════════════════════════════════════════════════════════╗
-║        🚀 SNIPER SIGNAL ENGINE v4.0 🚀                      ║
+║        🚀 SNIPER SIGNAL ENGINE v5.0 🚀                      ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  📊 STATISTICS                                                   ║
 ║  ─────────────────────────────────────────────────────────────    ║
@@ -259,7 +275,9 @@ class SignalEngine {
         momentum: ticker.momentum || 0,
         price: ticker.price,
         entryPrice: ticker.price,
-        atr: ticker.atr
+        atr: ticker.atr,
+        tradeCount: ticker.tradeCount || 0,
+        usdVolume: ticker.usdVolume || 0
       };
 
       const result = processSymbol(symbol, marketData);

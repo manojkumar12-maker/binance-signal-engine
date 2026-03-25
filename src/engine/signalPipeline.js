@@ -12,8 +12,58 @@ const STAGES = {
 const stateMap = new Map();
 let oiTrackerModule = null;
 
+const patternMemory = [];
+const MAX_PATTERN_MEMORY = 100;
+
+const lastSignalTime = {};
+const SIGNAL_COOLDOWN = 5 * 60 * 1000;
+
+let btcPriceChange = 0;
+
 export function setOITracker(tracker) {
   oiTrackerModule = tracker;
+}
+
+export function updateBTCPrice(btcChange) {
+  btcPriceChange = btcChange;
+}
+
+function getMarketRegime() {
+  if (btcPriceChange > 1) return 'BULL';
+  if (btcPriceChange < -1) return 'BEAR';
+  return 'RANGE';
+}
+
+function detectSqueeze(d) {
+  if (d.oiChange < -0.3 && d.priceChange > 0) {
+    return 'SHORT_SQUEEZE';
+  }
+  if (d.oiChange > 0.3 && d.priceChange > 0) {
+    return 'LONG_BUILDUP';
+  }
+  return null;
+}
+
+function isAbsorption(d) {
+  return (
+    d.priceChange < 1 &&
+    d.volume > 2 &&
+    d.orderFlow > 1.5
+  );
+}
+
+function isExplosive(d) {
+  return d.priceAcceleration > 0.4 && d.momentum > 0.3;
+}
+
+function isRealVolume(d) {
+  return d.volume > 3 && (d.tradeCount || 0) > 50;
+}
+
+function isPerfectEntry(d) {
+  if (!d.candle) return true;
+  const body = Math.abs(d.candle.close - d.candle.open) / (d.candle.high - d.candle.low);
+  return body > 0.6;
 }
 
 function getEffectiveOI(d) {
@@ -47,6 +97,10 @@ function isPumpIncoming(d) {
 }
 
 function isSniper(d) {
+  if (!isExplosive(d)) return false;
+  if (!isRealVolume(d)) return false;
+  if (!isPerfectEntry(d)) return false;
+  
   return (
     d.priceAcceleration > 0.3 &&
     d.volume > 3 &&
@@ -56,13 +110,64 @@ function isSniper(d) {
   );
 }
 
+function matchPattern(d) {
+  if (patternMemory.length < 5) return false;
+  
+  const recent = patternMemory.slice(-10);
+  return recent.some(p =>
+    Math.abs(p.volume - d.volume) < 1 &&
+    Math.abs(p.oi - d.oiChange) < 0.3 &&
+    p.result === 'WIN'
+  );
+}
+
+function isHighPrioritySymbol(d) {
+  if (d.usdVolume && d.usdVolume < 1000000) return false;
+  return true;
+}
+
+function canTrade(symbol) {
+  const lastTime = lastSignalTime[symbol] || 0;
+  if (Date.now() - lastTime < SIGNAL_COOLDOWN) {
+    return false;
+  }
+  return true;
+}
+
+function recordPattern(d, result) {
+  patternMemory.push({
+    volume: d.volume,
+    oi: d.oiChange,
+    flow: d.orderFlow,
+    result,
+    timestamp: Date.now()
+  });
+  
+  if (patternMemory.length > MAX_PATTERN_MEMORY) {
+    patternMemory.shift();
+  }
+}
+
 function calculateConfidence(d) {
   let conf = 50;
+  const regime = getMarketRegime();
 
   if (Math.abs(d.oiChange || 0) > 1) conf += 20;
   if (d.volume > 3) conf += 15;
   if (d.orderFlow > 1.8) conf += 10;
   if (Math.abs(d.fakeOI || 0) > 0.5) conf += 10;
+
+  const squeeze = detectSqueeze(d);
+  if (squeeze === 'SHORT_SQUEEZE') conf += 15;
+  if (squeeze === 'LONG_BUILDUP') conf += 5;
+
+  if (isAbsorption(d)) conf += 5;
+  if (isExplosive(d)) conf += 10;
+  
+  if (matchPattern(d)) conf += 10;
+
+  if (regime === 'RANGE') conf -= 10;
+  if (regime === 'BULL') conf += 5;
 
   return Math.min(conf, 95);
 }
@@ -78,13 +183,22 @@ export function buildMarketData(symbol, data) {
     priceAcceleration: data.priceAcceleration || 0,
     momentum: data.momentum || 0,
     price: data.price || data.entryPrice || 0,
-    atr: data.atr || 0
+    atr: data.atr || 0,
+    candle: data.candle || null,
+    tradeCount: data.tradeCount || 0,
+    usdVolume: data.usdVolume || 0
   };
 }
 
 export function processSymbol(symbol, marketData) {
+  if (!canTrade(symbol)) return null;
+  
   const d = buildMarketData(symbol, marketData);
   const state = stateMap.get(symbol) || { stage: STAGES.IDLE };
+
+  if (!isHighPrioritySymbol(d)) {
+    return null;
+  }
 
   if (isTrap(d)) {
     stateMap.set(symbol, { stage: STAGES.IDLE });
@@ -93,10 +207,15 @@ export function processSymbol(symbol, marketData) {
 
   if (state.stage === STAGES.IDLE) {
     if (isAccumulation(d)) {
+      let score = 0;
+      if (isAbsorption(d)) score += 2;
+      
       state.stage = STAGES.ACCUMULATION;
       state.accTime = Date.now();
       stateMap.set(symbol, state);
-      return { type: 'ACCUMULATION', symbol, confidence: 50, data: d };
+      lastSignalTime[symbol] = Date.now();
+      
+      return { type: 'ACCUMULATION', symbol, confidence: 50, data: d, score };
     }
   }
 
@@ -124,7 +243,10 @@ export function processSymbol(symbol, marketData) {
 
       state.stage = STAGES.SNIPER;
       stateMap.set(symbol, state);
+      lastSignalTime[symbol] = Date.now();
 
+      const squeeze = detectSqueeze(d);
+      
       return {
         type: 'SNIPER',
         symbol,
@@ -135,13 +257,28 @@ export function processSymbol(symbol, marketData) {
         tp3: entry + risk * 3,
         confidence,
         timeToPump: Date.now() - state.accTime,
-        data: d
+        data: d,
+        squeeze
       };
     }
   }
 
   stateMap.set(symbol, state);
   return null;
+}
+
+export function recordWin(symbol) {
+  const state = stateMap.get(symbol);
+  if (state && state.data) {
+    recordPattern(state.data, 'WIN');
+  }
+}
+
+export function recordLoss(symbol) {
+  const state = stateMap.get(symbol);
+  if (state && state.data) {
+    recordPattern(state.data, 'LOSS');
+  }
 }
 
 export function getState(symbol) {
@@ -233,4 +370,4 @@ export const signalPipeline = {
   setOITracker
 };
 
-export { STAGES, signalStateMachine };
+export { STAGES, signalStateMachine, detectSqueeze, isAbsorption, isExplosive, isRealVolume };
