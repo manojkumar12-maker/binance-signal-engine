@@ -45,12 +45,16 @@ async function startEngine() {
   try {
     const { wsManager } = await import('./websocket/binanceWS.js');
     const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
-    const { processSymbol, setOITracker, updateBTCPrice } = await import('./engine/signalPipeline.js');
+    const { processSymbol, setOITracker, updateBTCPrice, updateOIRanking } = await import('./engine/signalPipeline.js');
     const { oiTracker } = await import('./engine/oiTracker.js');
     const { orderflowTracker } = await import('./engine/orderflowTracker.js');
 
-    wsManager.onTicker(ticker => {
-      if (ticker.symbol === 'BTCUSDT') updateBTCPrice(ticker.priceChange || 0);
+wsManager.onTicker(ticker => {
+  if (ticker.symbol === 'BTCUSDT') updateBTCPrice(ticker.priceChange || 0);
+  
+  const oi = oiTracker.getChange(ticker.symbol) || 0;
+  const fake = oiTracker.getFakeOI(ticker.symbol) || 0;
+  updateOIRanking(ticker.symbol, oi + fake);
       
       const a = pumpAnalyzer.analyze(ticker);
       if (!a?.symbol) return;
