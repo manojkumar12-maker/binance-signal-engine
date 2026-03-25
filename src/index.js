@@ -37,56 +37,49 @@ const flowData = new Map();
 
 function canTrade(sym) {
   const last = cooldowns.get(sym) || 0;
-  return Date.now() - last > 120000;
+  return Date.now() - last > 60000;
 }
 
 function processTrade(symbol, qty, isBuyerMaker) {
   if (!flowData.has(symbol)) {
-    flowData.set(symbol, { buy: 0, sell: 0, time: Date.now() });
+    flowData.set(symbol, { buy: 0, sell: 0 });
   }
   const f = flowData.get(symbol);
   if (isBuyerMaker) f.sell += qty;
   else f.buy += qty;
-  f.time = Date.now();
 }
 
 function getFlow(symbol) {
   const f = flowData.get(symbol);
-  if (!f || (f.buy + f.sell) < 10) return { ratio: 1, buy: 0, sell: 0 };
+  if (!f || (f.buy + f.sell) < 1) return 1;
   const total = f.buy + f.sell;
   const ratio = f.buy / (f.sell || 1);
-  return { ratio: Math.max(0.5, Math.min(3, ratio)), buy: f.buy, sell: f.sell };
+  return Math.max(0.5, Math.min(3, ratio));
 }
 
 function resetFlow() {
-  for (const [sym, f] of flowData) {
-    f.buy = 0;
-    f.sell = 0;
-  }
-}
-
-function isNoise(d) {
-  return Math.abs(d.oiChange || 0) < 0.02 && (d.fakeOI || 0) < 0.1 && (d.volume || 1) < 1.5;
+  for (const [, f] of flowData) { f.buy = 0; f.sell = 0; }
 }
 
 function detectPressure(d) {
-  return d.volume > 2 && d.flow > 1.3 && ((d.fakeOI || 0) > 0.15 || Math.abs(d.oiChange || 0) > 0.05);
+  return d.volume > 1.5 && d.flow > 1.2;
 }
 
 function detectSniper(d) {
-  return d.volume > 2.5 && d.flow > 1.4 && ((d.fakeOI || 0) > 0.2 || Math.abs(d.oiChange || 0) > 0.08) && (d.accel || 0) > 0.1;
+  return d.volume > 1.8 && d.flow > 1.3 && (d.accel || 0) > 0.05;
 }
 
 function calcScore(d) {
-  let s = 30;
-  if (d.volume > 3) s += 15;
-  else if (d.volume > 2) s += 10;
-  if (d.flow > 1.6) s += 15;
-  else if (d.flow > 1.3) s += 10;
-  if ((d.fakeOI || 0) > 0.3) s += 20;
-  else if ((d.fakeOI || 0) > 0.15) s += 10;
-  if (Math.abs(d.oiChange || 0) > 0.15) s += 15;
-  else if (Math.abs(d.oiChange || 0) > 0.05) s += 8;
+  let s = 20;
+  if (d.volume > 2.5) s += 20;
+  else if (d.volume > 1.8) s += 15;
+  else if (d.volume > 1.5) s += 10;
+  if (d.flow > 1.5) s += 20;
+  else if (d.flow > 1.3) s += 15;
+  else if (d.flow > 1.1) s += 5;
+  if (Math.abs(d.oiChange || 0) > 0.1) s += 15;
+  if ((d.fakeOI || 0) > 0.2) s += 15;
+  if ((d.accel || 0) > 0.15) s += 10;
   return s;
 }
 
@@ -104,11 +97,10 @@ async function start() {
 
     let tradeCount = 0;
     setInterval(() => {
-      const activeFlows = flowData.size;
-      console.log('📊 Trades:', tradeCount, 'Flows:', activeFlows);
+      console.log('📊 Trades:', tradeCount, 'Flows:', flowData.size);
       tradeCount = 0;
       resetFlow();
-    }, 10000);
+    }, 15000);
 
     wsManager.onTicker(ticker => {
       tradeCount++;
@@ -121,14 +113,13 @@ async function start() {
         symbol: ticker.symbol,
         priceChange: ticker.priceChange || 0,
         volume: ticker.volume || 1,
-        flow: flow.ratio,
+        flow: flow,
         oiChange: oi,
         fakeOI: fake,
         accel: ticker.acceleration || 0,
         price: ticker.price
       };
       
-      if (isNoise(d)) return;
       if (!canTrade(d.symbol)) return;
       
       const state = stateMap.get(d.symbol) || { stage: STAGES.IDLE };
@@ -139,18 +130,18 @@ async function start() {
         state.score = s;
         stateMap.set(d.symbol, state);
         
-        console.log('🟣', d.symbol, 'PC=' + d.priceChange.toFixed(1) + '%', 'V=' + d.volume.toFixed(1), 'F=' + d.flow.toFixed(1), 'Fak=' + fake.toFixed(2), 'S=' + s);
+        console.log('🟣', d.symbol, 'PC=' + d.priceChange.toFixed(1) + '%', 'V=' + d.volume.toFixed(1), 'F=' + flow.toFixed(1), 'Fak=' + fake.toFixed(2), 'S=' + s);
         wss.clients.forEach(c => c.send(JSON.stringify({ type: 'pressure', data: { symbol: d.symbol, score: s } })));
       }
       
       if (state.stage === STAGES.PRESSURE && detectSniper(d)) {
         const s = calcScore(d);
-        if (s < 40) return;
+        if (s < 30) return;
         
-        const risk = d.price * 0.02;
+        const risk = d.price * 0.015;
         cooldowns.set(d.symbol, Date.now());
         
-        console.log('🔴 SNIPER:', d.symbol, 'V=' + d.volume.toFixed(1), 'F=' + d.flow.toFixed(1), 'S=' + s);
+        console.log('🔴 SNIPER:', d.symbol, 'V=' + d.volume.toFixed(1), 'F=' + flow.toFixed(1), 'S=' + s);
         
         const signal = {
           type: 'SNIPER',
