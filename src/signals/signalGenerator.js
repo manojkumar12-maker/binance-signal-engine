@@ -3,6 +3,8 @@ import { createSignal as dbCreateSignal } from '../database/db.js';
 import { addToActive } from '../state.js';
 import { riskManager } from '../engine/riskManager.js';
 import { getSmartOI, calculatePriorityScore, getEffectiveOI } from '../engine/signalPipeline.js';
+import { marketStateEngine } from '../engine/marketStateEngine.js';
+import { getRegimeEmoji, getRegimeThreshold } from '../engine/regimeDetector.js';
 
 class SignalGenerator {
   constructor() {
@@ -24,14 +26,45 @@ class SignalGenerator {
   async generateSignal(symbol, analysis) {
     if (!analysis || !analysis.type) return null;
 
+    const marketData = {
+      symbol,
+      priceChange: analysis.priceChange || 0,
+      volume: analysis.volumeSpike || 1,
+      orderFlow: analysis.orderflow || 1,
+      oiChange: analysis.oiChange || 0,
+      fakeOI: analysis.fakeOI || 0,
+      priceAcceleration: analysis.acceleration || 0,
+      momentum: analysis.momentum || 0,
+      momentumAcceleration: analysis.momentumAcceleration || 0,
+      atr: analysis.atr,
+      price: analysis.entryPrice || 0,
+      rsi: analysis.rsi || 50
+    };
+
+    marketStateEngine.updateState(symbol, marketData);
+    const state = marketStateEngine.getStateForSymbol(symbol);
+
+    const { type, score, priceChange, volumeSpike, momentum, factors, signals, atr, entryPrice, metadata } = analysis;
+
+    const isSetup = type === 'EARLY' || type === 'CONFIRMED';
+    const isExecution = type === 'SNIPER' || type === 'PUMP_CONFIRMED';
+
+    if (isSetup) {
+      return null;
+    }
+
+    if (isExecution && state) {
+      if (state.confidence < 60) {
+        return null;
+      }
+    }
+
     if (this.activeSignals.size >= this.MAX_ACTIVE) {
       if (Math.random() < 0.01) {
         console.log(`⚠️ MAX_ACTIVE (${this.MAX_ACTIVE}) reached, skipping ${symbol}`);
       }
       return null;
     }
-
-    const { type, score, priceChange, volumeSpike, momentum, factors, signals, atr, entryPrice, metadata } = analysis;
     
     const signalEntry = entryPrice || (signals?.entry);
     const signalSL = signals?.sl;
@@ -114,7 +147,10 @@ class SignalGenerator {
       },
       factors: Array.isArray(factors) ? factors : [],
       metadata,
-      confidence: analysis.confidence || 0,
+      confidence: state?.confidence || analysis.confidence || 0,
+      aiConfidence: state?.confidence || 0,
+      regime: state?.regime || 'NEUTRAL',
+      marketStage: state?.stage || type,
       confluence: analysis.confluence || 0,
       confluenceReasons: analysis.confluenceReasons || [],
       entryQuality: analysis.entryQuality || 'N/A',
@@ -203,6 +239,8 @@ ${tierEmoji} ${signal.tier} SIGNAL #${signal.id} - ${tierLabel}
 🕐 Time: ${new Date(signal.timestamp).toLocaleString()}
 ${prePumpSection}${riskSection}${trailingSection}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏆 RANK: ${(signal.rankScore || 0).toFixed(0)} | Priority: ${(signal.priorityScore || 0).toFixed(0)} | Quality: ${signal.quality || 'N/A'}
+${signal.aiConfidence ? `🧠 AI Confidence: ${signal.aiConfidence}%` : ''}
+${signal.regime ? `${getRegimeEmoji(signal.regime)} Regime: ${signal.regime}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 ENTRY: ${entryDisplay}
 🛑 STOP LOSS: ${slDisplay}

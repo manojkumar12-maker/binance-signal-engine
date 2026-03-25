@@ -13,6 +13,7 @@ import { fundingService } from '../engine/fundingService.js';
 import { liquidationEngine } from '../engine/liquidationEngine.js';
 import { liquidityTrapDetector } from '../engine/liquidityTrapDetector.js';
 import { signalPipeline, STAGES, signalStateMachine } from '../engine/signalPipeline.js';
+import { marketStateEngine } from '../engine/marketStateEngine.js';
 
 const prePumpDetector = new PrePumpDetector();
 const liquidationService = new LiquidationService();
@@ -370,7 +371,23 @@ class PumpAnalyzer {
     }
     
     const tier = this.determineTier(symbol, analysis);
-    
+
+    const marketData = {
+      symbol,
+      priceChange: analysis.priceChange,
+      volume: analysis.volumeSpike,
+      orderFlow: analysis.orderflow,
+      oiChange: analysis.oiChange,
+      fakeOI: analysis.fakeOI,
+      priceAcceleration: analysis.acceleration,
+      momentum: analysis.momentum,
+      momentumAcceleration: analysis.momentumAcceleration || 0,
+      atr: analysis.atr,
+      price: analysis.entryPrice,
+      rsi: analysis.rsi
+    };
+    marketStateEngine.updateState(symbol, marketData);
+
     if (tier) {
       tier.confidence = this.applyLatePumpPenalty(tier.confidence, analysis.priceChange);
       tier.confidence = this.applySignalDecay(tier);
