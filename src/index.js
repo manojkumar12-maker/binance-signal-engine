@@ -3,17 +3,15 @@ import { pumpAnalyzer } from './analyzer/pumpAnalyzer.js';
 import { signalGenerator } from './signals/signalGenerator.js';
 import { notifier } from './notifiers/notificationManager.js';
 import { apiServer } from './api/server.js';
-import { autoTuner } from './engine/autoTuner.js';
 import { orderBookAnalyzer } from './engine/orderBookAnalyzer.js';
 import { marketDataTracker } from './engine/marketDataTracker.js';
 import { tradeLogger } from './engine/tradeLogger.js';
-import { initDatabase, closeDatabase, createSignal as dbCreateSignal } from './database/db.js';
+import { initDatabase, closeDatabase } from './database/db.js';
 import { state, canTrigger, strongCanTrigger, addSignal, updateSignalStatus, isSymbolActive } from './state.js';
-import { updateAdaptiveThresholds } from './engine/adaptiveFilter.js';
 import { orderflowTracker } from './engine/orderflowTracker.js';
-import { oiTracker, MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS } from './engine/oiTracker.js';
+import { oiTracker, MAX_TRACKED } from './engine/oiTracker.js';
 import { fundingService } from './engine/fundingService.js';
-import { signalPipeline, setOITracker } from './engine/signalPipeline.js';
+import { processSymbol, setOITracker, getState } from './engine/signalPipeline.js';
 import { emitSignal, startDashboardServer } from './api/dashboardServer.js';
 
 console.log('✅ All modules loaded');
@@ -31,7 +29,8 @@ class SignalEngine {
   constructor() {
     this.stats = {
       signalsGenerated: 0,
-      signalsByTier: { PRE_PUMP: 0, EARLY: 0, CONFIRMED: 0, SNIPER: 0 },
+      sniperSignals: 0,
+      predictSignals: 0,
       symbolsMonitored: 0,
       startedAt: null
     };
@@ -57,10 +56,9 @@ class SignalEngine {
   async start() {
     console.log(`
 ╔══════════════════════════════════════════════╗
-║     🚀 BINANCE FUTURES SIGNAL ENGINE v3.0 🚀        
+║     🚀 SNIPER SIGNAL ENGINE v4.0 🚀        
 ╠══════════════════════════════════════════════╣
-║  🧠 Auto-Tuner | 📊 Orderbook Edge | 🔴 SNIPER     ║
-║  🟢 CONFIRMED | 🟡 EARLY                            ║
+║  🔴 SNIPER | 🟠 PREDICT | ⚡ ACCUMULATION    ║
 ╚══════════════════════════════════════════════╝
     `);
 
@@ -80,25 +78,6 @@ class SignalEngine {
     initDatabase().catch(err => console.log('⚠️ DB init failed, continuing:', err.message));
 
     this.initEngine().catch(err => console.log('⚠️ Engine init failed:', err.message));
-  }
-
-  shouldGenerateSignal(analysis) {
-    const { type, priceChange, score } = analysis;
-    
-    const ENTRY_WINDOW = {
-      EARLY: { min: 1, max: 15 },
-      CONFIRMED: { min: 2, max: 12 },
-      SNIPER: { min: 2.5, max: 10 }
-    };
-    
-    const window = ENTRY_WINDOW[type];
-    if (!window) return false;
-    
-    if (priceChange < window.min || priceChange > window.max) {
-      return false;
-    }
-    
-    return true;
   }
 
   async initEngine() {
@@ -142,29 +121,6 @@ class SignalEngine {
 
       setInterval(async () => {
         try {
-          const stats = oiTracker.getStats();
-          const btcChange = oiTracker.getChange('BTCUSDT');
-          const btcFake = oiTracker.getFakeOI('BTCUSDT');
-          
-          const btcFlow = oiTracker.getFlowData('BTCUSDT');
-          let flowStatus = 'no data';
-          if (btcFlow) {
-            const currentVol = btcFlow.volume.toFixed(4);
-            const buyAmt = btcFlow.buy.toFixed(4);
-            const sellAmt = btcFlow.sell.toFixed(4);
-            const historyLen = btcFlow.history.length;
-            const fakeOIStr = historyLen >= 3 ? (btcFake > 0 ? '+' : '') + btcFake.toFixed(2) : 'N/A';
-            flowStatus = `F=${fakeOIStr} hist=${historyLen} curV=${currentVol} buy=${buyAmt} sell=${sellAmt}`;
-          }
-          
-          console.log(`📊 OI: tracked=${stats.tracked}/${MAX_TRACKED} BTC=${btcChange.toFixed(4)}% nonZero=${stats.nonZero} | ${flowStatus}`);
-        } catch (err) {
-          console.error('🔥 OI LOOP ERROR:', err.message);
-        }
-      }, 15000);
-
-      setInterval(async () => {
-        try {
           await oiTracker.runCycle();
         } catch (err) {
           console.error('🔥 OI FETCH ERROR:', err.message);
@@ -173,27 +129,11 @@ class SignalEngine {
 
       setInterval(() => {
         this.processCycleSignals();
-        updateAdaptiveThresholds();
       }, 5000);
 
       setInterval(() => {
         this.showStats();
       }, 60000);
-
-      setInterval(() => {
-        const topSymbols = wsManager.symbols.slice(0, 5);
-        const samples = topSymbols.map(sym => {
-          const of = orderflowTracker.getOrderflow(sym);
-          const oi = oiTracker.getChange(sym);
-          const fakeOI = oiTracker.getFakeOI(sym);
-          const oiData = oiTracker.getOIData(sym);
-          const fakeStr = fakeOI !== null ? `F=${fakeOI >= 0 ? '+' : ''}${fakeOI.toFixed(1)}%` : 'F=--';
-          return `${sym}:OF=${of.toFixed(1)}|OI=${oi >= 0 ? '+' : ''}${oi.toFixed(1)}%(${fakeStr})`;
-        }).join(' | ');
-        const oiStats = oiTracker.getStats();
-        console.log(`📊 DATA: ${samples}`);
-        console.log(`📊 OI: tracked=${oiStats.tracked} | OF: ${orderflowTracker.getStats().activeSymbols} active`);
-      }, 20000);
 
       console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
     } catch (e) {
@@ -201,7 +141,7 @@ class SignalEngine {
     }
   }
 
-  async processTicker(ticker) {
+  processTicker(ticker) {
     if (!this.isWarmedUp()) {
       if (!this.warmupLogged) {
         console.log(`⏳ Warming up... ${this.getWarmupStatus().remaining}s remaining`);
@@ -213,109 +153,129 @@ class SignalEngine {
       this.warmupLogged = false;
     }
 
+    if (isSymbolActive(ticker.symbol)) {
+      const updatedSignal = signalGenerator.updateSignal(ticker.symbol, ticker.price);
+      if (updatedSignal && updatedSignal.status !== 'ACTIVE' && updatedSignal.status !== 'WATCHLIST') {
+        console.log(`\n📊 ${ticker.symbol}: ${updatedSignal.status} at ${updatedSignal.closedPrice?.toFixed(6)}\n`);
+        updateSignalStatus(ticker.symbol, updatedSignal.status, updatedSignal.closedPrice);
+        apiServer.updateSignalStatus(ticker.symbol, updatedSignal.status, updatedSignal.closedPrice).catch(() => {});
+      }
+      return;
+    }
+
     const analysis = pumpAnalyzer.analyze(ticker);
-    
-    if (analysis && analysis.type) {
-      if (!analysis.atr || isNaN(analysis.atr)) {
-        return;
-      }
-      
-      const of = analysis.orderflow?.ratio || 1;
-      const oi = analysis.openInterest?.change || 0;
-      if (of === 1 && oi === 0 && !analysis.orderflow) {
-        return;
-      }
-      
-      if (isSymbolActive(ticker.symbol)) {
-        const updatedSignal = signalGenerator.updateSignal(ticker.symbol, ticker.price);
-        if (updatedSignal && updatedSignal.status !== 'ACTIVE' && updatedSignal.status !== 'WATCHLIST') {
-          console.log(`\n📊 ${ticker.symbol}: ${updatedSignal.status} at ${updatedSignal.closedPrice?.toFixed(6)}\n`);
-          updateSignalStatus(ticker.symbol, updatedSignal.status, updatedSignal.closedPrice);
-          await apiServer.updateSignalStatus(ticker.symbol, updatedSignal.status, updatedSignal.closedPrice);
-        }
-        return;
-      }
-      
-      if (!this.shouldGenerateSignal(analysis)) {
-        return;
-      }
-      
+    if (!analysis || !analysis.atr || isNaN(analysis.atr)) {
+      return;
+    }
+
+    const marketData = {
+      symbol: ticker.symbol,
+      priceChange: analysis.priceChange || 0,
+      volume: analysis.volumeSpike || 1,
+      orderFlow: analysis.orderflow?.ratio || 1,
+      oiChange: analysis.openInterest?.change || 0,
+      fakeOI: analysis.fakeOI || 0,
+      priceAcceleration: analysis.acceleration || 0,
+      momentum: analysis.momentum || 0,
+      price: ticker.price,
+      entryPrice: ticker.price,
+      atr: analysis.atr
+    };
+
+    const result = processSymbol(ticker.symbol, marketData);
+
+    if (!result) return;
+
+    if (result.type === 'ACCUMULATION' || result.type === 'PREDICT') {
+      emitSignal(result);
+      return;
+    }
+
+    if (result.type === 'SNIPER') {
       if (!strongCanTrigger(ticker.symbol, 5 * 60 * 1000)) {
         return;
       }
-      
-      const signal = await signalGenerator.generateSignal(ticker.symbol, analysis);
-      
-      if (signal) {
-        addSignal(signal);
-        this.stats.signalsGenerated++;
-        this.stats.signalsByTier[signal.tier]++;
-        
-        console.log(signalGenerator.formatSignal(signal));
-        emitSignal(signal);
-        await notifier.sendSignal(signal);
-        await apiServer.addSignal(signal);
-      }
+
+      signalGenerator.generateSignal(ticker.symbol, result).then(signal => {
+        if (signal) {
+          addSignal(signal);
+          this.stats.signalsGenerated++;
+          this.stats.sniperSignals++;
+          
+          console.log(signalGenerator.formatSignal(signal));
+          emitSignal(signal);
+          notifier.sendSignal(signal).catch(() => {});
+          apiServer.addSignal(signal).catch(() => {});
+        }
+      }).catch(() => {});
     }
   }
 
   showStats() {
     const uptime = Date.now() - this.stats.startedAt;
     const activeSignals = signalGenerator.getActiveSignals();
-    const tunerStats = autoTuner.getStats();
     
     console.clear();
     console.log(`
 ╔══════════════════════════════════════════════════════════════════╗
-║        🚀 BINANCE FUTURES SIGNAL ENGINE v3.0 🚀              ║
+║        🚀 SNIPER SIGNAL ENGINE v4.0 🚀                      ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  📊 STATISTICS                                                   ║
 ║  ─────────────────────────────────────────────────────────────    ║
 ║  Uptime: ${this.formatUptime(uptime)}
 ║  Symbols: ${this.stats.symbolsMonitored}
-║  Total Signals: ${this.stats.signalsGenerated}
-║  🟣 PRE_PUMP: ${this.stats.signalsByTier.PRE_PUMP}  🔴 SNIPER: ${this.stats.signalsByTier.SNIPER}  🟢 CONFIRMED: ${this.stats.signalsByTier.CONFIRMED}  🟡 EARLY: ${this.stats.signalsByTier.EARLY}
+║  Total SNIPER Signals: ${this.stats.sniperSignals}
 ║  Active: ${activeSignals.length}
-╠══════════════════════════════════════════════════════════════════╣
-║  🧠 AUTO-TUNER                                                    ║
-║  ─────────────────────────────────────────────────────────────    ║
-║  Win Rate: ${tunerStats.winRate ? tunerStats.winRate.toFixed(1) + '%' : 'N/A'}  |  Trades: ${tunerStats.totalTrades}  |  PnL: ${tunerStats.wins - tunerStats.losses > 0 ? '+' : ''}${tunerStats.wins - tunerStats.losses}
-║  Params: Score≥${tunerStats.params.scoreThreshold}  Vol≥${tunerStats.params.volumeSpike.toFixed(1)}x  Change≥${tunerStats.params.priceChange.toFixed(1)}%
 ╚══════════════════════════════════════════════════════════════════╝
     `);
 
     if (activeSignals.length > 0) {
       console.log('📈 ACTIVE SIGNALS:\n');
       activeSignals.forEach(s => {
-        const tierEmoji = s.tier === 'SNIPER' ? '🔴' : s.tier === 'CONFIRMED' ? '🟢' : s.tier === 'PRE_PUMP' ? '🟣' : '🟡';
-        console.log(`  ${tierEmoji} ${s.symbol} | Entry: ${s.entryPrice.toFixed(6)} | PnL: ${s.update?.unrealizedPnL || 0}%`);
+        console.log(`  🔴 ${s.symbol} | Entry: ${s.entryPrice?.toFixed(6)} | PnL: ${s.update?.unrealizedPnL || 0}%`);
       });
       console.log('');
     }
   }
 
-  async processCycleSignals() {
-    const signals = pumpAnalyzer.getCycleSignals();
+  processCycleSignals() {
+    const topSymbols = wsManager.symbols.slice(0, 20);
     
-    if (signals.length === 0) return;
-    
-    console.log(`\n🚀 Processing Top ${signals.length} signals:\n`);
-    
-    for (const analysis of signals) {
-      if (!canTrigger(analysis.symbol, 5 * 60 * 1000)) {
-        continue;
-      }
-      
-      const signal = await signalGenerator.generateSignal(analysis.symbol, analysis);
-      
-      if (signal) {
-        addSignal(signal);
-        this.stats.signalsGenerated++;
-        this.stats.signalsByTier[signal.tier]++;
-        
-        console.log(signalGenerator.formatSignal(signal));
-        await notifier.sendSignal(signal);
-        await apiServer.addSignal(signal);
+    for (const symbol of topSymbols) {
+      if (!canTrigger(symbol, 5 * 60 * 1000)) continue;
+      if (isSymbolActive(symbol)) continue;
+
+      const ticker = pumpAnalyzer.getTickerData?.(symbol);
+      if (!ticker) continue;
+
+      const marketData = {
+        symbol,
+        priceChange: ticker.priceChange || 0,
+        volume: ticker.volumeSpike || 1,
+        orderFlow: ticker.orderflow?.ratio || 1,
+        oiChange: oiTracker.getChange(symbol) || 0,
+        fakeOI: oiTracker.getFakeOI(symbol) || 0,
+        priceAcceleration: ticker.acceleration || 0,
+        momentum: ticker.momentum || 0,
+        price: ticker.price,
+        entryPrice: ticker.price,
+        atr: ticker.atr
+      };
+
+      const result = processSymbol(symbol, marketData);
+
+      if (result?.type === 'SNIPER') {
+        signalGenerator.generateSignal(symbol, result).then(signal => {
+          if (signal) {
+            addSignal(signal);
+            this.stats.signalsGenerated++;
+            this.stats.sniperSignals++;
+            
+            console.log(signalGenerator.formatSignal(signal));
+            notifier.sendSignal(signal).catch(() => {});
+            apiServer.addSignal(signal).catch(() => {});
+          }
+        }).catch(() => {});
       }
     }
   }
@@ -341,7 +301,6 @@ const engine = new SignalEngine();
 
 global.engine = engine;
 global.signalGenerator = signalGenerator;
-global.autoTuner = autoTuner;
 global.state = state;
 global.marketDataTracker = marketDataTracker;
 global.tradeLogger = tradeLogger;
