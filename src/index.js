@@ -33,7 +33,10 @@ console.log('Starting...');
 const STAGES = { IDLE: 'IDLE', PRESSURE: 'PRESSURE', SNIPER: 'SNIPER' };
 const stateMap = new Map();
 const cooldowns = new Map();
+
 const flowData = new Map();
+const flowHistory = new Map();
+const priceHistory = new Map();
 
 function canTrade(sym) {
   const last = cooldowns.get(sym) || 0;
@@ -42,44 +45,121 @@ function canTrade(sym) {
 
 function processTrade(symbol, qty, isBuyerMaker) {
   if (!flowData.has(symbol)) {
-    flowData.set(symbol, { buy: 0, sell: 0 });
+    flowData.set(symbol, { buy: 0, sell: 0, vol: 0, trades: 0 });
   }
   const f = flowData.get(symbol);
   if (isBuyerMaker) f.sell += qty;
   else f.buy += qty;
+  f.vol += qty;
+  f.trades++;
 }
 
 function getFlow(symbol) {
   const f = flowData.get(symbol);
-  if (!f || (f.buy + f.sell) < 1) return 1;
+  if (!f || f.trades < 3) return { ratio: 1, buy: 0, sell: 0 };
   const total = f.buy + f.sell;
+  if (total < 1) return { ratio: 1, buy: 0, sell: 0 };
   const ratio = f.buy / (f.sell || 1);
-  return Math.max(0.5, Math.min(3, ratio));
+  return { ratio: Math.max(0.5, Math.min(3, ratio)), buy: f.buy, sell: f.sell };
+}
+
+function getFakeOI(symbol) {
+  if (!flowHistory.has(symbol)) {
+    flowHistory.set(symbol, []);
+  }
+  const h = flowHistory.get(symbol);
+  
+  const f = flowData.get(symbol);
+  if (!f) return 0;
+  
+  h.push({ buy: f.buy, sell: f.sell, vol: f.vol, time: Date.now() });
+  if (h.length > 20) h.shift();
+  
+  if (h.length < 5) return 0;
+  
+  const recent = h[h.length - 1];
+  const prev = h[0];
+  
+  const buy = recent.buy || 0;
+  const sell = recent.sell || 0;
+  const total = buy + sell;
+  
+  if (total < 1) return 0;
+  
+  const imbalance = (buy - sell) / total;
+  const volChange = prev.vol > 0 ? (recent.vol - prev.vol) / prev.vol : 0;
+  
+  if (Math.abs(imbalance) < 0.1) return 0;
+  if (Math.abs(volChange) < 0.1) return 0;
+  
+  return imbalance * Math.abs(volChange) * 10;
+}
+
+function getPriceChange(symbol, currentPrice) {
+  if (!priceHistory.has(symbol)) {
+    priceHistory.set(symbol, { prices: [], times: [] });
+  }
+  const h = priceHistory.get(symbol);
+  h.prices.push(currentPrice);
+  h.times.push(Date.now());
+  if (h.prices.length > 10) {
+    h.prices.shift();
+    h.times.shift();
+  }
+  
+  if (h.prices.length < 3) return 0;
+  
+  const oldPrice = h.prices[0];
+  if (!oldPrice || oldPrice === 0) return 0;
+  
+  return ((currentPrice - oldPrice) / oldPrice) * 100;
+}
+
+function getAcceleration(symbol) {
+  const h = priceHistory.get(symbol);
+  if (!h || h.prices.length < 3) return 0;
+  
+  const prices = h.prices;
+  const v1 = (prices[2] - prices[1]) / prices[1];
+  const v2 = (prices[1] - prices[0]) / prices[0];
+  
+  return v2 - v1;
 }
 
 function resetFlow() {
-  for (const [, f] of flowData) { f.buy = 0; f.sell = 0; }
+  for (const [symbol, f] of flowData) {
+    if (!flowHistory.has(symbol)) flowHistory.set(symbol, []);
+    const h = flowHistory.get(symbol);
+    h.push({ buy: f.buy, sell: f.sell, vol: f.vol, time: Date.now() });
+    if (h.length > 20) h.shift();
+    f.buy = 0;
+    f.sell = 0;
+    f.vol = 0;
+    f.trades = 0;
+  }
 }
 
 function detectPressure(d) {
-  return d.volume > 1.5 && d.flow > 1.2;
+  return d.volume > 1.5 && d.flowRatio > 1.15;
 }
 
 function detectSniper(d) {
-  return d.volume > 1.8 && d.flow > 1.3 && (d.accel || 0) > 0.05;
+  return d.volume > 1.8 && d.flowRatio > 1.25 && d.fakeOI > 0.15;
 }
 
 function calcScore(d) {
-  let s = 20;
+  let s = 15;
   if (d.volume > 2.5) s += 20;
   else if (d.volume > 1.8) s += 15;
   else if (d.volume > 1.5) s += 10;
-  if (d.flow > 1.5) s += 20;
-  else if (d.flow > 1.3) s += 15;
-  else if (d.flow > 1.1) s += 5;
+  if (d.flowRatio > 1.5) s += 20;
+  else if (d.flowRatio > 1.3) s += 15;
+  else if (d.flowRatio > 1.15) s += 8;
+  if (d.fakeOI > 0.3) s += 25;
+  else if (d.fakeOI > 0.2) s += 18;
+  else if (d.fakeOI > 0.1) s += 10;
   if (Math.abs(d.oiChange || 0) > 0.1) s += 15;
-  if ((d.fakeOI || 0) > 0.2) s += 15;
-  if ((d.accel || 0) > 0.15) s += 10;
+  if (Math.abs(d.accel) > 0.01) s += 10;
   return s;
 }
 
@@ -105,18 +185,23 @@ async function start() {
     wsManager.onTicker(ticker => {
       tradeCount++;
       
+      if (!ticker.price || ticker.price === 0) return;
+      
       const flow = getFlow(ticker.symbol);
+      const fakeOI = getFakeOI(ticker.symbol);
       const oi = oiTracker.getChange(ticker.symbol) || 0;
-      const fake = oiTracker.getFakeOI(ticker.symbol) || 0;
+      const priceChange = getPriceChange(ticker.symbol, ticker.price);
+      const accel = getAcceleration(ticker.symbol);
       
       const d = {
         symbol: ticker.symbol,
-        priceChange: ticker.priceChange || 0,
+        priceChange: priceChange,
         volume: ticker.volume || 1,
+        flowRatio: flow.ratio,
         flow: flow,
         oiChange: oi,
-        fakeOI: fake,
-        accel: ticker.acceleration || 0,
+        fakeOI: fakeOI,
+        accel: accel,
         price: ticker.price
       };
       
@@ -126,22 +211,26 @@ async function start() {
       
       if (state.stage === STAGES.IDLE && detectPressure(d)) {
         const s = calcScore(d);
+        if (s < 35) return;
+        
         state.stage = STAGES.PRESSURE;
         state.score = s;
         stateMap.set(d.symbol, state);
         
-        console.log('🟣', d.symbol, 'PC=' + d.priceChange.toFixed(1) + '%', 'V=' + d.volume.toFixed(1), 'F=' + flow.toFixed(1), 'Fak=' + fake.toFixed(2), 'S=' + s);
-        wss.clients.forEach(c => c.send(JSON.stringify({ type: 'pressure', data: { symbol: d.symbol, score: s } })));
+        if (d.fakeOI > 0.15 || d.flowRatio > 1.3) {
+          console.log('🟣', d.symbol, 'PC=' + priceChange.toFixed(1) + '%', 'V=' + d.volume.toFixed(1), 'F=' + flow.ratio.toFixed(2), 'Fak=' + fakeOI.toFixed(2), 'S=' + s);
+          wss.clients.forEach(c => c.send(JSON.stringify({ type: 'pressure', data: { symbol: d.symbol, score: s } })));
+        }
       }
       
       if (state.stage === STAGES.PRESSURE && detectSniper(d)) {
         const s = calcScore(d);
-        if (s < 30) return;
+        if (s < 40) return;
         
         const risk = d.price * 0.015;
         cooldowns.set(d.symbol, Date.now());
         
-        console.log('🔴 SNIPER:', d.symbol, 'V=' + d.volume.toFixed(1), 'F=' + flow.toFixed(1), 'S=' + s);
+        console.log('🔴 SNIPER:', d.symbol, 'V=' + d.volume.toFixed(1), 'F=' + flow.ratio.toFixed(2), 'Fak=' + fakeOI.toFixed(2), 'S=' + s);
         
         const signal = {
           type: 'SNIPER',
