@@ -64,12 +64,11 @@ class SignalEngine {
     `);
 
     console.log('🔥 SERVER STARTING...');
+    console.log('PORT:', process.env.PORT);
     
     try {
       await apiServer.start();
-      console.log('✅ HEALTHCHECK READY');
-      startDashboardServer();
-      console.log('✅ DASHBOARD READY on port 3001');
+      console.log('✅ API SERVER READY on port', process.env.PORT || 8080);
     } catch (e) {
       console.error('❌ API Server failed to start:', e.message);
     }

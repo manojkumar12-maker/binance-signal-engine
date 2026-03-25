@@ -7,7 +7,7 @@ import { getSignals, getSignalStats, createSignal as dbCreateSignal, updateSigna
 import { state, getRecentSignals } from '../state.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
+const PORT = process.env.PORT || 8080;
 
 class SignalAPIServer {
   constructor() {
