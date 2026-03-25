@@ -43,6 +43,24 @@ async function startEngine() {
   console.log('Starting engine...');
   
   try {
+    console.log('Loading modules...');
+    
+    const { wsManager } = await import('./websocket/binanceWS.js');
+    console.log('wsManager loaded');
+    
+    const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
+    console.log('pumpAnalyzer loaded');
+    
+    const { processSymbol, setOITracker, updateBTCPrice, updateOIRanking } = await import('./engine/signalPipeline.js');
+    console.log('signalPipeline loaded');
+    
+    const { oiTracker } = await import('./engine/oiTracker.js');
+    console.log('oiTracker loaded');
+    
+    const { orderflowTracker } = await import('./engine/orderflowTracker.js');
+    console.log('orderflowTracker loaded');
+    
+    console.log('All modules loaded, initializing...');
     const { wsManager } = await import('./websocket/binanceWS.js');
     const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
     const { processSymbol, setOITracker, updateBTCPrice, updateOIRanking } = await import('./engine/signalPipeline.js');

@@ -221,6 +221,10 @@ export function reset() {
   stateMap.clear();
 }
 
+export function getSmartOI(oiChange) {
+  return oiChange * 10;
+}
+
 export const signalPipeline = {
   processSymbol,
   getState,
