@@ -275,12 +275,16 @@
       const volume = data.volume || signal.volumeSpike || 0;
       const orderFlow = data.orderFlow || signal.orderFlow || 0;
       const fakeOI = data.fakeOI || signal.fakeOI || 0;
+      const breakoutTimer = signal.breakoutTimer || 'calculating...';
       
       return `
         <div class="signal-card predict">
           <div class="signal-header">
             <span class="symbol">${signal.symbol}</span>
             <span class="confidence high">${signal.confidence || 50}%</span>
+          </div>
+          <div style="text-align:center;margin:8px 0;color:#ff8c00;font-weight:bold;">
+            ⏱️ Breakout: ${breakoutTimer}
           </div>
           <div class="metrics">
             <div class="metric">

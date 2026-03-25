@@ -6,7 +6,7 @@ const MAX_BATCH = 50;
 const FETCH_INTERVAL = 5000;
 const HISTORY_SIZE = 60;
 const MAX_TRACKED = 200;
-const MIN_HISTORY_FOR_SIGNALS = 10;
+const MIN_HISTORY_FOR_SIGNALS = 3;
 
 const oiMemory = new Map();
 
@@ -33,7 +33,7 @@ class FlowTracker {
     if (!d) return;
 
     d.history.push({ buy: d.buy, sell: d.sell, volume: d.volume, time: Date.now() });
-    if (d.history.length > 20) d.history.shift();
+    if (d.history.length > 60) d.history.shift();
 
     d.buy = 0;
     d.sell = 0;
@@ -42,24 +42,36 @@ class FlowTracker {
 
   getFakeOI(symbol) {
     const d = this.data.get(symbol);
-    if (!d || d.history.length < 3) return null;
+    if (!d || d.history.length < 10) return 0;
 
-    const recent = d.history[d.history.length - 1];
-    const prev = d.history[Math.max(0, d.history.length - 3)];
+    const recent = d.history.slice(-10);
+    const prev = d.history.slice(-30, -20);
 
-    if (!recent || !prev) return null;
+    if (recent.length < 5) return 0;
 
-    const totalRecent = recent.buy + recent.sell;
-    const totalPrev = prev.buy + prev.sell;
+    const recentBuy = recent.reduce((a, x) => a + x.buy, 0);
+    const recentSell = recent.reduce((a, x) => a + x.sell, 0);
     
-    if (totalRecent === 0 || totalPrev === 0) return 0;
+    let prevBuy = 0, prevSell = 0;
+    if (prev.length > 0) {
+      prevBuy = prev.reduce((a, x) => a + x.buy, 0);
+      prevSell = prev.reduce((a, x) => a + x.sell, 0);
+    } else {
+      prevBuy = recentBuy * 0.5;
+      prevSell = recentSell * 0.5;
+    }
 
-    const imbalance = (recent.buy - recent.sell) / totalRecent;
-    const volChange = (totalRecent - totalPrev) / (totalPrev || 1);
+    const recentVol = recentBuy + recentSell;
+    const prevVol = prevBuy + prevSell;
+    
+    if (recentVol === 0) return 0;
 
-    const strength = Math.tanh(imbalance * 3) * Math.tanh(volChange * 2);
+    const imbalance = (recentBuy - recentSell) / recentVol;
+    const volChange = prevVol > 0 ? (recentVol - prevVol) / prevVol : 0.5;
 
-    return strength;
+    if (Math.abs(imbalance) < 0.05) return 0;
+
+    return imbalance * Math.abs(volChange) * 10;
   }
 
   classifyFakeOI(priceChange, fakeOI) {
@@ -89,14 +101,15 @@ function updateMemoryOI(symbol, value) {
 
 function getOIChangeFast(symbol) {
   const arr = oiMemory.get(symbol);
-  if (!arr || arr.length < 5) return 0;
+  if (!arr || arr.length < 3) return 0;
 
   const first = arr[0].value;
   const last = arr[arr.length - 1].value;
 
   if (!first || first === 0) return 0;
 
-  return ((last - first) / first) * 100;
+  const change = ((last - first) / first) * 100;
+  return change;
 }
 
 function getOIHistoryLength(symbol) {

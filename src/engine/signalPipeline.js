@@ -2,11 +2,7 @@ const STAGES = {
   IDLE: 'IDLE',
   ACCUMULATION: 'ACCUMULATION',
   PREDICT: 'PREDICT',
-  SNIPER: 'SNIPER',
-  EARLY: 'EARLY',
-  CONFIRMED: 'CONFIRMED',
-  PRE_PUMP: 'PRE_PUMP',
-  PUMP_CONFIRMED: 'PUMP_CONFIRMED'
+  SNIPER: 'SNIPER'
 };
 
 const stateMap = new Map();
@@ -35,10 +31,10 @@ function getMarketRegime() {
 }
 
 function detectSqueeze(d) {
-  if (d.oiChange < -0.3 && d.priceChange > 0) {
+  if (d.oiChange < -0.2 && d.priceChange > 0) {
     return 'SHORT_SQUEEZE';
   }
-  if (d.oiChange > 0.3 && d.priceChange > 0) {
+  if (d.oiChange > 0.2 && d.priceChange > 0) {
     return 'LONG_BUILDUP';
   }
   return null;
@@ -53,21 +49,19 @@ function isAbsorption(d) {
 }
 
 function isExplosive(d) {
-  return d.priceAcceleration > 0.4 && d.momentum > 0.3;
+  return d.priceAcceleration > 0.3 && d.momentum > 0.2;
 }
 
 function isRealVolume(d) {
-  return d.volume > 3 && (d.tradeCount || 0) > 50;
+  return d.volume > 2.5;
 }
 
 function isPerfectEntry(d) {
-  if (!d.candle) return true;
-  const body = Math.abs(d.candle.close - d.candle.open) / (d.candle.high - d.candle.low);
-  return body > 0.6;
+  return true;
 }
 
 function getEffectiveOI(d) {
-  if (Math.abs(d.oiChange) > 0.2) return d.oiChange;
+  if (Math.abs(d.oiChange) > 0.1) return d.oiChange;
   return d.fakeOI || 0;
 }
 
@@ -79,33 +73,49 @@ function isTrap(d) {
 }
 
 function isAccumulation(d) {
+  const effectiveOI = getEffectiveOI(d);
   return (
-    d.volume > 2 &&
-    Math.abs(d.priceChange) < 1.5 &&
-    Math.abs(d.fakeOI || 0) > 0.3 &&
-    Math.abs(d.oiChange || 0) > 0.3 &&
-    d.orderFlow > 1.2
+    d.volume > 1.8 &&
+    Math.abs(d.priceChange) < 2 &&
+    (Math.abs(d.fakeOI || 0) > 0.15 || Math.abs(d.oiChange || 0) > 0.1) &&
+    d.orderFlow > 1.1
   );
 }
 
 function isPumpIncoming(d) {
+  const effectiveOI = getEffectiveOI(d);
   return (
-    d.volume > 2.5 &&
+    d.volume > 2 &&
+    d.orderFlow > 1.3 &&
+    Math.abs(effectiveOI) > 0.15
+  );
+}
+
+function getBreakoutTimer(d) {
+  if (d.fakeOI > 0.4 && d.volume > 3) return '5-10 sec';
+  if (d.fakeOI > 0.3) return '10-30 sec';
+  if (d.fakeOI > 0.2 || Math.abs(d.oiChange || 0) > 0.2) return '30-60 sec';
+  return null;
+}
+
+function isExplosiveSetup(d) {
+  return (
+    d.volume > 3 &&
     d.orderFlow > 1.5 &&
-    Math.abs(getEffectiveOI(d)) > 0.5
+    (d.fakeOI > 0.25 || Math.abs(d.oiChange || 0) > 0.15)
   );
 }
 
 function isSniper(d) {
   if (!isExplosive(d)) return false;
   if (!isRealVolume(d)) return false;
-  if (!isPerfectEntry(d)) return false;
   
+  const effectiveOI = getEffectiveOI(d);
   return (
-    d.priceAcceleration > 0.3 &&
-    d.volume > 3 &&
-    d.orderFlow > 1.8 &&
-    Math.abs(getEffectiveOI(d)) > 0.5 &&
+    d.priceAcceleration > 0.2 &&
+    d.volume > 2.5 &&
+    d.orderFlow > 1.3 &&
+    Math.abs(effectiveOI) > 0.1 &&
     !isTrap(d)
   );
 }
@@ -116,13 +126,12 @@ function matchPattern(d) {
   const recent = patternMemory.slice(-10);
   return recent.some(p =>
     Math.abs(p.volume - d.volume) < 1 &&
-    Math.abs(p.oi - d.oiChange) < 0.3 &&
+    Math.abs(p.oi - d.oiChange) < 0.2 &&
     p.result === 'WIN'
   );
 }
 
 function isHighPrioritySymbol(d) {
-  if (d.usdVolume && d.usdVolume < 1000000) return false;
   return true;
 }
 
@@ -149,13 +158,20 @@ function recordPattern(d, result) {
 }
 
 function calculateConfidence(d) {
-  let conf = 50;
+  let conf = 40;
   const regime = getMarketRegime();
 
-  if (Math.abs(d.oiChange || 0) > 1) conf += 20;
+  if (Math.abs(d.oiChange || 0) > 0.3) conf += 15;
+  else if (Math.abs(d.oiChange || 0) > 0.1) conf += 10;
+  
   if (d.volume > 3) conf += 15;
+  else if (d.volume > 2) conf += 10;
+  
   if (d.orderFlow > 1.8) conf += 10;
-  if (Math.abs(d.fakeOI || 0) > 0.5) conf += 10;
+  else if (d.orderFlow > 1.3) conf += 5;
+  
+  if (Math.abs(d.fakeOI || 0) > 0.4) conf += 15;
+  else if (Math.abs(d.fakeOI || 0) > 0.2) conf += 10;
 
   const squeeze = detectSqueeze(d);
   if (squeeze === 'SHORT_SQUEEZE') conf += 15;
@@ -163,10 +179,11 @@ function calculateConfidence(d) {
 
   if (isAbsorption(d)) conf += 5;
   if (isExplosive(d)) conf += 10;
+  if (isExplosiveSetup(d)) conf += 10;
   
   if (matchPattern(d)) conf += 10;
 
-  if (regime === 'RANGE') conf -= 10;
+  if (regime === 'RANGE') conf -= 5;
   if (regime === 'BULL') conf += 5;
 
   return Math.min(conf, 95);
@@ -215,16 +232,19 @@ export function processSymbol(symbol, marketData) {
       stateMap.set(symbol, state);
       lastSignalTime[symbol] = Date.now();
       
-      return { type: 'ACCUMULATION', symbol, confidence: 50, data: d, score };
+      const breakoutTimer = getBreakoutTimer(d);
+      
+      return { type: 'ACCUMULATION', symbol, confidence: 40, data: d, score, breakoutTimer };
     }
   }
 
   if (state.stage === STAGES.ACCUMULATION) {
     if (isPumpIncoming(d)) {
+      const breakoutTimer = getBreakoutTimer(d);
       state.stage = STAGES.PREDICT;
       state.predictTime = Date.now();
       stateMap.set(symbol, state);
-      return { type: 'PREDICT', symbol, confidence: 70, data: d };
+      return { type: 'PREDICT', symbol, confidence: 60, data: d, breakoutTimer };
     }
   }
 
@@ -232,7 +252,7 @@ export function processSymbol(symbol, marketData) {
     if (isSniper(d)) {
       const confidence = calculateConfidence(d);
       
-      if (confidence < 80) {
+      if (confidence < 65) {
         stateMap.set(symbol, { stage: STAGES.IDLE });
         return null;
       }
@@ -246,6 +266,7 @@ export function processSymbol(symbol, marketData) {
       lastSignalTime[symbol] = Date.now();
 
       const squeeze = detectSqueeze(d);
+      const breakoutTimer = getBreakoutTimer(d);
       
       return {
         type: 'SNIPER',
@@ -258,7 +279,8 @@ export function processSymbol(symbol, marketData) {
         confidence,
         timeToPump: Date.now() - state.accTime,
         data: d,
-        squeeze
+        squeeze,
+        breakoutTimer
       };
     }
   }
@@ -294,7 +316,7 @@ export function getSmartOI(oiChange) {
 }
 
 export function getEffectiveOIFromPipeline(data) {
-  if (Math.abs(data.oiChange) > 0.2) return data.oiChange;
+  if (Math.abs(data.oiChange) > 0.1) return data.oiChange;
   return data.fakeOI || 0;
 }
 
@@ -331,11 +353,9 @@ const signalStateMachine = {
   },
   checkTimeout(symbol) {
     const STAGE_TIMEOUTS = {
-      EARLY: 5 * 60 * 1000,
-      CONFIRMED: 3 * 60 * 1000,
-      SNIPER: 2 * 60 * 1000,
-      PRE_PUMP: 10 * 60 * 1000,
-      PUMP_CONFIRMED: 3 * 60 * 1000
+      ACCUMULATION: 10 * 60 * 1000,
+      PREDICT: 5 * 60 * 1000,
+      SNIPER: 2 * 60 * 1000
     };
     
     const state = this.getState(symbol);
@@ -370,4 +390,4 @@ export const signalPipeline = {
   setOITracker
 };
 
-export { STAGES, signalStateMachine, detectSqueeze, isAbsorption, isExplosive, isRealVolume };
+export { STAGES, signalStateMachine, detectSqueeze, isAbsorption, isExplosive, isRealVolume, getBreakoutTimer };
