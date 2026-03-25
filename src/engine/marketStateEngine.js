@@ -75,43 +75,75 @@ class MarketStateEngine {
       momentumAcceleration: data.momentumAcceleration || 0
     });
 
-    if (priorityScore < 40) {
-      return state;
-    }
-
     this.transitionState(state, data, oi, priorityScore);
 
     return state;
   }
 
   transitionState(state, data, oi, priorityScore) {
+    const oiStrength = Math.abs(oi);
+    const fakeOIStrength = Math.abs(data.fakeOI || 0);
+    const hasStrongOI = oiStrength > 0.5 || fakeOIStrength > 0.5;
+    const hasVeryStrongOI = oiStrength > 1 || fakeOIStrength > 1;
+
     switch (state.stage) {
       case STAGES.IDLE:
-        if (data.volume > 2 && data.orderFlow > 1.2 && (Math.abs(oi) > 0.3 || data.fakeOI > 0.3)) {
+        if (data.volume > 1.5 && data.orderFlow > 1.1 && (hasStrongOI || data.fakeOI > 0.25)) {
           state.stage = STAGES.PRE_PUMP;
           state.direction = data.priceChange > 0 ? 'LONG' : 'SHORT';
           state.score = priorityScore;
           state.breakoutETA = predictBreakout(data);
         }
+        if (hasVeryStrongOI && data.volume > 2 && data.orderFlow > 1.3) {
+          state.stage = STAGES.BUILDUP;
+          state.score = priorityScore + 15;
+          state.breakoutETA = predictBreakout(data);
+        }
         break;
 
       case STAGES.PRE_PUMP:
-        if (data.volume > 2.5 && data.orderFlow > 1.4 && data.priceAcceleration > 0.2) {
+        if (data.volume > 2 && data.orderFlow > 1.3 && data.priceAcceleration > 0.15) {
           state.stage = STAGES.BUILDUP;
           state.score += priorityScore * 0.3;
           state.breakoutETA = predictBreakout(data);
         }
-        if (state.regime === 'SQUEEZE' && data.volume > 3) {
+        if (hasStrongOI && data.volume > 2.5) {
+          state.stage = STAGES.BUILDUP;
+          state.score += priorityScore * 0.4;
+        }
+        if (state.regime === 'SQUEEZE' && data.volume > 2.5) {
           state.stage = STAGES.BREAKOUT;
-          state.score += 5;
+          state.score += 10;
+        }
+        if (hasVeryStrongOI && data.orderFlow > 1.4) {
+          state.stage = STAGES.BREAKOUT;
+          state.score += 15;
         }
         break;
 
       case STAGES.BUILDUP:
-        if (data.volume > 3 && data.orderFlow > 1.6 && data.priceAcceleration > 0.3) {
+        if (data.volume > 2.5 && data.orderFlow > 1.4 && data.priceAcceleration > 0.2) {
           state.stage = STAGES.BREAKOUT;
           state.score += priorityScore * 0.5;
         }
+        if (hasStrongOI && data.orderFlow > 1.5) {
+          state.stage = STAGES.BREAKOUT;
+          state.score += priorityScore * 0.6;
+        }
+        break;
+
+      case STAGES.BREAKOUT:
+        if (data.volume > 2.5 && data.orderFlow > 1.5 && (hasStrongOI || data.fakeOI > 0.4)) {
+          state.stage = STAGES.SNIPER;
+          state.score += priorityScore * 0.5;
+          state.entry = this.calculateEntry(data);
+        }
+        if (data.volume > 3 && data.orderFlow > 1.6 && hasStrongOI) {
+          state.stage = STAGES.SNIPER;
+          state.score += priorityScore * 0.7;
+          state.entry = this.calculateEntry(data);
+        }
+        break;
         break;
 
       case STAGES.BREAKOUT:
@@ -146,30 +178,35 @@ class MarketStateEngine {
     const data = state.data;
     let score = 0;
 
-    if (state.stage === 'SNIPER') score += 20;
-    else if (state.stage === 'BREAKOUT') score += 15;
-    else if (state.stage === 'BUILDUP') score += 10;
-    else if (state.stage === 'PRE_PUMP') score += 5;
+    if (state.stage === 'SNIPER') score += 25;
+    else if (state.stage === 'BREAKOUT') score += 20;
+    else if (state.stage === 'BUILDUP') score += 15;
+    else if (state.stage === 'PRE_PUMP') score += 10;
 
     const oi = getEffectiveOI(data);
-    if (Math.abs(oi) > 1) score += 20;
-    else if (Math.abs(oi) > 0.5) score += 15;
-    else if (Math.abs(oi) > 0.3) score += 10;
+    const oiStrength = Math.abs(oi);
+    const fakeOIStrength = Math.abs(data.fakeOI || 0);
+    const effectiveOI = Math.max(oiStrength, fakeOIStrength);
 
-    if (data.volume > 5) score += 10;
-    else if (data.volume > 3) score += 7;
+    if (effectiveOI > 2) score += 25;
+    else if (effectiveOI > 1) score += 20;
+    else if (effectiveOI > 0.5) score += 15;
+    else if (effectiveOI > 0.3) score += 10;
+
+    if (data.volume > 4) score += 15;
+    else if (data.volume > 2.5) score += 10;
     else if (data.volume > 2) score += 5;
 
-    if (data.orderFlow > 2) score += 10;
-    else if (data.orderFlow > 1.5) score += 7;
+    if (data.orderFlow > 2) score += 15;
+    else if (data.orderFlow > 1.5) score += 10;
     else if (data.orderFlow > 1.2) score += 5;
 
-    if (data.priceAcceleration > 0.4) score += 10;
-    else if (data.priceAcceleration > 0.3) score += 7;
-    else if (data.priceAcceleration > 0.2) score += 5;
+    if (data.priceAcceleration > 0.3) score += 15;
+    else if (data.priceAcceleration > 0.2) score += 10;
+    else if (data.priceAcceleration > 0.1) score += 5;
 
-    if (state.regime === 'SQUEEZE') score += 10;
-    else if (state.regime === 'TREND') score += 7;
+    if (state.regime === 'SQUEEZE') score += 15;
+    else if (state.regime === 'TREND') score += 10;
     else if (state.regime === 'NEUTRAL') score += 3;
     else if (state.regime === 'CHOP') score -= 15;
 
