@@ -682,7 +682,7 @@ class PumpAnalyzer {
     const combinedOI = fakeOI !== null ? (oiChange + fakeOI) / 2 : oiChange;
     
     if (oiData.current === 0 && Math.random() < 0.001) {
-      console.log(`⚠️ NO OI DATA: ${symbol}`);
+      // console.log(`⚠️ NO OI DATA: ${symbol}`);
     } else {
       oiTracker.markPriority(symbol);
     }
@@ -714,7 +714,7 @@ class PumpAnalyzer {
 
     const HARD_PUMP_FILTERS = priceChange >= 3 && volumeSpike >= 5 && ofRatio >= 1.5 && (Math.abs(oiChange) >= 0.3 || Math.abs(fakeOI || 0) >= 0.4);
     if (!HARD_PUMP_FILTERS && Math.random() < 0.01) {
-      console.log(`❌ ${symbol} → HardFilter: PC=${priceChange.toFixed(1)}% Vol=${volumeSpike.toFixed(1)}x OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}% F=${(fakeOI || 0).toFixed(2)}`);
+      // console.log(`❌ ${symbol} → HardFilter: PC=${priceChange.toFixed(1)}% Vol=${volumeSpike.toFixed(1)}x OF=${ofRatio.toFixed(2)} OI=${oiChange.toFixed(1)}% F=${(fakeOI || 0).toFixed(2)}`);
     }
 
     let confluence = 0;
@@ -764,7 +764,7 @@ class PumpAnalyzer {
 
     if (!enhancedResult.shouldGenerateSignal && confluence < 2 && prePumpResult.prePumpScore < 4) {
       if (Math.random() < 0.01) {
-        console.log(`❌ ${symbol} → NoSignal: conf=${enhancedResult.confidence} tier=${enhancedResult.tier} confluence=${confluence}`);
+        // console.log(`❌ ${symbol} → NoSignal: conf=${enhancedResult.confidence} tier=${enhancedResult.tier} confluence=${confluence}`);
       }
       return null;
     }
@@ -830,7 +830,7 @@ class PumpAnalyzer {
         const oiStr = oiChange > 0.1 ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : fakeOI !== null ? `⚡${fakeOI > 0 ? '+' : ''}${fakeOI.toFixed(1)}%` : '0.0%';
         const realStr = oiChange > 0.1 ? `|Real OI=${oiChange > 0 ? '+' : ''}${oiChange.toFixed(1)}%` : '';
         const emoji = oiClass.includes('LONG') ? '🟢' : oiClass.includes('SHORT') ? '🔴' : '💥';
-        console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass}${realStr}\n  Conf=${enhancedResult.confidence + trapBoost} | R:R=${ex.rr1.toFixed(1)}`);
+        // console.log(`${type === 'SNIPER' ? '🔴' : '🟢'} ${type} ⭐🔥: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${emoji} ${oiClass}${realStr}\n  Conf=${enhancedResult.confidence + trapBoost} | R:R=${ex.rr1.toFixed(1)}`);
         const signal = buildSignal(type, ex);
         signal.trapBoost = trapBoost;
         signal.isReversal = isReversalSetup;
@@ -892,14 +892,21 @@ class PumpAnalyzer {
       });
       
       const direction = this.getDirection(priceChange, ofRatio);
-      console.log(`🔴 SNIPER ${direction}: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiChange.toFixed(2)}% F=⚡${(fakeOI || 0).toFixed(2)} | Conf=${confidence}`);
+      // console.log(`🔴 SNIPER ${direction}: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiChange.toFixed(2)}% F=⚡${(fakeOI || 0).toFixed(2)} | Conf=${confidence}`);
       
-      const signal = buildSignal('SNIPER', ex);
-      signal.confidence = confidence;
-      signal.direction = direction;
-      this.signalCounts.SNIPER++;
-      incrementSignalCount();
-      return signal;
+      // Return data only for new pipeline
+      return {
+        symbol,
+        priceChange,
+        volumeSpike,
+        orderflow: { ratio: ofRatio },
+        openInterest: { change: oiChange },
+        fakeOI,
+        acceleration: momentum,
+        momentum,
+        atr: analysis.atr,
+        entryPrice: analysis.entryPrice
+      };
     }
 
     if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
@@ -936,7 +943,7 @@ class PumpAnalyzer {
         const ex = this.generateEntryExit(analysis.entryPrice, analysis.atr, analysis.atrPercent, 'PUMP_CONFIRMED');
         
         const direction = this.getDirection(priceChange, ofRatio);
-        console.log(`🔥 PUMP_CONFIRMED ${direction}: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiChange.toFixed(2)}% F=⚡${(fakeOI || 0).toFixed(2)} | PrePump cycles: ${state.count}`);
+        // console.log(`🔥 PUMP_CONFIRMED ${direction}: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiChange.toFixed(2)}% F=⚡${(fakeOI || 0).toFixed(2)} | PrePump cycles: ${state.count}`);
         
         const signal = buildSignal('PUMP_CONFIRMED', ex);
         signal.direction = direction;
@@ -970,7 +977,7 @@ class PumpAnalyzer {
       const oiStr = oiChange !== null ? `${oiChange > 0 ? '+' : ''}${oiChange.toFixed(2)}%` : 'N/A';
       const oiClass = this.classifyOI(priceChange, oiChange);
       const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
-      console.log(`🟣 PRE-PUMP 🚀: ${symbol}\n  PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)}\n  OI=${oiStr} F=⚡${(fakeOI || 0).toFixed(2)} ${emoji} ${oiClass}\n   → ${prePumpResult.reasons.join(' | ')}`);
+      // console.log(`🟣 PRE-PUMP 🚀: ${symbol}\n  PrePump:${prePumpResult.prePumpScore} | Vol:${volumeSpike.toFixed(1)}x | OF:${ofRatio.toFixed(2)}\n  OI=${oiStr} F=⚡${(fakeOI || 0).toFixed(2)} ${emoji} ${oiClass}\n   → ${prePumpResult.reasons.join(' | ')}`);
       const signal = buildSignal('PRE_PUMP', ex);
       this.signalCounts.PRE_PUMP++;
       incrementSignalCount();
@@ -995,14 +1002,34 @@ class PumpAnalyzer {
       const fakeStr = fakeOI !== null ? `F=⚡${fakeOI > 0 ? '+' : ''}${fakeOI.toFixed(2)}` : '';
       const oiClass = this.classifyOI(priceChange, oiChange);
       const emoji = oiClass === 'LONG_BUILDUP' ? '🟢' : oiClass === 'SHORT_SQUEEZE' ? '💥' : '🟡';
-      console.log(`🟡 EARLY 🔎: ${symbol}\n  PC=${priceChange.toFixed(1)}% | Vol=${volumeSpike.toFixed(1)}x | OF=${ofRatio.toFixed(2)}\n  OI=${oiStr} ${fakeStr} ${emoji} ${oiClass} | Conf=${enhancedResult.confidence}`);
-      const signal = buildSignal('EARLY', ex);
-      this.signalCounts.EARLY++;
-      incrementSignalCount();
-      return signal;
+      // Return data only for new pipeline
+      return {
+        symbol,
+        priceChange,
+        volumeSpike,
+        orderflow: { ratio: ofRatio },
+        openInterest: { change: oiChange },
+        fakeOI,
+        acceleration: momentum,
+        momentum,
+        atr: analysis.atr,
+        entryPrice: analysis.entryPrice
+      };
     }
 
-    return null;
+    // Default: return market data only
+    return {
+      symbol,
+      priceChange: priceChange || 0,
+      volumeSpike: volumeSpike || 1,
+      orderflow: { ratio: ofRatio || 1 },
+      openInterest: { change: oiChange || 0 },
+      fakeOI: fakeOI || 0,
+      acceleration: momentum || 0,
+      momentum: momentum || 0,
+      atr: analysis?.atr || 0,
+      entryPrice: analysis?.entryPrice || 0
+    };
   }
 
   detectMarketRegime(symbol) {
