@@ -3,7 +3,7 @@ import { WebSocketServer } from 'ws';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { getSignals, getSignalStats, createSignal as dbCreateSignal, updateSignalStatus as dbUpdateSignalStatus } from '../database/db.js';
+import { getSignals, getSignalStats, createSignal as dbCreateSignal, updateSignalStatus as dbUpdateSignalStatus, clearSignals, clearOldSignals } from '../database/db.js';
 import { state, getRecentSignals } from '../state.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +73,11 @@ class SignalAPIServer {
       this.getAllSignals().then(data => res.end(JSON.stringify(data)));
     } else if (url === '/api/health' && req.method === 'GET') {
       res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
+    } else if (url === '/api/signals/clear' && req.method === 'DELETE') {
+      clearSignals(false).then(result => res.end(JSON.stringify({ success: result })));
+    } else if (url === '/api/signals/clear-old' && req.method === 'DELETE') {
+      const hours = parseInt(req.url.split('=')[1]) || 24;
+      clearOldSignals(hours).then(result => res.end(JSON.stringify({ success: result, hours })));
     } else {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'Not found' }));

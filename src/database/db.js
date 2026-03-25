@@ -363,3 +363,49 @@ function formatPgSignal(row) {
     oiChange: row.oi_change
   };
 }
+
+export async function clearSignals(keepActive = false) {
+  try {
+    if (usePostgres && pool) {
+      if (keepActive) {
+        await pool.query("DELETE FROM signals WHERE status != 'ACTIVE'");
+        console.log('🗑️ Cleared closed signals from PostgreSQL');
+      } else {
+        await pool.query('DELETE FROM signals');
+        console.log('🗑️ Cleared ALL signals from PostgreSQL');
+      }
+    } else {
+      if (keepActive) {
+        jsonSignals = jsonSignals.filter(s => s.status === 'ACTIVE');
+        console.log('🗑️ Cleared closed signals from JSON');
+      } else {
+        jsonSignals = [];
+        console.log('🗑️ Cleared ALL signals from JSON');
+      }
+      saveSignalsToFile();
+    }
+    return true;
+  } catch (error) {
+    console.error('❌ Error clearing signals:', error.message);
+    return false;
+  }
+}
+
+export async function clearOldSignals(hoursOld = 24) {
+  try {
+    const cutoff = new Date(Date.now() - hoursOld * 60 * 60 * 1000);
+    
+    if (usePostgres && pool) {
+      await pool.query('DELETE FROM signals WHERE timestamp < $1', [cutoff]);
+      console.log(`🗑️ Cleared signals older than ${hoursOld} hours`);
+    } else {
+      jsonSignals = jsonSignals.filter(s => new Date(s.timestamp) > cutoff);
+      saveSignalsToFile();
+      console.log(`🗑️ Cleared signals older than ${hoursOld} hours`);
+    }
+    return true;
+  } catch (error) {
+    console.error('❌ Error clearing old signals:', error.message);
+    return false;
+  }
+}
