@@ -1,5 +1,5 @@
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
+import { Server } from 'socket.io';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -25,7 +25,7 @@ const server = createServer((req, res) => {
   res.writeHead(404).end('Not found');
 });
 
-const wss = new WebSocketServer({ server });
+const io = new Server(server);
 server.listen(PORT, '0.0.0.0', () => console.log('OK', PORT));
 
 console.log('Starting...');
@@ -37,8 +37,6 @@ const breakoutTracker = new Map();
 const prevData = new Map();
 
 const flowData = new Map();
-const flowHistory = new Map();
-const priceHistory = new Map();
 
 let signalCount = 0;
 
@@ -49,89 +47,54 @@ function canTrade(sym) {
 
 function processTrade(symbol, qty, isBuyerMaker) {
   if (!flowData.has(symbol)) {
-    flowData.set(symbol, { buy: 0, sell: 0, trades: 0 });
+    flowData.set(symbol, { buy: 0, sell: 0, trades: 0, volume: 0 });
   }
   const f = flowData.get(symbol);
   if (isBuyerMaker) f.sell += qty;
   else f.buy += qty;
+  f.volume += qty;
   f.trades++;
 }
 
 function getFlow(symbol) {
   const f = flowData.get(symbol);
-  if (!f || f.trades < 5) return 1;
-  const total = f.buy + f.sell;
-  if (total < 1) return 1;
-  const ratio = f.buy / (f.sell || 1);
-  return Math.min(Math.max(ratio, 0.5), 3);
+  if (!f || f.trades < 10) return 1;
+  if (f.sell === 0) return 1.5;
+  const ratio = f.buy / f.sell;
+  return Math.max(0.5, Math.min(ratio, 2.5));
 }
 
 function getFakeOI(symbol) {
-  const h = flowHistory.get(symbol);
   const f = flowData.get(symbol);
-  if (!h || h.length < 5) return 0;
+  if (!f || f.trades < 20) return 0;
   
-  h.push({ buy: f?.buy || 0, sell: f?.sell || 0, time: Date.now() });
-  if (h.length > 20) h.shift();
+  const total = f.buy + f.sell;
+  if (total < 100) return 0;
   
-  if (h.length < 5) return 0;
+  const imbalance = (f.buy - f.sell) / total;
+  if (Math.abs(imbalance) < 0.15) return 0;
   
-  const recent = h[h.length - 1];
-  const prev = h[0];
-  
-  const buy = recent.buy || 0;
-  const sell = recent.sell || 0;
-  const total = buy + sell;
-  
-  if (total < 1) return 0;
-  
-  const imbalance = (buy - sell) / total;
-  const volChange = prev.buy + prev.sell > 0 ? (total - (prev.buy + prev.sell)) / (prev.buy + prev.sell) : 0;
-  
-  let fake = imbalance * volChange;
-  if (fake > 3) fake = 3;
-  if (fake < -3) fake = -3;
-  if (Math.abs(fake) < 0.15) return 0;
+  let fake = imbalance;
+  if (fake > 1) fake = 1;
+  if (fake < -1) fake = -1;
   
   return fake;
 }
 
 function getPriceChange(symbol, currentPrice) {
-  if (!priceHistory.has(symbol)) {
-    priceHistory.set(symbol, []);
-  }
-  const h = priceHistory.get(symbol);
-  h.push({ price: currentPrice, time: Date.now() });
-  if (h.length > 15) h.shift();
-  
-  if (h.length < 3) return 0;
-  
-  const oldPrice = h[0].price;
-  if (!oldPrice || oldPrice === 0) return 0;
-  
-  return ((currentPrice - oldPrice) / oldPrice) * 100;
+  return 0;
 }
 
 function getAcceleration(symbol) {
-  const h = priceHistory.get(symbol);
-  if (!h || h.length < 5) return 0;
-  
-  const p = h.map(x => x.price);
-  const v1 = (p[4] - p[3]) / p[3];
-  const v2 = (p[3] - p[2]) / p[2];
-  
-  return v2 - v1;
+  return 0;
 }
 
 function resetFlow() {
-  for (const [symbol, f] of flowData) {
-    if (!flowHistory.has(symbol)) flowHistory.set(symbol, []);
-    const h = flowHistory.get(symbol);
-    h.push({ buy: f.buy, sell: f.sell, time: Date.now() });
-    if (h.length > 20) h.shift();
+  for (const [, f] of flowData) {
     f.buy = 0;
     f.sell = 0;
     f.trades = 0;
+    f.volume = 0;
   }
 }
 
@@ -140,39 +103,39 @@ function isTrap(d) {
 }
 
 function detectPressure(d) {
-  return d.volume > 2.5 && d.flow > 1.3 && Math.abs(d.fakeOI) > 0.25;
+  return d.volume > 2 && d.flow > 1.3 && d.fakeOI > 0.25 && d.priceChange < 2 && d.accel > 0;
 }
 
 function detectBreakoutImminent(d) {
-  return d.volume > 3 && d.flow > 1.5 && Math.abs(d.fakeOI) > 0.35 && d.accel > 0.001 && d.priceChange < 2;
-}
-
-function detectEntryCandle(d, prev) {
-  if (!prev) return false;
-  const accelSpike = d.accel > prev.accel * 1.5;
-  const volumeSpike = d.volume > prev.volume * 1.3;
-  const flowStrong = d.flow > 1.7;
-  const oiConfirm = Math.abs(d.fakeOI) > 0.4;
-  return accelSpike && volumeSpike && flowStrong && oiConfirm;
+  return d.volume > 3 && d.flow > 1.5 && d.fakeOI > 0.4 && d.accel > 0.001 && d.priceChange < 2;
 }
 
 function detectSniper(d) {
-  return d.volume > 3.5 && d.flow > 1.6 && Math.abs(d.fakeOI) > 0.4 && Math.abs(d.accel) > 0.002;
+  const long = (
+    d.priceChange > 2 &&
+    d.volume > 3.5 &&
+    d.flow > 1.6 &&
+    d.fakeOI > 0.5 &&
+    d.accel > 0.002
+  );
+  const short = (
+    d.priceChange < -2 &&
+    d.volume > 3.5 &&
+    d.flow < 0.7 &&
+    d.fakeOI < -0.5 &&
+    d.accel < -0.002
+  );
+  return long ? 'LONG' : short ? 'SHORT' : null;
 }
 
 function calcScore(d) {
-  let s = 20;
-  if (d.volume > 4) s += 25;
-  else if (d.volume > 3) s += 20;
-  else if (d.volume > 2.5) s += 15;
-  if (d.flow > 1.8) s += 20;
-  else if (d.flow > 1.5) s += 15;
-  if (Math.abs(d.fakeOI) > 0.8) s += 25;
-  else if (Math.abs(d.fakeOI) > 0.5) s += 20;
-  else if (Math.abs(d.fakeOI) > 0.3) s += 12;
-  if (Math.abs(d.oiChange || 0) > 0.2) s += 15;
-  if (Math.abs(d.accel) > 0.01) s += 10;
-  return Math.min(s, 95);
+  let s = 40;
+  if (d.volume > 3) s += 15;
+  if (d.flow > 1.5) s += 15;
+  if (d.fakeOI > 0.5) s += 15;
+  if (d.accel > 0.002) s += 10;
+  if (d.priceChange > 2) s += 10;
+  return Math.min(s, 90);
 }
 
 function updateBreakout(symbol, d) {
@@ -180,16 +143,12 @@ function updateBreakout(symbol, d) {
   
   if (detectBreakoutImminent(d)) {
     if (!breakoutTracker.has(symbol)) {
-      breakoutTracker.set(symbol, { start: now, lastAccel: d.accel, volume: d.volume, flow: d.flow });
+      breakoutTracker.set(symbol, { start: now });
       return null;
     }
     
     const data = breakoutTracker.get(symbol);
     const duration = (now - data.start) / 1000;
-    
-    data.lastAccel = d.accel;
-    data.volume = d.volume;
-    data.flow = d.flow;
     
     if (duration > 2 && duration < 15) {
       return { type: 'BREAKOUT', seconds: Math.round(15 - duration) };
@@ -206,11 +165,7 @@ function updateBreakout(symbol, d) {
 }
 
 function broadcast(type, data) {
-  wss.clients.forEach(c => {
-    if (c.readyState === 1) {
-      c.send(JSON.stringify({ type, data }));
-    }
-  });
+  io.emit(type, data);
 }
 
 async function start() {
@@ -237,38 +192,32 @@ async function start() {
       tradeCount++;
       
       if (!ticker.price || ticker.price === 0) return;
-      if (signalCount > 3) return;
       
       const flow = getFlow(ticker.symbol);
       const fakeOI = getFakeOI(ticker.symbol);
       const oi = oiTracker.getChange(ticker.symbol) || 0;
-      const priceChange = getPriceChange(ticker.symbol, ticker.price);
-      const accel = getAcceleration(ticker.symbol);
       
       const d = {
         symbol: ticker.symbol,
-        priceChange: priceChange,
+        priceChange: ticker.priceChange || 0,
         volume: ticker.volume || 1,
         flow: flow,
         oiChange: oi,
         fakeOI: fakeOI,
-        accel: accel,
+        accel: ticker.acceleration || 0,
         price: ticker.price,
         time: Date.now()
       };
-      
-      const prev = prevData.get(ticker.symbol);
-      prevData.set(ticker.symbol, { ...d });
       
       if (isTrap(d)) return;
       if (!canTrade(d.symbol)) return;
       
       const state = stateMap.get(d.symbol) || { stage: STAGES.IDLE };
       
-      // Stage 1: PRESSURE
+      // Stage 1: PRESSURE (only high score)
       if (state.stage === STAGES.IDLE && detectPressure(d)) {
         const s = calcScore(d);
-        if (s < 50) return;
+        if (s < 70) return;
         
         state.stage = STAGES.PRESSURE;
         state.score = s;
@@ -285,27 +234,28 @@ async function start() {
           console.log('🟠 BREAKOUT IN ' + breakout.seconds + 's:', d.symbol);
           broadcast('breakout', { symbol: d.symbol, seconds: breakout.seconds });
           state.stage = STAGES.BREAKOUT;
-          state.breakout = breakout;
           stateMap.set(d.symbol, state);
         }
       }
       
-      // Stage 3: SNIPER ENTRY
-      const isSniper = (state.stage === STAGES.BREAKOUT || state.stage === STAGES.PRESSURE) && 
-                       (detectSniper(d) || (detectEntryCandle(d, prev) && Math.abs(fakeOI) > 0.35));
+      // Stage 3: SNIPER (only strong signals)
+      const sniperSide = detectSniper(d);
+      const isSniper = (state.stage === STAGES.BREAKOUT || state.stage === STAGES.PRESSURE) && sniperSide;
       
       if (isSniper) {
         const s = calcScore(d);
-        if (s < 60) return;
+        if (s < 80) return;
+        if (signalCount > 2) return;
         
         signalCount++;
         const risk = d.price * 0.015;
         cooldowns.set(d.symbol, Date.now());
         
-        console.log('🔴 SNIPER:', d.symbol, 'V=' + d.volume.toFixed(1), 'F=' + flow.toFixed(1), 'S=' + s);
+        console.log('🔴 SNIPER ' + sniperSide + ':', d.symbol, 'V=' + d.volume.toFixed(1), 'F=' + flow.toFixed(1), 'S=' + s);
         
         const signal = {
           type: 'SNIPER',
+          side: sniperSide,
           symbol: d.symbol,
           entry: d.price,
           stopLoss: d.price - risk,
