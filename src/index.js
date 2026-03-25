@@ -196,8 +196,8 @@ class SignalEngine {
     };
 
     // Debug: log key tickers occasionally
-    if (Math.random() < 0.001 && marketData.volume > 2) {
-      console.log(`📊 TICKER ${ticker.symbol}: PC=${marketData.priceChange.toFixed(1)}% Vol=${marketData.volume.toFixed(1)}x OF=${marketData.orderFlow.toFixed(2)} OI=${marketData.oiChange.toFixed(2)}% F=${marketData.fakeOI.toFixed(3)}`);
+    if (Math.random() < 0.002) {
+      console.log(`📊 ${ticker.symbol}: PC=${marketData.priceChange.toFixed(1)}% Vol=${marketData.volume.toFixed(1)}x OF=${marketData.orderFlow.toFixed(2)} OI=${marketData.oiChange.toFixed(2)}% F=${marketData.fakeOI.toFixed(3)}`);
     }
 
     const result = processSymbol(ticker.symbol, marketData);
