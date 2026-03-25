@@ -73,9 +73,9 @@ class SignalAPIServer {
       this.getAllSignals().then(data => res.end(JSON.stringify(data)));
     } else if (url === '/api/health' && req.method === 'GET') {
       res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
-    } else if (url === '/api/signals/clear' && req.method === 'DELETE') {
-      clearSignals(false).then(result => res.end(JSON.stringify({ success: result })));
-    } else if (url === '/api/signals/clear-old' && req.method === 'DELETE') {
+    } else if (url === '/api/signals/clear' && (req.method === 'DELETE' || req.method === 'GET')) {
+      clearSignals(false).then(result => res.end(JSON.stringify({ success: result, deleted: true })));
+    } else if (url === '/api/signals/clear-old' && (req.method === 'DELETE' || req.method === 'GET')) {
       const hours = parseInt(req.url.split('=')[1]) || 24;
       clearOldSignals(hours).then(result => res.end(JSON.stringify({ success: result, hours })));
     } else {
