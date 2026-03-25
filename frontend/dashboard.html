@@ -5,227 +5,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🔥 Live Pump Detector</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #0a0a0a;
-      color: #e0e0e0;
-      min-height: 100vh;
-    }
-
-    .header {
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      padding: 20px;
-      border-bottom: 2px solid #f0b90b;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .header h1 {
-      color: #f0b90b;
-      font-size: 1.8rem;
-    }
-
-    .stats {
-      display: flex;
-      gap: 30px;
-    }
-
-    .stat {
-      text-align: center;
-    }
-
-    .stat-value {
-      font-size: 1.5rem;
-      font-weight: bold;
-      color: #f0b90b;
-    }
-
-    .stat-label {
-      font-size: 0.8rem;
-      color: #888;
-    }
-
-    .container {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      padding: 20px;
-    }
-
-    .panel {
-      background: #121212;
-      border-radius: 10px;
-      padding: 15px;
-      min-height: 500px;
-      max-height: 80vh;
-      overflow-y: auto;
-    }
-
-    .panel-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 15px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid #333;
-    }
-
-    .panel-title {
-      font-size: 1.3rem;
-      font-weight: bold;
-    }
-
-    .panel-predict { border-top: 3px solid #ff8c00; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+    .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px; border-bottom: 2px solid #f0b90b; display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { color: #f0b90b; font-size: 1.8rem; }
+    .container { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 20px; }
+    .panel { background: #121212; border-radius: 10px; padding: 15px; min-height: 400px; max-height: 70vh; overflow-y: auto; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #333; }
+    .panel-title { font-size: 1.2rem; font-weight: bold; }
+    .panel-pressure { border-top: 3px solid #9932cc; }
+    .panel-breakout { border-top: 3px solid #ff8c00; }
     .panel-sniper { border-top: 3px solid #ff4444; }
-
-    .panel-predict .panel-title { color: #ff8c00; }
+    .panel-pressure .panel-title { color: #9932cc; }
+    .panel-breakout .panel-title { color: #ff8c00; }
     .panel-sniper .panel-title { color: #ff4444; }
-
-    .signal-card {
-      background: #1e1e1e;
-      border-radius: 8px;
-      padding: 15px;
-      margin-bottom: 12px;
-      border-left: 4px solid;
-      animation: slideIn 0.3s ease;
-    }
-
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateX(-20px); }
-      to { opacity: 1; transform: translateX(0); }
-    }
-
-    .signal-card.predict { border-left-color: #ff8c00; }
+    .signal-card { background: #1e1e1e; border-radius: 8px; padding: 12px; margin-bottom: 10px; border-left: 3px solid; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+    .signal-card.pressure { border-left-color: #9932cc; }
+    .signal-card.breakout { border-left-color: #ff8c00; }
     .signal-card.sniper { border-left-color: #ff4444; }
-
-    .signal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    .symbol {
-      font-weight: bold;
-      font-size: 1.2rem;
-    }
-
-    .confidence {
-      padding: 6px 12px;
-      border-radius: 12px;
-      font-weight: bold;
-      font-size: 1rem;
-    }
-
-    .confidence.elite { background: linear-gradient(135deg, #ffd700, #ff8c00); color: #000; }
+    .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .symbol { font-weight: bold; font-size: 1.1rem; }
+    .confidence { padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; }
     .confidence.high { background: #22c55e; color: #000; }
     .confidence.good { background: #3b82f6; color: #fff; }
-
-    .price-info {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin: 12px 0;
-      padding: 12px;
-      background: #252525;
-      border-radius: 6px;
-    }
-
-    .price-row {
-      text-align: center;
-    }
-
-    .price-label {
-      font-size: 0.75rem;
-      color: #888;
-    }
-
-    .price-value {
-      font-weight: bold;
-      font-size: 0.95rem;
-    }
-
-    .price-value.entry { color: #22c55e; }
-    .price-value.sl { color: #ef4444; }
-    .price-value.tp { color: #3b82f6; }
-
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      font-size: 0.85rem;
-      color: #aaa;
-    }
-
-    .metric {
-      text-align: center;
-    }
-
-    .metric-value {
-      color: #fff;
-      font-weight: 500;
-    }
-
-    .empty-panel {
-      text-align: center;
-      color: #666;
-      padding: 60px;
-      font-size: 1.1rem;
-    }
-
-    .count-badge {
-      background: #333;
-      padding: 4px 12px;
-      border-radius: 12px;
-      font-size: 0.9rem;
-    }
-
+    .breakout-timer { font-size: 1.5rem; color: #ff8c00; font-weight: bold; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 0.8rem; color: #aaa; }
+    .metric { text-align: center; }
+    .metric-value { color: #fff; font-weight: 500; }
+    .empty-panel { text-align: center; color: #666; padding: 40px; }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #1e1e1e; }
     ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #555; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>🔥 LIVE PUMP DETECTOR</h1>
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-value" id="sniperCount">0</div>
-        <div class="stat-label">SNIPER</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value" id="predictCount">0</div>
-        <div class="stat-label">PUMP INCOMING</div>
-      </div>
-    </div>
+    <h1>🔥 PUMP DETECTOR PRO</h1>
   </div>
 
   <div class="container">
-    <div class="panel panel-predict">
+    <div class="panel panel-pressure">
       <div class="panel-header">
-        <div class="panel-title">🟠 PUMP INCOMING</div>
-        <span class="count-badge" id="predictBadge">0</span>
+        <div class="panel-title">🟣 PRESSURE</div>
       </div>
-      <div id="predictSignals">
-        <div class="empty-panel">Waiting for signals...</div>
+      <div id="pressureSignals">
+        <div class="empty-panel">Waiting...</div>
+      </div>
+    </div>
+
+    <div class="panel panel-breakout">
+      <div class="panel-header">
+        <div class="panel-title">🟠 BREAKOUT TIMER</div>
+      </div>
+      <div id="breakoutSignals">
+        <div class="empty-panel">Waiting...</div>
       </div>
     </div>
 
     <div class="panel panel-sniper">
       <div class="panel-header">
         <div class="panel-title">🔴 SNIPER ENTRY</div>
-        <span class="count-badge" id="sniperBadge">0</span>
       </div>
       <div id="sniperSignals">
-        <div class="empty-panel">Waiting for signals...</div>
+        <div class="empty-panel">Waiting...</div>
       </div>
     </div>
   </div>
@@ -234,145 +77,72 @@
   <script>
     const socket = io();
     
-    const signals = {
-      sniper: [],
-      predict: []
-    };
+    const signals = { pressure: [], breakout: [], sniper: [] };
 
-    socket.on('history', (history) => {
-      history.forEach(signal => processSignal(signal));
-    });
-
-    socket.on('signal', (signal) => {
-      processSignal(signal);
-    });
-
-    socket.on('sniper', (signal) => {
-      processSignal(signal);
-    });
-
-    socket.on('predict', (signal) => {
-      processSignal(signal);
-    });
-
-    function processSignal(signal) {
-      const type = signal.type;
-      
-      if (type === 'SNIPER') {
-        signals.sniper.unshift(createSniperCard(signal));
-        signals.sniper = signals.sniper.slice(0, 15);
-      } else if (type === 'PREDICT' || type === 'ACCUMULATION') {
-        signals.predict.unshift(createPredictCard(signal));
-        signals.predict = signals.predict.slice(0, 15);
-      }
-
-      updateUI();
-    }
-
-    function createPredictCard(signal) {
-      const data = signal.data || {};
-      const oi = data.oiChange || signal.oiChange || 0;
-      const volume = data.volume || signal.volumeSpike || 0;
-      const orderFlow = data.orderFlow || signal.orderFlow || 0;
-      const fakeOI = data.fakeOI || signal.fakeOI || 0;
-      const breakoutTimer = signal.breakoutTimer || 'calculating...';
-      
-      return `
-        <div class="signal-card predict">
+    socket.on('connect', () => console.log('Connected'));
+    
+    socket.on('pressure', (data) => {
+      const card = `
+        <div class="signal-card pressure">
           <div class="signal-header">
-            <span class="symbol">${signal.symbol}</span>
-            <span class="confidence high">${signal.confidence || 50}%</span>
-          </div>
-          <div style="text-align:center;margin:8px 0;color:#ff8c00;font-weight:bold;">
-            ⏱️ Breakout: ${breakoutTimer}
+            <span class="symbol">${data.symbol}</span>
+            <span class="confidence high">${data.score}%</span>
           </div>
           <div class="metrics">
-            <div class="metric">
-              <div class="metric-value">${parseFloat(volume).toFixed(1)}x</div>
-              <div>Volume</div>
-            </div>
-            <div class="metric">
-              <div class="metric-value">${parseFloat(orderFlow).toFixed(2)}</div>
-              <div>Order Flow</div>
-            </div>
-            <div class="metric">
-              <div class="metric-value">${parseFloat(oi).toFixed(1)}%</div>
-              <div>OI</div>
-            </div>
-            <div class="metric">
-              <div class="metric-value">${parseFloat(fakeOI).toFixed(2)}</div>
-              <div>Fake OI</div>
-            </div>
+            <div class="metric"><div class="metric-value">${data.fakeOI?.toFixed(2) || '0'}</div><div>FakeOI</div></div>
+            <div class="metric"><div class="metric-value">${data.flow?.toFixed(1) || '1'}</div><div>Flow</div></div>
+            <div class="metric"><div class="metric-value">${data.volume?.toFixed(1) || '0'}x</div><div>Volume</div></div>
           </div>
-        </div>
-      `;
-    }
+        </div>`;
+      signals.pressure.unshift(card);
+      signals.pressure = signals.pressure.slice(0, 15);
+      updateUI();
+    });
 
-    function createSniperCard(signal) {
-      const data = signal.data || {};
-      const oi = data.oiChange || signal.oiChange || 0;
-      const volume = data.volume || signal.volumeSpike || 0;
-      const orderFlow = data.orderFlow || signal.orderFlow || 0;
-      const fakeOI = data.fakeOI || signal.fakeOI || 0;
-      
-      const entry = signal.entry || signal.entryPrice || 0;
-      const sl = signal.stopLoss || 0;
-      const tp1 = signal.tp1 || signal.targets?.tp1 || 0;
-      
-      return `
+    socket.on('breakout', (data) => {
+      const card = `
+        <div class="signal-card breakout">
+          <div class="signal-header">
+            <span class="symbol">${data.symbol}</span>
+            <span class="breakout-timer">⏱️ ${data.seconds}s</span>
+          </div>
+        </div>`;
+      signals.breakout.unshift(card);
+      signals.breakout = signals.breakout.slice(0, 10);
+      updateUI();
+    });
+
+    socket.on('sniper', (data) => {
+      const card = `
         <div class="signal-card sniper">
           <div class="signal-header">
-            <span class="symbol">${signal.symbol}</span>
-            <span class="confidence elite">${signal.confidence}%</span>
-          </div>
-          <div class="price-info">
-            <div class="price-row">
-              <div class="price-label">ENTRY</div>
-              <div class="price-value entry">${entry.toFixed(6)}</div>
-            </div>
-            <div class="price-row">
-              <div class="price-label">SL</div>
-              <div class="price-value sl">${sl.toFixed(6)}</div>
-            </div>
-            <div class="price-row">
-              <div class="price-label">TP1</div>
-              <div class="price-value tp">${tp1.toFixed(6)}</div>
-            </div>
+            <span class="symbol">${data.symbol}</span>
+            <span class="confidence high">🚀 ${data.confidence}%</span>
           </div>
           <div class="metrics">
-            <div class="metric">
-              <div class="metric-value">${parseFloat(volume).toFixed(1)}x</div>
-              <div>Volume</div>
-            </div>
-            <div class="metric">
-              <div class="metric-value">${parseFloat(orderFlow).toFixed(2)}</div>
-              <div>Order Flow</div>
-            </div>
-            <div class="metric">
-              <div class="metric-value">${parseFloat(oi).toFixed(1)}%</div>
-              <div>OI</div>
-            </div>
-            <div class="metric">
-              <div class="metric-value">${parseFloat(fakeOI).toFixed(2)}</div>
-              <div>Fake OI</div>
-            </div>
+            <div class="metric"><div class="metric-value">${data.entry?.toFixed(4)}</div><div>Entry</div></div>
+            <div class="metric"><div class="metric-value">${data.stopLoss?.toFixed(4)}</div><div>SL</div></div>
+            <div class="metric"><div class="metric-value">${data.tp1?.toFixed(4)}</div><div>TP1</div></div>
           </div>
-        </div>
-      `;
-    }
+        </div>`;
+      signals.sniper.unshift(card);
+      signals.sniper = signals.sniper.slice(0, 10);
+      updateUI();
+    });
+
+    socket.on('signal', (data) => {
+      if (data.type === 'SNIPER') {
+        socket.emit('sniper', data);
+      }
+    });
 
     function updateUI() {
-      document.getElementById('sniperCount').textContent = signals.sniper.length;
-      document.getElementById('predictCount').textContent = signals.predict.length;
-      
-      document.getElementById('sniperBadge').textContent = signals.sniper.length;
-      document.getElementById('predictBadge').textContent = signals.predict.length;
-
-      document.getElementById('sniperSignals').innerHTML = signals.sniper.length ? signals.sniper.join('') : '<div class="empty-panel">Waiting for signals...</div>';
-      document.getElementById('predictSignals').innerHTML = signals.predict.length ? signals.predict.join('') : '<div class="empty-panel">Waiting for signals...</div>';
+      document.getElementById('pressureSignals').innerHTML = signals.pressure.length ? signals.pressure.join('') : '<div class="empty-panel">Waiting...</div>';
+      document.getElementById('breakoutSignals').innerHTML = signals.breakout.length ? signals.breakout.join('') : '<div class="empty-panel">Waiting...</div>';
+      document.getElementById('sniperSignals').innerHTML = signals.sniper.length ? signals.sniper.join('') : '<div class="empty-panel">Waiting...</div>';
     }
 
-    console.log('📊 Dashboard connected');
+    console.log('📊 Dashboard ready');
   </script>
 </body>
 </html>
