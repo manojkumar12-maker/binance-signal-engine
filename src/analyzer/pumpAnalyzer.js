@@ -770,7 +770,7 @@ class PumpAnalyzer {
     }
 
     if (priceChange > 15) {
-      if (Math.random() < 0.01) console.log(`❌ ${symbol} → LATE: priceChange=${priceChange.toFixed(1)}% > 15%`);
+      // if (Math.random() < 0.01) console.log(`❌ ${symbol} → LATE: priceChange=${priceChange.toFixed(1)}% > 15%`);
       return null;
     }
 

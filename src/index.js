@@ -55,7 +55,7 @@ async function startEngine() {
       const a = pumpAnalyzer.analyze(ticker);
       if (!a?.symbol) return;
       
-      const r = processSymbol(ticker.symbol, {
+      const mkt = {
         symbol: ticker.symbol,
         priceChange: a.priceChange || 0,
         volume: a.volumeSpike || 1,
@@ -66,10 +66,16 @@ async function startEngine() {
         momentum: a.momentum || 0,
         price: ticker.price,
         atr: a.atr || 0
-      });
+      };
+      
+      const r = processSymbol(ticker.symbol, mkt);
+      
+      if (r?.type === 'ACCUMULATION') {
+        console.log('🟣', r.symbol, 'PC=' + mkt.priceChange.toFixed(1) + '%', 'Vol=' + mkt.volume.toFixed(1), 'OF=' + mkt.orderFlow.toFixed(1));
+      }
       
       if (r?.type === 'SNIPER') {
-        console.log('🔴', r.symbol);
+        console.log('🔴 SNIPER:', r.symbol, 'Conf=' + r.confidence);
         wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
       }
     });
