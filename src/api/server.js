@@ -59,8 +59,19 @@ class SignalAPIServer {
     const url = req.url.split('?')[0];
 
     if (url === '/' || url === '/dashboard') {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(readFileSync(join(__dirname, '../../frontend/dashboard.html')));
+      try {
+        const dashboardPath = join(__dirname, '../../frontend/dashboard.html');
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(readFileSync(dashboardPath));
+      } catch (err) {
+        console.error('Dashboard error:', err.message);
+        res.writeHead(500, { 'Content-Type': 'text/html' });
+        res.end('<h1>Dashboard not found</h1><p>Please redeploy the app</p>');
+      }
+      return;
+    }
+
+    if (url === '/socket.io/') {
       return;
     }
 
