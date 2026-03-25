@@ -8,76 +8,75 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
 
 const server = createServer((req, res) => {
-  const url = req.url.split('?')[0];
-  
-  if (url === '/api/health') {
+  if (req.url === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end('{"status":"ok"}');
     return;
   }
-  
-  if (url === '/' || url === '/dashboard') {
+  if (req.url === '/' || req.url === '/dashboard') {
     try {
-      const html = readFileSync(join(__dirname, '../frontend/dashboard.html'));
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html);
+      res.end(readFileSync(join(__dirname, '../frontend/dashboard.html')));
     } catch (e) {
-      res.writeHead(500);
-      res.end('Dashboard not found');
+      res.writeHead(500).end('Error');
     }
     return;
   }
-  
-  res.writeHead(404);
-  res.end('Not found');
+  res.writeHead(404).end('Not found');
 });
 
 const wss = new WebSocketServer({ server });
+server.listen(PORT, '0.0.0.0', () => console.log('OK', PORT));
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('OK ' + PORT);
-  startEngine();
-});
+console.log('Loading engine...');
 
-async function startEngine() {
-  console.log('Starting engine...');
-  
+const STAGES = { IDLE: 'IDLE', PRESSURE: 'PRESSURE', SNIPER: 'SNIPER' };
+const stateMap = new Map();
+const cooldowns = new Map();
+
+function canTrade(sym) {
+  const last = cooldowns.get(sym) || 0;
+  return Date.now() - last > 120000;
+}
+
+function isNoise(d) {
+  return Math.abs(d.oiChange || 0) < 0.02 && (d.fakeOI || 0) < 0.1 && (d.volume || 1) < 1.5;
+}
+
+function detectPressure(d) {
+  return d.volume > 2 && d.orderFlow > 1.4 && (d.fakeOI > 0.2 || Math.abs(d.oiChange || 0) > 0.08);
+}
+
+function detectSniper(d) {
+  return d.volume > 2.5 && d.orderFlow > 1.5 && (d.fakeOI > 0.3 || Math.abs(d.oiChange || 0) > 0.12) && (d.priceAcceleration || 0) > 0.15;
+}
+
+function score(d) {
+  let s = 0;
+  if (d.volume > 3) s += 15;
+  if (d.volume > 2) s += 10;
+  if (d.orderFlow > 1.6) s += 15;
+  if (d.orderFlow > 1.4) s += 10;
+  if ((d.fakeOI || 0) > 0.4) s += 20;
+  if ((d.fakeOI || 0) > 0.25) s += 15;
+  if (Math.abs(d.oiChange || 0) > 0.2) s += 20;
+  if (Math.abs(d.oiChange || 0) > 0.1) s += 10;
+  return s;
+}
+
+async function start() {
   try {
-    console.log('Loading modules...');
-    
-    const { wsManager } = await import('./websocket/binanceWS.js');
-    console.log('wsManager loaded');
-    
-    const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
-    console.log('pumpAnalyzer loaded');
-    
-    const { processSymbol, setOITracker, updateBTCPrice, updateOIRanking } = await import('./engine/signalPipeline.js');
-    console.log('signalPipeline loaded');
-    
-    const { oiTracker } = await import('./engine/oiTracker.js');
-    console.log('oiTracker loaded');
-    
-    const { orderflowTracker } = await import('./engine/orderflowTracker.js');
-    console.log('orderflowTracker loaded');
-    
-    console.log('All modules loaded, initializing...');
     const { wsManager } = await import('./websocket/binanceWS.js');
     const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
-    const { processSymbol, setOITracker, updateBTCPrice, updateOIRanking } = await import('./engine/signalPipeline.js');
     const { oiTracker } = await import('./engine/oiTracker.js');
-    const { orderflowTracker } = await import('./engine/orderflowTracker.js');
+    
+    console.log('Modules loaded');
 
-wsManager.onTicker(ticker => {
-  if (ticker.symbol === 'BTCUSDT') updateBTCPrice(ticker.priceChange || 0);
-  
-  const oi = oiTracker.getChange(ticker.symbol) || 0;
-  const fake = oiTracker.getFakeOI(ticker.symbol) || 0;
-  updateOIRanking(ticker.symbol, oi + fake);
-      
+    wsManager.onTicker(ticker => {
       const a = pumpAnalyzer.analyze(ticker);
       if (!a?.symbol) return;
       
-      const mkt = {
+      const d = {
         symbol: ticker.symbol,
         priceChange: a.priceChange || 0,
         volume: a.volumeSpike || 1,
@@ -85,40 +84,56 @@ wsManager.onTicker(ticker => {
         oiChange: a.openInterest?.change || 0,
         fakeOI: a.fakeOI || 0,
         priceAcceleration: a.acceleration || 0,
-        momentum: a.momentum || 0,
-        price: ticker.price,
-        atr: a.atr || 0
+        price: ticker.price
       };
       
-      const r = processSymbol(ticker.symbol, mkt);
+      if (isNoise(d)) return;
+      if (!canTrade(d.symbol)) return;
       
-      if (r?.type === 'ACCUMULATION') {
-        console.log('🟣', r.symbol, 'PC=' + mkt.priceChange.toFixed(1) + '%', 'Vol=' + mkt.volume.toFixed(1), 'OF=' + mkt.orderFlow.toFixed(1));
+      const state = stateMap.get(d.symbol) || { stage: STAGES.IDLE };
+      
+      if (state.stage === STAGES.IDLE && detectPressure(d)) {
+        const s = score(d);
+        state.stage = STAGES.PRESSURE;
+        state.score = s;
+        stateMap.set(d.symbol, state);
+        console.log('🟣', d.symbol, 'V=' + d.volume.toFixed(1), 'OF=' + d.orderFlow.toFixed(1), 'F=' + (d.fakeOI||0).toFixed(2), 'S=' + s);
+        wss.clients.forEach(c => c.send(JSON.stringify({ type: 'pressure', data: { symbol: d.symbol, score: s } })));
       }
       
-      if (r?.type === 'SNIPER') {
-        console.log('🔴 SNIPER:', r.symbol, 'Conf=' + r.confidence);
-        wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
+      if (state.stage === STAGES.PRESSURE && detectSniper(d)) {
+        const s = score(d);
+        if (s < 45) return;
+        
+        const risk = d.price * 0.02;
+        cooldowns.set(d.symbol, Date.now());
+        
+        console.log('🔴 SNIPER:', d.symbol, 'V=' + d.volume.toFixed(1), 'S=' + s);
+        
+        const signal = {
+          type: 'SNIPER',
+          symbol: d.symbol,
+          entry: d.price,
+          stopLoss: d.price - risk,
+          tp1: d.price + risk,
+          tp2: d.price + risk * 2,
+          tp3: d.price + risk * 3,
+          confidence: s
+        };
+        
+        wss.clients.forEach(c => c.send(JSON.stringify({ type: 'sniper', data: signal })));
+        stateMap.set(d.symbol, { stage: STAGES.IDLE });
       }
-    });
-
-    wsManager.onTrade(trade => {
-      orderflowTracker.handleTrade(trade);
-      oiTracker.handleTrade(trade);
     });
 
     await wsManager.initialize();
     console.log('Connected:', wsManager.symbols.length);
-
     pumpAnalyzer.initialize(wsManager.symbols);
     await oiTracker.init(wsManager.symbols);
-    setOITracker(oiTracker);
-
-    setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
-
     console.log('Engine running');
   } catch (e) {
-    console.error('Engine error:', e.message);
-    if (e.stack) console.error(e.stack);
+    console.error('Error:', e.message, e.stack);
   }
 }
+
+start();
