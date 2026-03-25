@@ -16,11 +16,9 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server ready on port ${PORT}`);
+  console.log(`✅ Healthcheck on port ${PORT}`);
   
   setTimeout(() => {
-    import('./app.js').then(app => {
-      if (app.start) app.start();
-    }).catch(e => console.log('App load error:', e.message));
-  }, 1000);
+    import('./engine.js').catch(e => console.error('Engine error:', e.message));
+  }, 2000);
 });
