@@ -119,5 +119,6 @@ wsManager.onTicker(ticker => {
     console.log('Engine running');
   } catch (e) {
     console.error('Engine error:', e.message);
+    if (e.stack) console.error(e.stack);
   }
 }
