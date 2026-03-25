@@ -232,4 +232,11 @@ export const signalPipeline = {
   setOITracker
 };
 
+export const signalStateMachine = {
+  getState,
+  setState: (s, s2, d) => stateMap.set(s, { stage: s2, ...d }),
+  checkTimeout: () => false,
+  getActiveSignals: () => []
+};
+
 export { STAGES };
