@@ -83,6 +83,7 @@ class SignalAPIServer {
     } else if (url === '/api/signals' && req.method === 'GET') {
       this.getAllSignals().then(data => res.end(JSON.stringify(data)));
     } else if (url === '/api/health' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
     } else if (url === '/api/signals/clear' && (req.method === 'DELETE' || req.method === 'GET')) {
       clearSignals(false).then(result => res.end(JSON.stringify({ success: result, deleted: true })));

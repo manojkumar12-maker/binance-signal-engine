@@ -15,6 +15,7 @@ import { processSymbol, setOITracker, getState, updateBTCPrice, recordWin, recor
 import { emitSignal, startDashboardServer } from './api/dashboardServer.js';
 
 console.log('✅ All modules loaded');
+console.log('PORT:', process.env.PORT || 8080);
 
 process.on('uncaughtException', (err) => {
   console.error('🔥 UNCAUGHT EXCEPTION:', err.message);
@@ -35,7 +36,7 @@ class SignalEngine {
       startedAt: null
     };
     this.startTime = Date.now();
-    this.warmupTime = 60 * 1000;
+    this.warmupTime = 30 * 1000;
     this.warmupLogged = false;
   }
 
@@ -43,45 +44,35 @@ class SignalEngine {
     return Date.now() - this.startTime > this.warmupTime;
   }
 
-  getWarmupStatus() {
-    const elapsed = Date.now() - this.startTime;
-    const remaining = Math.max(0, this.warmupTime - elapsed);
-    return {
-      isWarmedUp: this.isWarmedUp(),
-      elapsed: Math.floor(elapsed / 1000),
-      remaining: Math.floor(remaining / 1000)
-    };
-  }
-
   async start() {
     console.log(`
 ╔══════════════════════════════════════════════╗
 ║     🚀 SNIPER SIGNAL ENGINE v5.0 🚀        
 ╠══════════════════════════════════════════════╣
-║  🔴 SNIPER | 🟠 PREDICT | ⚡ ACCUMULATION    ║
-║  💎 Squeeze | Absorption | Memory System     ║
+║  🔴 SNIPER | 🟠 PUMP | 🟣 PRE_PUMP        ║
 ╚══════════════════════════════════════════════╝
     `);
 
-    console.log('🔥 SERVER STARTING...');
-    console.log('PORT:', process.env.PORT);
+    console.log('🔥 Starting API Server...');
     
     try {
       await apiServer.start();
-      console.log('✅ API SERVER READY on port', process.env.PORT || 8080);
+      console.log('✅ API SERVER READY');
     } catch (e) {
-      console.error('❌ API Server failed to start:', e.message);
+      console.error('❌ API Server error:', e.message);
     }
 
     this.stats.startedAt = Date.now();
     
-    initDatabase().catch(err => console.log('⚠️ DB init failed, continuing:', err.message));
+    initDatabase().catch(err => console.log('⚠️ DB init failed:', err.message));
 
-    this.initEngine().catch(err => console.log('⚠️ Engine init failed:', err.message));
+    this.initEngine().catch(err => console.log('⚠️ Engine init error:', err.message));
   }
 
   async initEngine() {
     try {
+      console.log('📡 Connecting to Binance...');
+      
       wsManager.onTicker((ticker) => {
         if (ticker.symbol === 'BTCUSDT') {
           updateBTCPrice(ticker.priceChange || 0);
@@ -97,6 +88,7 @@ class SignalEngine {
 
       await wsManager.initialize();
       this.stats.symbolsMonitored = wsManager.symbols.length;
+      console.log(`✅ Connected! Monitoring ${this.stats.symbolsMonitored} symbols`);
 
       pumpAnalyzer.initialize(wsManager.symbols);
       marketDataTracker.initialize(wsManager.symbols);
@@ -108,25 +100,11 @@ class SignalEngine {
         orderflowTracker.reset();
       }, 60000);
 
-      setInterval(() => {
-        const topSymbols = wsManager.symbols.slice(0, 10);
-        for (const sym of topSymbols) {
-          oiTracker.resetFlow(sym);
-        }
-      }, 60000);
-
-      setInterval(async () => {
-        const topSymbols = wsManager.symbols.slice(0, 5);
-        for (const symbol of topSymbols) {
-          await fundingService.fetch(symbol);
-        }
-      }, 10000);
-
       setInterval(async () => {
         try {
           await oiTracker.runCycle();
         } catch (err) {
-          console.error('🔥 OI FETCH ERROR:', err.message);
+          console.error('OI fetch error:', err.message);
         }
       }, 5000);
 
@@ -134,32 +112,25 @@ class SignalEngine {
         this.processCycleSignals();
       }, 5000);
 
-      setInterval(() => {
-        this.showStats();
-      }, 60000);
-
-      console.log(`\n✅ Engine started! Monitoring ${this.stats.symbolsMonitored} symbols\n`);
+      console.log('✅ Engine fully initialized!');
     } catch (e) {
-      console.error('❌ Engine initialization error:', e.message);
+      console.error('❌ Engine init error:', e.message);
     }
   }
 
   processTicker(ticker) {
     if (!this.isWarmedUp()) {
       if (!this.warmupLogged) {
-        console.log(`⏳ Warming up... ${this.getWarmupStatus().remaining}s remaining`);
+        console.log(`⏳ Warming up... ${Math.ceil((this.warmupTime - (Date.now() - this.startTime))/1000)}s remaining`);
         this.warmupLogged = true;
       }
       return;
-    } else if (this.warmupLogged) {
-      console.log('✅ Warmup complete - engine active');
-      this.warmupLogged = false;
     }
 
     if (isSymbolActive(ticker.symbol)) {
       const updatedSignal = signalGenerator.updateSignal(ticker.symbol, ticker.price);
       if (updatedSignal && updatedSignal.status !== 'ACTIVE' && updatedSignal.status !== 'WATCHLIST') {
-        console.log(`\n📊 ${ticker.symbol}: ${updatedSignal.status} at ${updatedSignal.closedPrice?.toFixed(6)}\n`);
+        console.log(`📊 ${ticker.symbol}: ${updatedSignal.status}`);
         
         if (updatedSignal.status?.startsWith('TP')) {
           recordWin(ticker.symbol);
@@ -194,22 +165,17 @@ class SignalEngine {
       usdVolume: analysis.usdVolume || 0
     };
 
-    // Debug: log key tickers occasionally
-    if (Math.random() < 0.002) {
-      console.log(`📊 ${ticker.symbol}: PC=${marketData.priceChange.toFixed(1)}% Vol=${marketData.volume.toFixed(1)}x OF=${marketData.orderFlow.toFixed(2)} OI=${marketData.oiChange.toFixed(2)}% F=${marketData.fakeOI.toFixed(3)}`);
-    }
-
     const result = processSymbol(ticker.symbol, marketData);
 
     if (!result) return;
 
-    if (result.type === 'ACCUMULATION' || result.type === 'PREDICT') {
+    if (result.type === 'ACCUMULATION') {
       emitSignal(result);
       return;
     }
 
     if (result.type === 'SNIPER') {
-      if (!strongCanTrigger(ticker.symbol, 5 * 60 * 1000)) {
+      if (!strongCanTrigger(ticker.symbol, 2 * 60 * 1000)) {
         return;
       }
 
@@ -219,10 +185,7 @@ class SignalEngine {
           this.stats.signalsGenerated++;
           this.stats.sniperSignals++;
           
-          const squeezeEmoji = result.squeeze === 'SHORT_SQUEEZE' ? '💥' : '';
           console.log(signalGenerator.formatSignal(signal));
-          console.log(`   ${squeezeEmoji} Squeeze: ${result.squeeze || 'N/A'} | Conf: ${result.confidence}%`);
-          
           emitSignal(signal);
           notifier.sendSignal(signal).catch(() => {});
           apiServer.addSignal(signal).catch(() => {});
@@ -231,38 +194,11 @@ class SignalEngine {
     }
   }
 
-  showStats() {
-    const uptime = Date.now() - this.stats.startedAt;
-    const activeSignals = signalGenerator.getActiveSignals();
-    
-    console.clear();
-    console.log(`
-╔══════════════════════════════════════════════════════════════════╗
-║        🚀 SNIPER SIGNAL ENGINE v5.0 🚀                      ║
-╠══════════════════════════════════════════════════════════════════╣
-║  📊 STATISTICS                                                   ║
-║  ─────────────────────────────────────────────────────────────    ║
-║  Uptime: ${this.formatUptime(uptime)}
-║  Symbols: ${this.stats.symbolsMonitored}
-║  Total SNIPER Signals: ${this.stats.sniperSignals}
-║  Active: ${activeSignals.length}
-╚══════════════════════════════════════════════════════════════════╝
-    `);
-
-    if (activeSignals.length > 0) {
-      console.log('📈 ACTIVE SIGNALS:\n');
-      activeSignals.forEach(s => {
-        console.log(`  🔴 ${s.symbol} | Entry: ${s.entryPrice?.toFixed(6)} | PnL: ${s.update?.unrealizedPnL || 0}%`);
-      });
-      console.log('');
-    }
-  }
-
   processCycleSignals() {
     const topSymbols = wsManager.symbols.slice(0, 20);
     
     for (const symbol of topSymbols) {
-      if (!canTrigger(symbol, 5 * 60 * 1000)) continue;
+      if (!canTrigger(symbol, 2 * 60 * 1000)) continue;
       if (isSymbolActive(symbol)) continue;
 
       const ticker = pumpAnalyzer.getTickerData?.(symbol);
@@ -279,9 +215,7 @@ class SignalEngine {
         momentum: ticker.momentum || 0,
         price: ticker.price,
         entryPrice: ticker.price,
-        atr: ticker.atr,
-        tradeCount: ticker.tradeCount || 0,
-        usdVolume: ticker.usdVolume || 0
+        atr: ticker.atr || 0
       };
 
       const result = processSymbol(symbol, marketData);
@@ -302,20 +236,13 @@ class SignalEngine {
     }
   }
 
-  formatUptime(ms) {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ${minutes % 60}m`.padEnd(20, ' ');
-  }
-
   async stop() {
-    console.log('\n🛑 Stopping Signal Engine...');
+    console.log('\n🛑 Stopping Engine...');
     wsManager.disconnect();
     orderBookAnalyzer.stop();
     oiTracker.reset();
     await closeDatabase();
-    console.log('✅ Engine stopped');
+    console.log('✅ Stopped');
   }
 }
 
@@ -323,10 +250,6 @@ const engine = new SignalEngine();
 
 global.engine = engine;
 global.signalGenerator = signalGenerator;
-global.state = state;
-global.marketDataTracker = marketDataTracker;
-global.tradeLogger = tradeLogger;
-global.oiTracker = oiTracker;
 
 process.on('SIGINT', async () => {
   await engine.stop();
@@ -338,16 +261,11 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-process.on('exit', (code) => {
-  console.log(`🔴 Process exiting with code: ${code}`);
-});
-
-console.log('🔰 Starting engine...');
+console.log('🚀 Starting engine...');
 engine.start().catch(err => {
-  console.error('❌ FATAL: Engine start failed:', err);
-  process.exit(1);
+  console.error('❌ FATAL:', err.message);
 });
 
 setTimeout(() => {
-  console.log('🔰 Process still running after 5s...');
-}, 5000);
+  console.log('✅ Process running...');
+}, 3000);
