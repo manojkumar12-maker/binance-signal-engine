@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔥 Binance Signal Engine - Live Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      padding: 20px;
+      border-bottom: 2px solid #f0b90b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h1 {
+      color: #f0b90b;
+      font-size: 1.8rem;
+    }
+
+    .stats {
+      display: flex;
+      gap: 20px;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #f0b90b;
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: #888;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      padding: 20px;
+    }
+
+    .panel {
+      background: #121212;
+      border-radius: 10px;
+      padding: 15px;
+      min-height: 400px;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #333;
+    }
+
+    .panel-title {
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+
+    .panel-sniper { border-top: 3px solid #ff4444; }
+    .panel-pump { border-top: 3px solid #ff8c00; }
+    .panel-prepump { border-top: 3px solid #9932cc; }
+
+    .panel-sniper .panel-title { color: #ff4444; }
+    .panel-pump .panel-title { color: #ff8c00; }
+    .panel-prepump .panel-title { color: #9932cc; }
+
+    .signal-card {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      border-left: 3px solid;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .signal-card.sniper { border-left-color: #ff4444; }
+    .signal-card.pump { border-left-color: #ff8c00; }
+    .signal-card.prepump { border-left-color: #9932cc; }
+
+    .signal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .symbol {
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+
+    .direction {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+
+    .direction.long { background: #22c55e; color: #000; }
+    .direction.short { background: #ef4444; color: #fff; }
+
+    .confidence {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+
+    .confidence.elite { background: linear-gradient(135deg, #ffd700, #ff8c00); color: #000; }
+    .confidence.high { background: #22c55e; color: #000; }
+    .confidence.good { background: #3b82f6; color: #fff; }
+    .confidence.weak { background: #6b7280; color: #fff; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .metric-value {
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .regime {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-top: 8px;
+    }
+
+    .regime.squeeze { background: #ff6b6b; color: #000; }
+    .regime.trend { background: #4ecdc4; color: #000; }
+    .regime.chop { background: #95a5a6; color: #000; }
+    .regime.neutral { background: #666; color: #fff; }
+
+    .latency {
+      font-size: 0.75rem;
+      color: #666;
+      text-align: right;
+      margin-top: 8px;
+    }
+
+    .empty-panel {
+      text-align: center;
+      color: #666;
+      padding: 40px;
+    }
+
+    .count-badge {
+      background: #333;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.8rem;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e1e1e; }
+    ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #555; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔥 Binance Signal Engine</h1>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value" id="totalSignals">0</div>
+        <div class="stat-label">Total Signals</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="sniperCount">0</div>
+        <div class="stat-label">SNIPER</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="pumpCount">0</div>
+        <div class="stat-label">PUMP</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="prepumpCount">0</div>
+        <div class="stat-label">PRE-PUMP</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="panel panel-sniper">
+      <div class="panel-header">
+        <div class="panel-title">🔴 SNIPER SIGNALS</div>
+        <span class="count-badge" id="sniperBadge">0</span>
+      </div>
+      <div id="sniperSignals">
+        <div class="empty-panel">Waiting for signals...</div>
+      </div>
+    </div>
+
+    <div class="panel panel-pump">
+      <div class="panel-header">
+        <div class="panel-title">🟠 PUMP CONFIRMED</div>
+        <span class="count-badge" id="pumpBadge">0</span>
+      </div>
+      <div id="pumpSignals">
+        <div class="empty-panel">Waiting for signals...</div>
+      </div>
+    </div>
+
+    <div class="panel panel-prepump">
+      <div class="panel-header">
+        <div class="panel-title">🟣 PRE-PUMP SETUPS</div>
+        <span class="count-badge" id="prepumpBadge">0</span>
+      </div>
+      <div id="prepumpSignals">
+        <div class="empty-panel">Waiting for signals...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    
+    const signals = {
+      sniper: [],
+      pump: [],
+      prepump: []
+    };
+
+    let totalSignals = 0;
+
+    socket.on('history', (history) => {
+      history.forEach(signal => processSignal(signal));
+    });
+
+    socket.on('signal', (signal) => {
+      processSignal(signal);
+    });
+
+    function processSignal(signal) {
+      totalSignals++;
+      
+      const type = signal.tier || signal.type;
+      const card = createSignalCard(signal);
+      
+      if (type === 'SNIPER') {
+        signals.sniper.unshift(card);
+        signals.sniper = signals.sniper.slice(0, 20);
+      } else if (type === 'PUMP_CONFIRMED') {
+        signals.pump.unshift(card);
+        signals.pump = signals.pump.slice(0, 20);
+      } else if (type === 'PRE_PUMP' || type === 'BUILDUP') {
+        signals.prepump.unshift(card);
+        signals.prepump = signals.prepump.slice(0, 20);
+      }
+
+      updateUI();
+    }
+
+    function createSignalCard(signal) {
+      const type = signal.tier || signal.type;
+      const direction = signal.direction || (signal.action === 'LONG' ? 'LONG' : 'SHORT');
+      const confidence = signal.aiConfidence || signal.confidence || 0;
+      const regime = signal.regime || 'NEUTRAL';
+      
+      const oi = signal.oiChange || signal.oiTag || 0;
+      const volume = signal.volumeSpike || signal.metrics?.volumeSpike || 0;
+      const priceChange = signal.priceChange || signal.metrics?.priceChange || 0;
+
+      let latency = '';
+      if (signal.emittedAt && signal.timestamp) {
+        const ms = signal.emittedAt - signal.timestamp;
+        latency = `<div class="latency">⚡ ${ms}ms</div>`;
+      }
+
+      return `
+        <div class="signal-card ${type === 'SNIPER' ? 'sniper' : type === 'PUMP_CONFIRMED' ? 'pump' : 'prepump'}">
+          <div class="signal-header">
+            <span class="symbol">${signal.symbol}</span>
+            <span class="direction ${direction.toLowerCase()}">${direction}</span>
+          </div>
+          <div>
+            <span class="confidence ${getConfidenceClass(confidence)}">${confidence}%</span>
+            <span class="regime ${regime.toLowerCase()}">${regime}</span>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              <span>Price:</span>
+              <span class="metric-value">${parseFloat(priceChange).toFixed(1)}%</span>
+            </div>
+            <div class="metric">
+              <span>Volume:</span>
+              <span class="metric-value">${parseFloat(volume).toFixed(1)}x</span>
+            </div>
+            <div class="metric">
+              <span>OI:</span>
+              <span class="metric-value">${typeof oi === 'number' ? oi.toFixed(1) + '%' : oi}</span>
+            </div>
+            <div class="metric">
+              <span>Rank:</span>
+              <span class="metric-value">${(signal.rankScore || signal.priorityScore || 0).toFixed(0)}</span>
+            </div>
+          </div>
+          ${latency}
+        </div>
+      `;
+    }
+
+    function getConfidenceClass(confidence) {
+      if (confidence >= 85) return 'elite';
+      if (confidence >= 70) return 'high';
+      if (confidence >= 55) return 'good';
+      return 'weak';
+    }
+
+    function updateUI() {
+      document.getElementById('totalSignals').textContent = totalSignals;
+      document.getElementById('sniperCount').textContent = signals.sniper.length;
+      document.getElementById('pumpCount').textContent = signals.pump.length;
+      document.getElementById('prepumpCount').textContent = signals.prepump.length;
+      
+      document.getElementById('sniperBadge').textContent = signals.sniper.length;
+      document.getElementById('pumpBadge').textContent = signals.pump.length;
+      document.getElementById('prepumpBadge').textContent = signals.prepump.length;
+
+      document.getElementById('sniperSignals').innerHTML = signals.sniper.length ? signals.sniper.join('') : '<div class="empty-panel">Waiting for signals...</div>';
+      document.getElementById('pumpSignals').innerHTML = signals.pump.length ? signals.pump.join('') : '<div class="empty-panel">Waiting for signals...</div>';
+      document.getElementById('prepumpSignals').innerHTML = signals.prepump.length ? signals.prepump.join('') : '<div class="empty-panel">Waiting for signals...</div>';
+    }
+
+    console.log('📊 Dashboard connected');
+  </script>
+</body>
+</html>

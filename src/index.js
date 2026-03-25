@@ -14,6 +14,7 @@ import { orderflowTracker } from './engine/orderflowTracker.js';
 import { oiTracker, MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS } from './engine/oiTracker.js';
 import { fundingService } from './engine/fundingService.js';
 import { signalPipeline, setOITracker } from './engine/signalPipeline.js';
+import { emitSignal, startDashboardServer } from './api/dashboardServer.js';
 
 console.log('✅ All modules loaded');
 
@@ -68,6 +69,8 @@ class SignalEngine {
     try {
       await apiServer.start();
       console.log('✅ HEALTHCHECK READY');
+      startDashboardServer();
+      console.log('✅ DASHBOARD READY on port 3001');
     } catch (e) {
       console.error('❌ API Server failed to start:', e.message);
     }
@@ -249,6 +252,7 @@ class SignalEngine {
         this.stats.signalsByTier[signal.tier]++;
         
         console.log(signalGenerator.formatSignal(signal));
+        emitSignal(signal);
         await notifier.sendSignal(signal);
         await apiServer.addSignal(signal);
       }
