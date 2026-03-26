@@ -119,11 +119,7 @@ function handleHighPumpCandidates(ranked) {
 
     console.log(`🚀 HIGH_PUMP ${payload.symbol} | rank=${payload.rankScore} | strength=${payload.strength}`);
     broadcast('high_pump', payload);
-    if (level) {
-      sendTelegram(`${level}\n${payload.symbol}\nOI: ${(snap.oiChange || 0).toFixed(3)}%\nVol: ${(snap.volumeRatio || snap.volume || 0).toFixed(2)}`).catch(() => {});
-    } else {
-      sendTelegram(`🚀 HIGH PUMP: ${payload.symbol}\nScore: ${payload.rankScore}\nStrength: ${payload.strength}`).catch(() => {});
-    }
+    // Telegram verbose output removed
   });
 }
 
@@ -151,14 +147,6 @@ function handleTicker(ticker) {
   });
 
   const now = Date.now();
-    if (now - lastDebugTelegram > 60000) {
-      const topWeak = topPumpSelector.getTopByOI(1);
-      if (topWeak.length > 0) {
-        const t = topWeak[0];
-        sendTelegram(`DEBUG ${t.symbol}\nOI: ${t.oi?.toFixed?.(4)}%\nVol: ${t.volume?.toFixed?.(2)}`).catch(() => {});
-      }
-      lastDebugTelegram = now;
-    }
     if (now - lastRankRun > 1000) {
       const ranked = topPumpSelector.evaluateTop(5);
       topSymbols = new Set(ranked.map(r => r.symbol));
