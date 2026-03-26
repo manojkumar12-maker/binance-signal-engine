@@ -1,10 +1,14 @@
 import WebSocket from 'ws';
 import axios from 'axios';
+import fs from 'fs';
 import { config } from '../../config/config.js';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function fetchWithRetry(url, options = {}, retries = 3, delay = 2000) {
+const SYMBOLS_CACHE_FILE = 'symbols_cache.json';
+const CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
+
+async function fetchWithRetry(url, options = {}, retries = 5, delay = 5000) {
   try {
     const response = await axios.get(url, {
       ...options,
@@ -12,23 +16,51 @@ async function fetchWithRetry(url, options = {}, retries = 3, delay = 2000) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         ...options.headers
       },
-      timeout: 15000
+      timeout: 20000
     });
     return response;
   } catch (error) {
     if (retries === 0) {
-      console.error(`❌ ${url} failed after retries`);
+      console.error(`❌ ${url} failed after all retries`);
       throw error;
     }
     
     if (error.response?.status === 418) {
-      console.log(`⚠️ Rate limited (418), retry in ${delay}ms... (${retries} left)`);
+      const backoffDelay = (6 - retries) * 15000;
+      console.log(`⚠️ 418 Rate Limited! Backing off for ${backoffDelay/1000}s (${retries} retries left)`);
+      await sleep(backoffDelay);
+      return fetchWithRetry(url, options, retries - 1, delay * 2);
     } else {
       console.log(`⚠️ ${error.message}, retry in ${delay}ms... (${retries} left)`);
+      await sleep(delay);
+      return fetchWithRetry(url, options, retries - 1, delay * 1.5);
     }
-    
-    await sleep(delay);
-    return fetchWithRetry(url, options, retries - 1, delay * 1.5);
+  }
+}
+
+function loadCachedSymbols() {
+  try {
+    if (fs.existsSync(SYMBOLS_CACHE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(SYMBOLS_CACHE_FILE, 'utf8'));
+      if (data.timestamp && (Date.now() - data.timestamp) < CACHE_MAX_AGE) {
+        console.log('📦 Loaded symbols from cache:', data.symbols.length);
+        return data.symbols;
+      }
+    }
+  } catch (e) {
+    console.log('⚠️ Cache read failed:', e.message);
+  }
+  return null;
+}
+
+function saveCachedSymbols(symbols) {
+  try {
+    fs.writeFileSync(SYMBOLS_CACHE_FILE, JSON.stringify({
+      symbols,
+      timestamp: Date.now()
+    }));
+  } catch (e) {
+    console.log('⚠️ Cache write failed:', e.message);
   }
 }
 
@@ -84,6 +116,15 @@ class BinanceWebSocketManager {
 
   async fetchAllSymbols() {
     console.log('🔄 Fetching symbols from Binance API...');
+    
+    const cached = loadCachedSymbols();
+    if (cached) {
+      this.symbols = cached;
+      this.symbolsLoaded = true;
+      console.log(`📊 Loaded ${this.symbols.length} symbols from cache`);
+      return;
+    }
+    
     try {
       const response = await fetchWithRetry(`${config.binance.apiUrl}/fapi/v1/exchangeInfo`);
       console.log('📡 API response status:', response.status);
@@ -96,6 +137,8 @@ class BinanceWebSocketManager {
         const stablecoins = ['BUSDUSDT', 'USDCUSDT', 'TUSDUSDT', 'FDUSDUSDT'];
         this.symbols = this.symbols.filter(s => !stablecoins.includes(s));
       }
+      
+      saveCachedSymbols(this.symbols);
 
       this.symbolsLoaded = true;
       console.log(`📊 Loaded ${this.symbols.length} USDT perpetual symbols`);
