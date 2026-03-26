@@ -1,21 +1,20 @@
 const STAGES = {
-  IDLE: 'IDLE',
-  PRESSURE: 'PRESSURE',
-  BREAKOUT: 'BREAKOUT',
-  SNIPER: 'SNIPER'
+  WATCH: 'WATCH',
+  BUILDING: 'BUILDING',
+  ENTRY: 'ENTRY',
+  EXPLOSION: 'EXPLOSION'
 };
 
 const stateMap = new Map();
 let oiTrackerModule = null;
+let avgMarketOI = 0.1;
 
 const oiRanking = new Map();
-const SIGNAL_COOLDOWN = 5 * 60 * 1000;
+const SIGNAL_COOLDOWN = 2 * 60 * 1000;
 const lastSignalTime = {};
 
 const symbolScores = new Map();
-const DEAD_MARKET_VOLUME_RATIO = 1.2;
-const DEAD_MARKET_OI_CHANGE = 0.5;
-const MIN_SIGNAL_SCORE = 6;
+const MIN_SIGNAL_SCORE = 20;
 const MAX_ACTIVE_SIGNALS = 10;
 
 let btcPriceChange = 0;
@@ -34,34 +33,44 @@ function normalizeOI(oi, allOI) {
   return max > 0 ? oi / max : 0;
 }
 
-function isDeadMarket(d) {
-  return d.volume < DEAD_MARKET_VOLUME_RATIO && Math.abs(d.oiChange) < DEAD_MARKET_OI_CHANGE;
-}
-
-function calculateInstitutionalScore(d) {
+function calculateAdaptiveScore(d) {
   let score = 0;
   
-  if (d.oiChange > 3) score += 2;
-  else if (d.oiChange > 1.5) score += 1;
+  if (d.volume > 1.5) score += 15;
+  if (d.volume > 2) score += 10;
+  if (d.volume > 3) score += 10;
   
-  if (d.volume > 2.5) score += 2;
-  else if (d.volume > 2.0) score += 1;
+  if (Math.abs(d.oiChange) > 0.2) score += 20;
+  if (Math.abs(d.oiChange) > 0.5) score += 15;
+  if (Math.abs(d.oiChange) > 1) score += 10;
   
-  if (d.orderFlow > 1.3) score += 2;
-  else if (d.orderFlow > 1.15) score += 1;
+  if (d.orderFlow > 1.2) score += 15;
+  if (d.orderFlow > 1.4) score += 10;
+  if (d.orderFlow > 1.6) score += 10;
   
-  if (d.structureBreak) score += 2;
+  if (d.fakeOI > 0.1) score += 10;
+  if (d.fakeOI > 0.3) score += 10;
+  if (d.fakeOI > 0.5) score += 10;
   
-  if (d.momentum > 0.7) score += 1;
+  if (d.momentum > 0) score += 10;
+  if (d.priceAcceleration > 0.001) score += 10;
   
-  return Math.min(9, score);
+  return Math.min(100, score);
+}
+
+function getSignalLevel(score) {
+  if (score >= 50) return 'EXPLOSION';
+  if (score >= 40) return 'ENTRY';
+  if (score >= 30) return 'BUILDING';
+  if (score >= 20) return 'WATCH';
+  return null;
 }
 
 function detectEarlyPump(d) {
   return (
-    d.volume > 2 &&
-    d.oiChange > 1.5 &&
-    d.priceChange < 1.0
+    d.volume > 1.5 &&
+    d.oiChange > 0.1 &&
+    Math.abs(d.priceChange) < 1.5
   );
 }
 
@@ -80,73 +89,47 @@ function detectTrap(d) {
 
 function isNoise(d) {
   return (
-    Math.abs(d.oiChange) < 0.03 &&
-    Math.abs(d.fakeOI) < 0.15 &&
-    d.volume < 1.8
+    d.volume < 1.1 &&
+    Math.abs(d.oiChange) < 0.05 &&
+    d.orderFlow < 1.05
   );
 }
 
 function detectAccumulation(d) {
   return (
-    d.priceChange < 2 &&
     d.volume > 1.8 &&
-    d.orderFlow > 1.3 &&
-    d.fakeOI > 0.2
+    d.orderFlow > 1.2 &&
+    Math.abs(d.priceChange) < 1 &&
+    d.fakeOI > 0.1
   );
 }
 
 function detectPressure(d) {
   return (
-    d.volume > 2.5 &&
-    d.orderFlow > 1.5 &&
-    (d.fakeOI > 0.3 || Math.abs(d.oiChange) > 0.1) &&
-    d.priceAcceleration > 0.12
+    d.volume > 1.5 &&
+    d.orderFlow > 1.2 &&
+    (d.oiChange > 0.1 || d.fakeOI > 0.1) &&
+    d.momentum >= 0
   );
 }
 
 function detectExplosion(d) {
   return (
-    d.volume > 3 &&
-    d.orderFlow > 1.6 &&
-    (Math.abs(d.oiChange) > 0.15 || d.fakeOI > 0.4) &&
-    d.priceAcceleration > 0.2
+    d.volume > 2 &&
+    d.orderFlow > 1.4 &&
+    (Math.abs(d.oiChange) > 0.3 || d.fakeOI > 0.2) &&
+    d.priceAcceleration > 0.002
   );
 }
 
-function isExploding(d) {
-  return d.priceAcceleration > 0.2;
-}
-
-function isAggressiveFlow(d) {
-  return d.orderFlow > 1.6 || d.orderFlow < 0.65;
-}
-
-function calculateScore(d, oiRank = 0) {
-  let score = 0;
-  
-  if (detectAccumulation(d)) score += 10;
-  if (detectPressure(d)) score += 25;
-  if (detectExplosion(d)) score += 40;
-  if (isExploding(d)) score += 15;
-  if (isAggressiveFlow(d)) score += 10;
-  
-  if (Math.abs(d.oiChange) > 0.5) score += 25;
-  else if (Math.abs(d.oiChange) > 0.3) score += 15;
-  else if (Math.abs(d.oiChange) > 0.15) score += 8;
-  
-  if (d.fakeOI > 0.6) score += 20;
-  else if (d.fakeOI > 0.4) score += 15;
-  else if (d.fakeOI > 0.25) score += 8;
-  
-  if (d.volume > 6) score += 15;
-  else if (d.volume > 4) score += 10;
-  else if (d.volume > 3) score += 5;
-  
-  score += oiRank * 20;
-  
-  if (detectTrap(d)) score -= 50;
-  
-  return Math.max(0, Math.min(100, score));
+function detectHighPump(d) {
+  return (
+    d.volume > 2.5 &&
+    d.orderFlow > 1.5 &&
+    d.oiChange > 0.5 &&
+    Math.abs(d.priceChange) > 1 &&
+    d.score >= 40
+  );
 }
 
 function canTrade(symbol) {
@@ -182,101 +165,134 @@ export function processSymbol(symbol, marketData) {
     price: marketData.price || 0
   };
   
-  if (isDeadMarket(d)) {
-    return null;
-  }
-  
-  const institutionalScore = calculateInstitutionalScore(d);
-  symbolScores.set(symbol, institutionalScore);
-  
-  const state = stateMap.get(symbol) || { stage: STAGES.IDLE };
-  
   if (detectTrap(d)) {
-    stateMap.set(symbol, { stage: STAGES.IDLE });
-    return null;
+    stateMap.set(symbol, { stage: STAGES.WATCH });
+    return { symbol, type: 'TRAP', confidence: 0 };
   }
   
-  const allOI = Array.from(oiRanking.values());
-  const oiRank = normalizeOI(Math.abs(d.oiChange) + Math.abs(d.fakeOI), allOI);
-  const score = calculateScore(d, oiRank);
+  const score = calculateAdaptiveScore(d);
+  d.score = score;
+  symbolScores.set(symbol, score);
   
-  if (state.stage === STAGES.IDLE) {
-    if (detectEarlyPump(d)) {
-      state.stage = STAGES.PRESSURE;
-      state.score = score;
-      state.startTime = Date.now();
-      state.earlyPump = true;
-      stateMap.set(symbol, state);
-      
-      console.log(`🚀 EARLY PUMP: ${symbol} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OI=${d.oiChange.toFixed(1)}% | Score=${institutionalScore}`);
-      
-      return { type: 'EARLY_PUMP', symbol, confidence: institutionalScore, data: d, entry: d.price };
-    }
-  }
+  const level = getSignalLevel(score);
+  const state = stateMap.get(symbol) || { stage: STAGES.WATCH };
   
-  if (state.stage === STAGES.IDLE) {
-    if (detectPressure(d)) {
-      state.stage = STAGES.PRESSURE;
-      state.score = score;
-      state.startTime = Date.now();
-      stateMap.set(symbol, state);
-      lastSignalTime[symbol] = Date.now();
-      
-      console.log(`🟣 PRESSURE: ${symbol} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)} | F=${d.fakeOI.toFixed(2)} | Score=${score}`);
-      
-      return { type: 'ACCUMULATION', symbol, confidence: score, data: d };
-    }
-  }
-  
-  if (state.stage === STAGES.PRESSURE) {
-    if (detectExplosion(d) && score >= 50) {
-      const entry = d.price;
-      const risk = entry * 0.02;
-      const sl = entry - risk;
-      
-      state.stage = STAGES.SNIPER;
-      stateMap.set(symbol, state);
-      lastSignalTime[symbol] = Date.now();
-      
-      console.log(`🔴 SNIPER: ${symbol} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)} | F=${d.fakeOI.toFixed(2)} | Score=${score}`);
-      
-      return {
-        type: 'SNIPER',
-        symbol,
-        entry,
-        stopLoss: sl,
-        tp1: entry + risk * 1,
-        tp2: entry + risk * 2,
-        tp3: entry + risk * 3,
-        confidence: score,
-        data: d
-      };
-    }
-    
-    if (score < 30) {
-      stateMap.set(symbol, { stage: STAGES.IDLE });
-    }
-  }
-  
-  if (state.stage === STAGES.IDLE && detectExplosion(d) && score >= 60) {
-    const entry = d.price;
-    const risk = entry * 0.02;
-    const sl = entry - risk;
-    
-    stateMap.set(symbol, { stage: STAGES.SNIPER });
+  if (detectHighPump(d)) {
+    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score, startTime: Date.now() });
     lastSignalTime[symbol] = Date.now();
     
-    console.log(`🔴 SNIPER (DIRECT): ${symbol} | Vol=${d.volume.toFixed(1)}x | Score=${score}`);
+    const direction = d.priceChange > 0 ? 'LONG' : 'SHORT';
+    const entry = d.price;
+    const risk = entry * 0.02;
+    
+    console.log(`🔥 HIGH_PUMP: ${symbol} | Score=${score} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
     
     return {
-      type: 'SNIPER',
+      type: 'HIGH_PUMP',
       symbol,
+      direction,
       entry,
-      stopLoss: sl,
+      stopLoss: direction === 'LONG' ? entry - risk : entry + risk,
       tp1: entry + risk * 1,
       tp2: entry + risk * 2,
       tp3: entry + risk * 3,
       confidence: score,
+      level,
+      data: d
+    };
+  }
+  
+  if (detectExplosion(d) && score >= 40) {
+    const direction = d.priceChange > 0 ? 'LONG' : 'SHORT';
+    const entry = d.price;
+    const risk = entry * 0.02;
+    
+    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score, startTime: Date.now() });
+    lastSignalTime[symbol] = Date.now();
+    
+    console.log(`🔴 SNIPER: ${symbol} | Score=${score} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x`);
+    
+    return {
+      type: 'SNIPER',
+      symbol,
+      direction,
+      entry,
+      stopLoss: direction === 'LONG' ? entry - risk : entry + risk,
+      tp1: entry + risk * 1,
+      tp2: entry + risk * 2,
+      tp3: entry + risk * 3,
+      confidence: score,
+      level,
+      data: d
+    };
+  }
+  
+  if (detectPressure(d) && score >= 30) {
+    stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
+    
+    console.log(`🟣 PRESSURE: ${symbol} | Score=${score} | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
+    
+    return {
+      type: 'PRESSURE',
+      symbol,
+      confidence: score,
+      level,
+      data: d,
+      entry: d.price
+    };
+  }
+  
+  if (detectAccumulation(d) && score >= 25) {
+    stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
+    
+    console.log(`📦 ACCUMULATION: ${symbol} | Score=${score} | Vol=${d.volume.toFixed(1)}x`);
+    
+    return {
+      type: 'ACCUMULATION',
+      symbol,
+      confidence: score,
+      level,
+      data: d,
+      entry: d.price
+    };
+  }
+  
+  if (detectEarlyPump(d) && score >= 20) {
+    stateMap.set(symbol, { stage: STAGES.WATCH, score, startTime: Date.now() });
+    
+    console.log(`👀 EARLY_PUMP: ${symbol} | Score=${score} | Vol=${d.volume.toFixed(1)}x | OI=${d.oiChange.toFixed(1)}%`);
+    
+    return {
+      type: 'EARLY_PUMP',
+      symbol,
+      confidence: score,
+      level,
+      data: d,
+      entry: d.price
+    };
+  }
+  
+  if (score >= 30) {
+    stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
+    
+    return {
+      type: 'BUILDING',
+      symbol,
+      confidence: score,
+      level,
+      data: d,
+      entry: d.price
+    };
+  }
+  
+  if (score >= 20) {
+    stateMap.set(symbol, { stage: STAGES.WATCH, score, startTime: Date.now() });
+    
+    return {
+      type: 'WATCH',
+      symbol,
+      confidence: score,
+      level,
       data: d
     };
   }
@@ -290,7 +306,7 @@ export function updateOIRanking(symbol, oi) {
 }
 
 export function getState(symbol) {
-  return stateMap.get(symbol) || { stage: STAGES.IDLE };
+  return stateMap.get(symbol) || { stage: STAGES.WATCH };
 }
 
 export function reset() {
@@ -301,13 +317,19 @@ export function getSmartOI(oiChange) {
   return oiChange * 10;
 }
 
+export function getAllScores() {
+  return [...symbolScores.entries()]
+    .sort((a, b) => b[1] - a[1]);
+}
+
 export const signalPipeline = {
   processSymbol,
   getState,
   reset,
   setOITracker,
   getTopSymbols,
-  isSymbolEligible
+  isSymbolEligible,
+  getAllScores
 };
 
 export const signalStateMachine = {
@@ -318,4 +340,4 @@ export const signalStateMachine = {
   getTopSymbols
 };
 
-export { STAGES, calculateInstitutionalScore, detectEarlyPump, calculateBuyPressure, isDeadMarket };
+export { STAGES, calculateAdaptiveScore, getSignalLevel, detectEarlyPump, calculateBuyPressure, detectTrap, isNoise };

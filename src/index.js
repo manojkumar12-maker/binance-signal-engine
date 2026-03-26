@@ -6,9 +6,9 @@ import { fileURLToPath } from 'url';
 
 import { wsManager } from './websocket/binanceWS.js';
 import { pumpAnalyzer } from './analyzer/pumpAnalyzer.js';
-import { updateSniperState, runSniper } from './engine/sniperEngine.js';
+import { updateSniperState, runSniper, getTopWatching } from './engine/sniperEngine.js';
 import { executeTrade } from './execution/execute.js';
-import { processSymbol, setOITracker, updateBTCPrice } from './engine/signalPipeline.js';
+import { processSymbol, setOITracker, updateBTCPrice, getAllScores } from './engine/signalPipeline.js';
 import { orderflowTracker } from './engine/orderflowTracker.js';
 import { orderBookAnalyzer } from './engine/orderBookAnalyzer.js';
 import { marketDataTracker } from './engine/marketDataTracker.js';
@@ -54,8 +54,10 @@ const server = createServer((req, res) => {
         });
       });
       const top = topPumpSelector.getTopByOI(5);
+      const topWatch = getTopWatching();
+      const allScores = getAllScores();
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ top, signals: grouped }));
+      res.end(JSON.stringify({ top, topWatch, allScores, signals: grouped }));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'heatmap_error', message: e.message }));
@@ -219,8 +221,14 @@ async function start() {
     setInterval(() => {
       const topSignals = runSniper();
       if (topSignals.length > 0) {
-        const toNotify = topSignals.filter(s => s.type === "EARLY ENTRY" || s.type === "CONFIRMED ENTRY");
+        const toNotify = topSignals.filter(s => 
+          s.type === "EARLY ENTRY" || 
+          s.type === "SNIPER ENTRY" || 
+          s.type === "CONFIRMED ENTRY"
+        );
         notifySniperSignals(toNotify);
+        
+        broadcast('top_watch', getTopWatching());
       }
     }, 3000);
 
