@@ -211,6 +211,11 @@
     
     .lbl-early { background: rgba(43, 214, 255, 0.15); color: var(--accent); }
     .lbl-confirmed { background: rgba(0, 255, 136, 0.15); color: var(--green); }
+    .lbl-sniper { background: rgba(255, 51, 102, 0.15); color: var(--red); }
+    .lbl-watch { background: rgba(100, 116, 139, 0.15); color: var(--muted); }
+    .lbl-building { background: rgba(255, 184, 0, 0.15); color: #ffb800; }
+    .lbl-entry { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+    .lbl-explosion { background: rgba(255, 51, 102, 0.15); color: var(--red); }
 
     .sig-sym { font-size: 1.4rem; font-weight: 700; color: #fff; }
     
@@ -309,9 +314,13 @@
       connStatus.style.borderColor = 'rgba(255,51,102,0.3)';
     });
 
-    // 1. Radar Updates
+    // 1. Radar Updates - Top Watching Symbols
+    socket.on('top_watch', (data) => {
+      radarItems = data.slice(0, 15);
+      renderRadar();
+    });
+
     socket.on('high_pump', (data) => {
-      // Avoid rapid UI thrashing, keep max 15 items
       const existingIdx = radarItems.findIndex(i => i.symbol === data.symbol);
       if (existingIdx !== -1) {
         radarItems.splice(existingIdx, 1);
@@ -322,37 +331,67 @@
     });
 
     function renderRadar() {
+      if (radarItems.length === 0) {
+        radarList.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 20px; font-size: 0.85rem;">Listening for market anomalies...</div>';
+        return;
+      }
       radarList.innerHTML = radarItems.map(item => `
         <div class="radar-item">
           <div>
             <div class="radar-sym">${item.symbol}</div>
-            <div style="font-size:0.75rem; color:var(--muted); margin-top:4px;">Rank: ${item.rankScore}</div>
+            <div style="font-size:0.75rem; color:var(--muted); margin-top:4px;">${item.level || 'WATCH'} | Score: ${(item.score || item.confidence || 0).toFixed(0)}</div>
           </div>
           <div class="radar-data">
-            <span>Vol: <span class="data-hl">${parseFloat(item.volume).toFixed(2)}x</span></span>
-            <span>OI: <span class="data-hl">${parseFloat(item.fakeOI || 0).toFixed(2)}%</span></span>
+            <span>Vol: <span class="data-hl">${(item.volumeRatio || item.volume || 1).toFixed(2)}x</span></span>
+            <span>OI: <span class="data-hl">${(item.oiChange || 0).toFixed(2)}%</span></span>
           </div>
         </div>
       `).join('');
     }
 
-    // 2. Sniper Signals (Early & Confirmed)
+    // 2. Sniper Signals (All Types: WATCH, BUILDING, ENTRY, EXPLOSION, EARLY, SNIPER, CONFIRMED)
     socket.on('sniper', (data) => {
-      // Data format from index.js msg payload or direct: {symbol, type (early/confirmed missing from obj actually wait. No, index.js sends the signal object directly? Let's check.
-      // Ah, index.js sends { symbol, confidence, entry, stopLoss, tp1, tp2 }
-      // But we modified it to broadcast `s.type` ideally, we didn't fully, we just used {symbol, confidence, entry...}
-      // Wait, let's just make sure it formats cleanly:
-      
       const sigKey = data.symbol + (data.confidence || Date.now());
       if (executedSignals.has(sigKey)) return;
       executedSignals.add(sigKey);
 
       if (emptySignals) emptySignals.style.display = 'none';
 
-      // Guess type based on confidence/score logic or payload
-      const typeStr = data.confidence > 2 ? 'CONFIRMED ENTRY' : 'EARLY ENTRY';
-      const cClass = data.confidence > 2 ? 'lbl-confirmed' : 'lbl-early';
-      const borderClass = data.confidence > 2 ? 'type-confirmed' : 'type-early';
+      // Determine type and styling based on signal data
+      const type = data.type || 'EARLY ENTRY';
+      const confidence = parseFloat(data.confidence || 0);
+      
+      let typeStr, cClass, borderClass;
+      
+      if (type.includes('CONFIRMED') || confidence > 70) {
+        typeStr = 'CONFIRMED';
+        cClass = 'lbl-confirmed';
+        borderClass = 'type-confirmed';
+      } else if (type.includes('SNIPER') || confidence > 50) {
+        typeStr = 'SNIPER';
+        cClass = 'lbl-sniper';
+        borderClass = 'type-confirmed';
+      } else if (type.includes('EXPLOSION') || confidence > 40) {
+        typeStr = 'EXPLOSION';
+        cClass = 'lbl-explosion';
+        borderClass = 'type-confirmed';
+      } else if (type.includes('ENTRY')) {
+        typeStr = 'ENTRY';
+        cClass = 'lbl-entry';
+        borderClass = 'type-early';
+      } else if (type.includes('BUILDING')) {
+        typeStr = 'BUILDING';
+        cClass = 'lbl-building';
+        borderClass = 'type-early';
+      } else if (type.includes('WATCH')) {
+        typeStr = 'WATCH';
+        cClass = 'lbl-watch';
+        borderClass = 'type-early';
+      } else {
+        typeStr = 'EARLY';
+        cClass = 'lbl-early';
+        borderClass = 'type-early';
+      }
 
       const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
 
@@ -367,28 +406,27 @@
         <div class="sig-stats">
           <div class="stat-box">
             <div class="sb-lbl">ENTRY</div>
-            <div class="sb-val">${fmt(data.entry)}</div>
+            <div class="sb-val">${data.entry ? fmt(data.entry) : 'MARKET'}</div>
           </div>
           <div class="stat-box">
             <div class="sb-lbl">SCORE</div>
-            <div class="sb-val">${parseFloat(data.confidence || 0).toFixed(1)}</div>
+            <div class="sb-val">${confidence.toFixed(1)}</div>
           </div>
         </div>
 
         <div class="targets">
           <div class="target-list">
-            <div>TP1: ${fmt(data.tp1)}</div>
-            <div>TP2: ${fmt(data.tp2)}</div>
+            <div>TP1: ${data.tp1 ? fmt(data.tp1) : '--'}</div>
+            <div>TP2: ${data.tp2 ? fmt(data.tp2) : '--'}</div>
           </div>
           <div class="stop-loss">
-            SL: ${fmt(data.stopLoss)}
+            SL: ${data.stopLoss ? fmt(data.stopLoss) : '--'}
           </div>
         </div>
       `;
 
       signalsContainer.prepend(el);
       
-      // Keep only last 12 signals in DOM
       if (signalsContainer.children.length > 12) {
         signalsContainer.removeChild(signalsContainer.lastChild);
       }
