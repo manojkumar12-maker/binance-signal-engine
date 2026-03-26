@@ -355,18 +355,34 @@ class BinanceWebSocketManager {
     this.liqWs.on('message', (data) => {
       try {
         const message = JSON.parse(data);
-        if (message.data) {
-          const liq = message.data;
-          const symbol = liq.s;
-          const side = liq.S;
-          const price = parseFloat(liq.p);
-          const qty = parseFloat(liq.q);
-          
-          console.log(`💥 LIQ ${symbol} ${side} ${price} x${qty}`);
-          
-          this.callbacks.liquidation.forEach(cb => cb({ symbol, side, price, qty }));
+        const payload = message.data?.o;
+        
+        if (!payload) return;
+        
+        const symbol = payload.s;
+        const side = payload.S;
+        const price = parseFloat(payload.p);
+        const qty = parseFloat(payload.q);
+        
+        if (!symbol || isNaN(price) || isNaN(qty)) {
+          if ((this.liqCount || 0) % 50 === 0) {
+            console.log('❌ Bad LIQ data:', payload);
+          }
+          return;
         }
-      } catch (error) {}
+        
+        if (qty < 10) return;
+        
+        this.liqCount = (this.liqCount || 0) + 1;
+        
+        if (this.liqCount % 20 === 0) {
+          console.log(`💥 LIQ ${symbol} ${side} ${price} x${qty.toFixed(2)}`);
+        }
+        
+        this.callbacks.liquidation.forEach(cb => cb({ symbol, side, price, qty }));
+      } catch (error) {
+        // silent fail
+      }
     });
     
     this.liqWs.on('close', () => {
