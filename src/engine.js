@@ -21,7 +21,11 @@ const server = createServer((req, res) => {
   
   if (url === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end('{"status":"ok"}');
+    res.end(JSON.stringify({ 
+      status: 'ok', 
+      symbols: wsManager?.symbols?.length || 0,
+      timestamp: Date.now()
+    }));
     return;
   }
   
@@ -32,9 +36,16 @@ const server = createServer((req, res) => {
     return;
   }
   
-  if (url === '/' || url === '/dashboard') {
+  if (url === '/api/top') {
+    const top = getTopSymbols(10);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ top }));
+    return;
+  }
+  
+  if (url === '/' || url === '/index.html') {
     try {
-      const html = readFileSync(join(__dirname, '../frontend/dashboard.html'));
+      const html = readFileSync(join(__dirname, '../index.html'));
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(html);
     } catch (e) {
@@ -74,12 +85,13 @@ wsManager.onTicker(ticker => {
   });
   
   if (r?.type === 'SNIPER') {
-    console.log('🔴', r.symbol);
+    console.log('🔴 SNIPER:', r.symbol);
     wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
   }
   
   if (r?.type === 'EARLY_PUMP') {
     console.log('🚀 EARLY PUMP:', r.symbol, '| Score:', r.confidence);
+    wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
   }
   
   if (r?.type === 'HIGH_PUMP') {
@@ -89,6 +101,11 @@ wsManager.onTicker(ticker => {
   
   if (r?.type === 'ACCUMULATION') {
     console.log('📍 ACCUMULATION:', r.symbol, '| Phase:', r.pumpPhase);
+    wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
+  }
+  
+  if (r?.type === 'PRESSURE' && r.confidence >= 7) {
+    wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
   }
 });
 

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔥 Binance Signal Engine</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+    .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px; border-bottom: 2px solid #f0b90b; display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { color: #f0b90b; font-size: 1.8rem; }
+    .status { display: flex; align-items: center; gap: 10px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .container { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 20px; }
+    .panel { background: #121212; border-radius: 10px; padding: 15px; min-height: 400px; max-height: 70vh; overflow-y: auto; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #333; }
+    .panel-title { font-size: 1.2rem; font-weight: bold; }
+    .panel-pressure { border-top: 3px solid #9932cc; }
+    .panel-breakout { border-top: 3px solid #ff8c00; }
+    .panel-sniper { border-top: 3px solid #ff4444; }
+    .panel-highpump { border-top: 3px solid #ffd700; }
+    .panel-pressure .panel-title { color: #9932cc; }
+    .panel-breakout .panel-title { color: #ff8c00; }
+    .panel-sniper .panel-title { color: #ff4444; }
+    .panel-highpump .panel-title { color: #ffd700; }
+    .signal-card { background: #1e1e1e; border-radius: 8px; padding: 12px; margin-bottom: 10px; border-left: 3px solid; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+    .signal-card.pressure { border-left-color: #9932cc; }
+    .signal-card.breakout { border-left-color: #ff8c00; }
+    .signal-card.sniper { border-left-color: #ff4444; }
+    .signal-card.highpump { border-left-color: #ffd700; background: #2a2a1e; }
+    .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .symbol { font-weight: bold; font-size: 1.1rem; }
+    .confidence { padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; }
+    .confidence.high { background: #22c55e; color: #000; }
+    .confidence.good { background: #3b82f6; color: #fff; }
+    .confidence.medium { background: #f59e0b; color: #000; }
+    .breakout-timer { font-size: 1.5rem; color: #ff8c00; font-weight: bold; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 0.8rem; color: #aaa; }
+    .metric { text-align: center; }
+    .metric-value { color: #fff; font-weight: 500; }
+    .phase-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; background: #333; margin-left: 8px; }
+    .phase-compression { background: #6366f1; }
+    .phase-expansion { background: #f59e0b; }
+    .phase-accumulation { background: #8b5cf6; }
+    .empty-panel { text-align: center; color: #666; padding: 40px; }
+    .stats-bar { display: flex; gap: 20px; padding: 15px 20px; background: #1a1a1a; border-bottom: 1px solid #333; }
+    .stat { display: flex; align-items: center; gap: 8px; }
+    .stat-value { color: #f0b90b; font-weight: bold; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e1e1e; }
+    ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+    @media (max-width: 900px) { .container { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔥 BINANCE SIGNAL ENGINE</h1>
+    <div class="status">
+      <div class="status-dot"></div>
+      <span>Live</span>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat">Symbols: <span class="stat-value" id="symbolCount">0</span></div>
+    <div class="stat">Trades: <span class="stat-value" id="tradeCount">0</span></div>
+    <div class="stat">Signals: <span class="stat-value" id="signalCount">0</span></div>
+    <div class="stat">Last Update: <span class="stat-value" id="lastUpdate">--</span></div>
+  </div>
+
+  <div class="container">
+    <div class="panel panel-highpump">
+      <div class="panel-header">
+        <div class="panel-title">🔥 HIGH PUMP</div>
+      </div>
+      <div id="highPumpSignals">
+        <div class="empty-panel">Waiting for signals...</div>
+      </div>
+    </div>
+
+    <div class="panel panel-pressure">
+      <div class="panel-header">
+        <div class="panel-title">🟣 PRESSURE</div>
+      </div>
+      <div id="pressureSignals">
+        <div class="empty-panel">Waiting for signals...</div>
+      </div>
+    </div>
+
+    <div class="panel panel-sniper">
+      <div class="panel-header">
+        <div class="panel-title">🔴 SNIPER</div>
+      </div>
+      <div id="sniperSignals">
+        <div class="empty-panel">Waiting for signals...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const signals = {
+      highPump: [],
+      pressure: [],
+      sniper: []
+    };
+
+    let tradeCount = 0;
+    let signalCount = 0;
+
+    const API_BASE = window.location.hostname === 'localhost' 
+      ? 'http://localhost:8080' 
+      : '';
+
+    async function fetchData() {
+      try {
+        const res = await fetch(`${API_BASE}/api/health`);
+        const data = await res.json();
+        document.getElementById('symbolCount').textContent = data.symbols || 0;
+      } catch (e) {
+        console.log('API not available');
+      }
+    }
+
+    function getConfidenceClass(confidence) {
+      if (confidence >= 70) return 'high';
+      if (confidence >= 50) return 'good';
+      return 'medium';
+    }
+
+    function formatPhase(phase) {
+      if (!phase) return '';
+      return `<span class="phase-badge phase-${phase.toLowerCase()}">${phase}</span>`;
+    }
+
+    function addHighPumpSignal(data) {
+      const card = `
+        <div class="signal-card highpump">
+          <div class="signal-header">
+            <span class="symbol">${data.symbol}</span>
+            <span class="confidence high">🔥 ${data.confidence}%</span>
+          </div>
+          <div style="margin-bottom: 8px; color: #aaa; font-size: 0.85rem;">
+            Direction: <strong>${data.direction}</strong> ${formatPhase(data.pumpPhase)}
+          </div>
+          <div class="metrics">
+            <div class="metric"><div class="metric-value">${data.entry?.toFixed(4) || '0'}</div><div>Entry</div></div>
+            <div class="metric"><div class="metric-value">${data.stopLoss?.toFixed(4) || '0'}</div><div>SL</div></div>
+            <div class="metric"><div class="metric-value">${data.takeProfit?.toFixed(4) || '0'}</div><div>TP</div></div>
+          </div>
+          <div style="margin-top: 8px; font-size: 0.75rem; color: #888;">
+            ${data.accumulation ? '📍 Accum ' : ''}${data.compression ? '📦 Compress ' : ''}${data.breakout ? '🚀 Breakout ' : ''}${data.expansion ? '⚡ Expand ' : ''}${data.trapLong ? '💥 Long Trap' : ''}${data.trapShort ? '💥 Short Trap' : ''}
+          </div>
+        </div>`;
+      signals.highPump.unshift(card);
+      signals.highPump = signals.highPump.slice(0, 10);
+      signalCount++;
+      updateUI();
+    }
+
+    function addPressureSignal(data) {
+      const card = `
+        <div class="signal-card pressure">
+          <div class="signal-header">
+            <span class="symbol">${data.symbol}</span>
+            <span class="confidence ${getConfidenceClass(data.confidence)}">${data.confidence}%</span>
+          </div>
+          <div class="metrics">
+            <div class="metric"><div class="metric-value">${data.data?.oiChange?.toFixed(1) || '0'}%</div><div>OI</div></div>
+            <div class="metric"><div class="metric-value">${data.data?.volume?.toFixed(1) || '0'}x</div><div>Vol</div></div>
+            <div class="metric"><div class="metric-value">${data.data?.orderFlow?.toFixed(1) || '1'}</div><div>Flow</div></div>
+          </div>
+        </div>`;
+      signals.pressure.unshift(card);
+      signals.pressure = signals.pressure.slice(0, 15);
+      signalCount++;
+      updateUI();
+    }
+
+    function addSniperSignal(data) {
+      const card = `
+        <div class="signal-card sniper">
+          <div class="signal-header">
+            <span class="symbol">${data.symbol}</span>
+            <span class="confidence high">${data.confidence}%</span>
+          </div>
+          <div class="metrics">
+            <div class="metric"><div class="metric-value">${data.entry?.toFixed(4)}</div><div>Entry</div></div>
+            <div class="metric"><div class="metric-value">${data.stopLoss?.toFixed(4)}</div><div>SL</div></div>
+            <div class="metric"><div class="metric-value">${data.takeProfit?.toFixed(4)}</div><div>TP</div></div>
+          </div>
+        </div>`;
+      signals.sniper.unshift(card);
+      signals.sniper = signals.sniper.slice(0, 10);
+      signalCount++;
+      updateUI();
+    }
+
+    function updateUI() {
+      document.getElementById('highPumpSignals').innerHTML = signals.highPump.length ? signals.highPump.join('') : '<div class="empty-panel">Waiting for HIGH PUMP signals...</div>';
+      document.getElementById('pressureSignals').innerHTML = signals.pressure.length ? signals.pressure.join('') : '<div class="empty-panel">Waiting for pressure signals...</div>';
+      document.getElementById('sniperSignals').innerHTML = signals.sniper.length ? signals.sniper.join('') : '<div class="empty-panel">Waiting for sniper signals...</div>';
+      document.getElementById('tradeCount').textContent = tradeCount.toLocaleString();
+      document.getElementById('signalCount').textContent = signalCount;
+      document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+    }
+
+    // Try WebSocket first (for local/railway)
+    try {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsHost = window.location.host || 'localhost:8080';
+      const ws = new WebSocket(`${wsProtocol}//${wsHost}`);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        document.querySelector('.status-dot').style.background = '#22c55e';
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.signal) {
+          const s = data.signal;
+          if (s.type === 'HIGH_PUMP') {
+            addHighPumpSignal(s);
+          } else if (s.type === 'SNIPER') {
+            addSniperSignal(s);
+          } else if (s.type === 'PRESSURE' || s.type === 'EARLY_PUMP' || s.type === 'ACCUMULATION') {
+            addPressureSignal(s);
+          }
+        }
+        
+        tradeCount++;
+        if (tradeCount % 1000 === 0) updateUI();
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        document.querySelector('.status-dot').style.background = '#ef4444';
+      };
+
+      ws.onerror = () => {
+        console.log('WebSocket error, falling back to polling');
+      };
+    } catch (e) {
+      console.log('WebSocket not available, using polling fallback');
+    }
+
+    // Poll as fallback
+    setInterval(() => {
+      fetchData();
+    }, 5000);
+
+    fetchData();
+    console.log('🔥 Signal Engine Dashboard ready');
+  </script>
+</body>
+</html>
