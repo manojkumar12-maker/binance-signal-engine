@@ -30,12 +30,14 @@ const server = createServer((req, res) => {
     return;
   }
 
-  if (req.url === '/api/health') {
+  const pathOnly = req.url.split('?')[0];
+
+  if (pathOnly === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end('{"status":"ok"}');
     return;
   }
-  if (req.url === '/heatmap') {
+  if (pathOnly === '/heatmap' || pathOnly === '/api/heatmap') {
     try {
       const signals = getRecentSignals(200);
       const grouped = {};
