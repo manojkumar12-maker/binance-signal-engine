@@ -28,6 +28,91 @@ export function selectTopSignals(signals, limit = 5) {
     .slice(0, limit);
 }
 
+export function getDirection(orderFlow) {
+  if (!orderFlow) return null;
+  if (orderFlow > 1.1) return "LONG";
+  if (orderFlow < 0.9) return "SHORT";
+  return null;
+}
+
+export function isInNoTradeZone(orderFlow) {
+  return orderFlow >= 0.95 && orderFlow <= 1.05;
+}
+
+export function validateDirection(signal) {
+  const orderFlow = signal.orderFlow || signal.imbalance || 1;
+  
+  if (isInNoTradeZone(orderFlow)) {
+    return { valid: false, reason: 'NO_TRADE_ZONE', direction: null };
+  }
+  
+  const direction = getDirection(orderFlow);
+  
+  if (!direction) {
+    return { valid: false, reason: 'NO_DIRECTION', direction: null };
+  }
+  
+  return { valid: true, direction };
+}
+
+export function isHighQuality(signal) {
+  if (!signal) return false;
+  
+  const score = signal.finalScore || signal.score || signal.confidence || 0;
+  const volume = signal.volumeRatio || signal.volume || 1;
+  const orderFlow = signal.orderFlow || signal.imbalance || 1;
+  const oiChange = Math.abs(signal.oiChange || 0);
+  
+  const direction = getDirection(orderFlow);
+  const hasImbalance = orderFlow > 1.2 || orderFlow < 0.8;
+  const validDirection = direction !== null && !isInNoTradeZone(orderFlow);
+  
+  return (
+    score >= 30 &&
+    volume > 1.5 &&
+    validDirection &&
+    hasImbalance
+  );
+}
+
+export function isExecutionReady(signal) {
+  if (!signal) return false;
+  
+  const type = signal.type || '';
+  const score = signal.finalScore || signal.score || signal.confidence || 0;
+  const orderFlow = signal.orderFlow || signal.imbalance || 1;
+  
+  if (isInNoTradeZone(orderFlow)) return false;
+  
+  const direction = getDirection(orderFlow);
+  if (!direction) return false;
+  
+  const executionTypes = ['CONFIRMED ENTRY', 'SNIPER ENTRY', 'EXPLOSION'];
+  const highScore = score >= 40;
+  const strongDirection = orderFlow > 1.3 || orderFlow < 0.7;
+  
+  return (executionTypes.includes(type) || highScore) && strongDirection;
+}
+
+  const diff = now - lastSignalTime[key];
+  const remaining = cooldownMs - diff;
+
+  if (remaining <= 0) {
+    lastSignalTime[key] = now;
+    return { allowed: true, cooldown: 0 };
+  }
+
+  return { allowed: false, cooldown: Math.ceil(remaining / 1000) };
+}
+
+export function selectTopSignals(signals, limit = 5) {
+  if (!signals || signals.length === 0) return [];
+  
+  return signals
+    .sort((a, b) => (b.finalScore || b.score || 0) - (a.finalScore || a.score || 0))
+    .slice(0, limit);
+}
+
 export function isHighQuality(signal) {
   if (!signal) return false;
   

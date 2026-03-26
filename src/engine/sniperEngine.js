@@ -17,7 +17,7 @@ export function updateSniperState(symbol, data) {
   if (data.oiChange !== undefined) sniperState.oiChange[symbol] = data.oiChange;
 }
 
-import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType } from '../signals/signalFilters.js';
+import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection } from '../signals/signalFilters.js';
 
 function canEmitSignal(symbol, type) {
   const cooldown = getCooldownForType(type);
@@ -30,16 +30,18 @@ function recordSignal(symbol) {
 }
 
 // ==============================
-// STAGE 1 — PRESSURE (Relaxed)
+// STAGE 1 — PRESSURE (Require imbalance)
 // ==============================
 function detectPressure(symbol) {
   const imbalance = sniperState.imbalance[symbol] || 1;
   const volume = sniperState.volumeRatio[symbol] || 1;
 
-  if (imbalance > 1.03 || volume > 1.2) {
-    return true;
-  }
-  return false;
+  if (isInNoTradeZone(imbalance)) return false;
+  
+  const hasImbalance = imbalance > 1.15 || imbalance < 0.85;
+  const hasVolume = volume > 1.3;
+  
+  return hasImbalance && hasVolume;
 }
 
 // ==============================
@@ -66,36 +68,49 @@ function detectMomentum(symbol, price) {
   const velocity = prev > 0 ? (price - prev) / prev : 0;
   sniperState.prevFast[symbol] = price;
 
-  return velocity > 0.0005;
+  return velocity > 0.0003;
 }
 
 // ==============================
-// CALCULATE ADAPTIVE SCORE
+// CALCULATE ADAPTIVE SCORE (Direction weighted)
 // ==============================
 function calculateScore(data) {
   let score = 0;
   const { oiChange, volumeRatio, imbalance } = data;
   
-  if (volumeRatio > 1.5) score += 15;
-  if (volumeRatio > 2) score += 10;
-  if (volumeRatio > 3) score += 10;
+  if (isInNoTradeZone(imbalance)) return 0;
   
-  if (Math.abs(oiChange) > 0.1) score += 20;
-  if (Math.abs(oiChange) > 0.3) score += 15;
-  if (Math.abs(oiChange) > 0.5) score += 10;
+  const direction = getDirection(imbalance);
+  if (!direction) return 0;
   
-  if (imbalance > 1.1) score += 15;
-  if (imbalance > 1.2) score += 10;
-  if (imbalance > 1.4) score += 10;
+  if (volumeRatio > 1.5) score += 10;
+  if (volumeRatio > 2) score += 5;
+  if (volumeRatio > 3) score += 5;
+  
+  if (Math.abs(oiChange) > 0.1) score += 10;
+  if (Math.abs(oiChange) > 0.3) score += 5;
+  
+  if (imbalance > 1.2) score += 20;
+  if (imbalance > 1.4) score += 15;
+  if (imbalance > 1.6) score += 10;
+  
+  if (imbalance < 0.8) score += 20;
+  if (imbalance < 0.6) score += 15;
+  if (imbalance < 0.5) score += 10;
   
   return Math.min(100, score);
 }
 
 // ==============================
-// STAGE 4 — ENTRY LOGIC (Adaptive)
+// STAGE 4 — ENTRY LOGIC (Direction required)
 // ==============================
 function getEntrySignal(symbol, data) {
   const { price, oiChange, volumeRatio, imbalance } = data;
+
+  if (isInNoTradeZone(imbalance)) return null;
+  
+  const direction = getDirection(imbalance);
+  if (!direction) return null;
 
   const pressure = detectPressure(symbol);
   const breakout = detectBreakout(symbol, price);
@@ -103,50 +118,54 @@ function getEntrySignal(symbol, data) {
   
   const score = calculateScore(data);
 
-  // 🔥 EXPLOSION (HIGH CONFIDENCE)
-  if (pressure && momentum && oiChange > 0.2 && volumeRatio > 2) {
+  // 🔥 EXPLOSION (HIGH CONFIDENCE + DIRECTION)
+  if (pressure && momentum && volumeRatio > 2 && score >= 40) {
     if (canEmitSignal(symbol, 'CONFIRMED_ENTRY')) {
       recordSignal(symbol);
       return {
         type: "CONFIRMED ENTRY",
         finalScore: score + 30,
-        level: "EXPLOSION"
+        level: "EXPLOSION",
+        direction
       };
     }
   }
 
-  // 🔴 SNIPER (Good conditions)
-  if (pressure && breakout && oiChange > 0.1 && volumeRatio > 1.5) {
+  // 🔴 SNIPER (Good conditions + DIRECTION)
+  if (pressure && breakout && volumeRatio > 1.5 && score >= 30) {
     if (canEmitSignal(symbol, 'SNIPER_ENTRY')) {
       recordSignal(symbol);
       return {
         type: "SNIPER ENTRY",
         finalScore: score + 20,
-        level: "ENTRY"
+        level: "ENTRY",
+        direction
       };
     }
   }
 
-  // ⚡ EARLY ENTRY (Building)
-  if (pressure || breakout) {
+  // ⚡ EARLY ENTRY (Building + DIRECTION)
+  if ((pressure || breakout) && score >= 25) {
     if (canEmitSignal(symbol, 'EARLY_ENTRY')) {
       recordSignal(symbol);
       return {
         type: "EARLY ENTRY",
         finalScore: score + 10,
-        level: "BUILDING"
+        level: "BUILDING",
+        direction
       };
     }
   }
 
-  // 👀 WATCH (Score based)
-  if (score >= 30) {
+  // 👀 WATCH (Score based + DIRECTION)
+  if (score >= 25 && direction) {
     if (canEmitSignal(symbol, 'WATCH')) {
       recordSignal(symbol);
       return {
         type: "WATCH",
         finalScore: score,
-        level: "WATCH"
+        level: "WATCH",
+        direction
       };
     }
   }
@@ -176,12 +195,19 @@ export function getTopWatching() {
     };
     
     if (!data.price) continue;
+    if (isInNoTradeZone(data.imbalance)) continue;
+    
+    const direction = getDirection(data.imbalance);
+    if (!direction) continue;
     
     const score = calculateScore(data);
+    if (score < 15) continue;
+    
     watching.push({
       symbol: s,
       ...data,
       score,
+      direction,
       level: score >= 50 ? "EXPLOSION" : 
              score >= 40 ? "ENTRY" : 
              score >= 30 ? "BUILDING" : "WATCH"
@@ -208,6 +234,7 @@ export function runSniper() {
     };
 
     if (!data.price) continue;
+    if (isInNoTradeZone(data.imbalance)) continue;
 
     const signal = getEntrySignal(s, data);
 
