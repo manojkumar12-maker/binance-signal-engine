@@ -50,6 +50,11 @@ function broadcast(type, data) {
 
 function handleHighPumpCandidates(ranked) {
   ranked.forEach((snap) => {
+    if (snap.oiSpike) {
+      console.log(`⚡ OI SPIKE: ${snap.symbol} ΔOI=${(snap.oiChange || 0).toFixed(2)}%`);
+    }
+    if (!snap.isCandidate) return;
+
     const pump = topPumpSelector.pumpTrigger(snap);
     if (!pump.triggered) return;
     if (!topPumpSelector.canEmit(snap.symbol, 90_000)) return;
@@ -85,12 +90,15 @@ function handleTicker(ticker) {
   const snapshot = topPumpSelector.ingest(analysis, ticker);
 
   const now = Date.now();
-  if (now - lastRankRun > 1000) {
-    const ranked = topPumpSelector.evaluateTop(5);
-    topSymbols = new Set(ranked.map(r => r.symbol));
-    handleHighPumpCandidates(ranked);
-    lastRankRun = now;
-  }
+    if (now - lastRankRun > 1000) {
+      const ranked = topPumpSelector.evaluateTop(5);
+      topSymbols = new Set(ranked.map(r => r.symbol));
+      ranked.forEach((s, i) => {
+        console.log(`🏆 TOP ${i + 1}: ${s.symbol} score=${s.rankScore?.toFixed?.(2)} oi=${(s.oiChange || 0).toFixed(2)} vol=${(s.volumeRatio || s.volume || 0).toFixed(2)} mom=${(s.momentum || 0).toFixed(3)} imb=${(s.imbalance || 0).toFixed(2)}`);
+      });
+      handleHighPumpCandidates(ranked);
+      lastRankRun = now;
+    }
 
   if (!topSymbols.has(ticker.symbol)) return;
 

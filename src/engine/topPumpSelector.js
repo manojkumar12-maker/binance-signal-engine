@@ -1,3 +1,8 @@
+const OI_SPIKE_THRESHOLD = 1.5;
+const CANDIDATE_OI_MIN = 1;
+const CANDIDATE_VOL_MIN = 2;
+const CANDIDATE_MOM_MIN = 0.02;
+
 class TopPumpSelector {
   constructor() {
     this.snapshots = new Map();
@@ -37,11 +42,12 @@ class TopPumpSelector {
     const oiScore = Math.abs(s.oiChange || 0);
     const momentumScore = Math.abs(s.momentum || 0);
     const imbalanceScore = s.imbalance || 0;
+    // Strong pump weighting: favor OI spikes and momentum
     const raw =
-      volumeScore * 2 +
-      oiScore * 2 +
-      momentumScore * 2 +
-      imbalanceScore * 1;
+      volumeScore * 3 +
+      oiScore * 5 +
+      momentumScore * 4 +
+      imbalanceScore * 2;
     return Number.isFinite(raw) ? raw : 0;
   }
 
@@ -54,7 +60,15 @@ class TopPumpSelector {
     }
 
     const ranked = Array.from(this.snapshots.values())
-      .map(s => ({ ...s, rankScore: this.computeScore(s) }))
+      .map(s => {
+        const rankScore = this.computeScore(s);
+        const isCandidate =
+          Math.abs(s.oiChange || 0) > CANDIDATE_OI_MIN &&
+          (s.volumeRatio || s.volume || 0) > CANDIDATE_VOL_MIN &&
+          (Math.abs(s.momentum || 0) > CANDIDATE_MOM_MIN);
+        const oiSpike = Math.abs(s.oiChange || 0) > OI_SPIKE_THRESHOLD;
+        return { ...s, rankScore, isCandidate, oiSpike };
+      })
       .sort((a, b) => (b.rankScore || 0) - (a.rankScore || 0))
       .slice(0, limit);
 
