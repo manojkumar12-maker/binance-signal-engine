@@ -51,8 +51,9 @@ const server = createServer((req, res) => {
           timestamp: sig.timestamp
         });
       });
+      const top = topPumpSelector.getTopByOI(5);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(grouped));
+      res.end(JSON.stringify({ top, signals: grouped }));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'heatmap_error', message: e.message }));
@@ -78,6 +79,7 @@ server.listen(PORT, '0.0.0.0', () => console.log('OK', PORT));
 
 let topSymbols = new Set();
 let lastRankRun = 0;
+let lastDebugTelegram = 0;
 
 function broadcast(type, data) {
   io.emit(type, data);
@@ -90,8 +92,15 @@ function handleHighPumpCandidates(ranked) {
     }
     // ranked list is already candidate-filtered; extra guard
     if (!snap.isCandidate) return;
+
+    let level = null;
+    const oiAbs = Math.abs(snap.oiChange || 0);
+    if (oiAbs > 2) level = '🚀 STRONG PUMP';
+    else if (oiAbs > 0.5) level = '⚡ BUILDING';
+    else if (oiAbs > 0.1) level = '👀 WATCH';
+
     const pump = topPumpSelector.pumpTrigger(snap);
-    if (!pump.triggered) return;
+    if (!pump.triggered && !level) return;
     if (!topPumpSelector.canEmit(snap.symbol, 90_000)) return;
 
     const payload = {
@@ -105,7 +114,11 @@ function handleHighPumpCandidates(ranked) {
 
     console.log(`🚀 HIGH_PUMP ${payload.symbol} | rank=${payload.rankScore} | strength=${payload.strength}`);
     broadcast('high_pump', payload);
-    sendTelegram(`🚀 HIGH PUMP: ${payload.symbol}\nScore: ${payload.rankScore}\nStrength: ${payload.strength}`).catch(() => {});
+    if (level) {
+      sendTelegram(`${level}\n${payload.symbol}\nOI: ${(snap.oiChange || 0).toFixed(3)}%\nVol: ${(snap.volumeRatio || snap.volume || 0).toFixed(2)}`).catch(() => {});
+    } else {
+      sendTelegram(`🚀 HIGH PUMP: ${payload.symbol}\nScore: ${payload.rankScore}\nStrength: ${payload.strength}`).catch(() => {});
+    }
   });
 }
 
@@ -126,6 +139,14 @@ function handleTicker(ticker) {
   const snapshot = topPumpSelector.ingest(analysis, ticker);
 
   const now = Date.now();
+    if (now - lastDebugTelegram > 60000) {
+      const topWeak = topPumpSelector.getTopByOI(1);
+      if (topWeak.length > 0) {
+        const t = topWeak[0];
+        sendTelegram(`DEBUG ${t.symbol}\nOI: ${t.oi?.toFixed?.(4)}%\nVol: ${t.volume?.toFixed?.(2)}`).catch(() => {});
+      }
+      lastDebugTelegram = now;
+    }
     if (now - lastRankRun > 1000) {
       const ranked = topPumpSelector.evaluateTop(5);
       topSymbols = new Set(ranked.map(r => r.symbol));

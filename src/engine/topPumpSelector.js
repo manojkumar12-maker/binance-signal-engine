@@ -77,6 +77,20 @@ class TopPumpSelector {
     return ranked;
   }
 
+  getTopByOI(limit = 5) {
+    return Array.from(this.snapshots.values())
+      .map(s => ({
+        symbol: s.symbol,
+        oi: s.oiChange || 0,
+        volume: s.volumeRatio || s.volume || 0,
+        momentum: s.momentum || 0,
+        imbalance: s.imbalance || 0,
+        rankScore: this.computeScore(s)
+      }))
+      .sort((a, b) => Math.abs(b.oi) - Math.abs(a.oi))
+      .slice(0, limit);
+  }
+
   isTop(symbol) {
     return this.topSymbols.has(symbol);
   }
