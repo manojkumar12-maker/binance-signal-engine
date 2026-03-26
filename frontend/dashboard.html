@@ -108,18 +108,18 @@
 
     socket.on('connect', () => console.log('Connected'));
     
-      socket.on('pressure', (data) => {
+      socket.on('high_pump', (data) => {
         const card = `
           <div class="signal-card pressure">
             <div class="signal-header">
               <span class="symbol">${data.symbol}</span>
-              <span class="confidence high">${data.score}%</span>
+              <span class="confidence high">${data.strength}%</span>
           </div>
           <div class="metrics">
             <div class="metric"><div class="metric-value">${data.fakeOI?.toFixed(2) || '0'}</div><div>FakeOI</div></div>
             <div class="metric"><div class="metric-value">${data.flow?.toFixed(1) || '1'}</div><div>Flow</div></div>
             <div class="metric"><div class="metric-value">${data.volume?.toFixed(1) || '0'}x</div><div>Volume</div></div>
-            <div class="metric"><div class="metric-value">${data.score || 0}</div><div>Score</div></div>
+            <div class="metric"><div class="metric-value">${data.rankScore || 0}</div><div>Score</div></div>
           </div>
         </div>`;
         signals.pressure.unshift(card);
@@ -160,9 +160,7 @@
       });
 
       socket.on('signal', (data) => {
-        if (data.type === 'SNIPER') {
-          socket.emit('sniper', data);
-        }
+        // Do nothing, sniper event is handled separately
       });
     }
 

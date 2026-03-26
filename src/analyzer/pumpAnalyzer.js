@@ -412,7 +412,8 @@ class PumpAnalyzer {
       this.checkAutoRelax();
     }
     
-    return this.selectTopSignals();
+    this.selectTopSignals();
+    return analysis;
   }
 
   checkVolatilityExpansion(analysis) {

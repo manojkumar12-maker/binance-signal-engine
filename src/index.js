@@ -109,6 +109,9 @@ function handleHighPumpCandidates(ranked) {
       strength: Number(pump.signalStrength?.toFixed?.(2) ?? pump.signalStrength),
       rankScore: Number(snap.rankScore?.toFixed?.(2) ?? snap.rankScore),
       price: snap.price,
+      fakeOI: snap.fakeOI,
+      flow: snap.orderFlow,
+      volume: snap.volumeRatio || snap.volume,
       context: pump.context
     };
 
