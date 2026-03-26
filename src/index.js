@@ -177,7 +177,13 @@ function handleTicker(ticker) {
       addSignal(signal);
       broadcast('sniper', signal);
       broadcast('signal', signal);
-      sendTelegram(`🎯 SNIPER: ${signal.symbol}\nEntry: ${signal.entryPrice?.toFixed?.(6) || ticker.price}\nConf: ${signal.confidence || ''}`).catch(() => {});
+      const isLong = signal.targets.tp1 > signal.entryPrice;
+      const side = isLong ? 'BUY (LONG) 🚀' : 'SELL (SHORT) 🩸';
+      const formattedSymbol = signal.symbol.replace('USDT', '/USDT');
+      const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
+      const msg = `💥SNIPER ENTRY 💥\n\n${formattedSymbol} — ${side}\n\n🟢 Leverage: Cross 5X\n\n⚡️ Entry: ${fmt(signal.entryPrice)}\n\n😵 Take Profits:\n\nTP1: ${fmt(signal.targets.tp1)}\nTP2: ${fmt(signal.targets.tp2)}\nTP3: ${fmt(signal.targets.tp3)}\n\nStop Loss: ${fmt(signal.stopLoss)}\n\n⚠️ Risk Management:\nUse only 3% – 5% of your portfolio.`;
+      
+      sendTelegram(msg).catch(() => {});
       console.log(`🎯 SNIPER ${signal.symbol} | entry=${signal.entryPrice?.toFixed?.(6)} | conf=${signal.confidence}`);
     }).catch(() => {});
   }
