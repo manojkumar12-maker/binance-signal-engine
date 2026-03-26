@@ -2,7 +2,7 @@ console.log('Starting...');
 
 const { wsManager } = await import('./websocket/binanceWS.js');
 const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
-const { processSymbol, setOITracker, updateBTCPrice } = await import('./engine/signalPipeline.js');
+const { processSymbol, setOITracker, updateBTCPrice, getTopSymbols } = await import('./engine/signalPipeline.js');
 const { oiTracker } = await import('./engine/oiTracker.js');
 const { orderflowTracker } = await import('./engine/orderflowTracker.js');
 const { createServer } = await import('http');
@@ -68,6 +68,10 @@ wsManager.onTicker(ticker => {
     console.log('🔴', r.symbol);
     wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
   }
+  
+  if (r?.type === 'EARLY_PUMP') {
+    console.log('🚀 EARLY PUMP:', r.symbol, '| Score:', r.confidence);
+  }
 });
 
 wsManager.onTrade(trade => {
@@ -90,5 +94,13 @@ setInterval(() => {
     console.log(`🔥 Active trade symbols: ${ofStats.activeSymbols} | OF tracked: ${ofStats.trackedSymbols} | Last: ${ofStats.lastProcessedSymbol}`);
   }
 }, 30000);
+
+setInterval(() => {
+  const topSymbols = getTopSymbols(5);
+  if (topSymbols.length > 0) {
+    const topList = topSymbols.map(([s, score]) => `${s}(${score})`).join(', ');
+    console.log(`🏆 Top 5 Symbols: ${topList}`);
+  }
+}, 60000);
 
 console.log('Running');

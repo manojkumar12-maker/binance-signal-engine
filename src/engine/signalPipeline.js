@@ -9,13 +9,81 @@ const stateMap = new Map();
 let oiTrackerModule = null;
 
 const oiRanking = new Map();
-const SIGNAL_COOLDOWN = 2 * 60 * 1000;
+const SIGNAL_COOLDOWN = 5 * 60 * 1000;
 const lastSignalTime = {};
+
+const symbolScores = new Map();
+const DEAD_MARKET_VOLUME_RATIO = 1.2;
+const DEAD_MARKET_OI_CHANGE = 0.5;
+const MIN_SIGNAL_SCORE = 6;
+const MAX_ACTIVE_SIGNALS = 10;
 
 let btcPriceChange = 0;
 
 export function setOITracker(tracker) {
   oiTrackerModule = tracker;
+}
+
+export function updateBTCPrice(btcChange) {
+  btcPriceChange = btcChange;
+}
+
+function normalizeOI(oi, allOI) {
+  if (!allOI || allOI.length === 0) return 0;
+  const max = Math.max(...allOI.filter(v => !isNaN(v) && v > 0));
+  return max > 0 ? oi / max : 0;
+}
+
+function isDeadMarket(d) {
+  return d.volume < DEAD_MARKET_VOLUME_RATIO && Math.abs(d.oiChange) < DEAD_MARKET_OI_CHANGE;
+}
+
+function calculateInstitutionalScore(d) {
+  let score = 0;
+  
+  if (d.oiChange > 3) score += 2;
+  else if (d.oiChange > 1.5) score += 1;
+  
+  if (d.volume > 2.5) score += 2;
+  else if (d.volume > 2.0) score += 1;
+  
+  if (d.orderFlow > 1.3) score += 2;
+  else if (d.orderFlow > 1.15) score += 1;
+  
+  if (d.structureBreak) score += 2;
+  
+  if (d.momentum > 0.7) score += 1;
+  
+  return Math.min(9, score);
+}
+
+function detectEarlyPump(d) {
+  return (
+    d.volume > 2 &&
+    d.oiChange > 1.5 &&
+    d.priceChange < 1.0
+  );
+}
+
+function calculateBuyPressure(buyVolume, sellVolume) {
+  const total = buyVolume + sellVolume;
+  if (total === 0) return 0.5;
+  return buyVolume / total;
+}
+
+function detectTrap(d) {
+  return (
+    (d.priceChange > 5 && d.orderFlow < 1.1) ||
+    (d.priceChange < -5 && d.orderFlow < 1.1)
+  );
+}
+
+function isNoise(d) {
+  return (
+    Math.abs(d.oiChange) < 0.03 &&
+    Math.abs(d.fakeOI) < 0.15 &&
+    d.volume < 1.8
+  );
 }
 
 export function updateBTCPrice(btcChange) {
@@ -111,6 +179,18 @@ function canTrade(symbol) {
   return Date.now() - last > SIGNAL_COOLDOWN;
 }
 
+export function getTopSymbols(limit = 10) {
+  const sorted = [...symbolScores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
+  return sorted;
+}
+
+export function isSymbolEligible(symbol) {
+  const topSymbols = getTopSymbols(MAX_ACTIVE_SIGNALS);
+  return topSymbols.some(([s, score]) => s === symbol && score >= MIN_SIGNAL_SCORE);
+}
+
 export function processSymbol(symbol, marketData) {
   if (isNoise(marketData)) return null;
   if (!canTrade(symbol)) return null;
@@ -127,6 +207,13 @@ export function processSymbol(symbol, marketData) {
     price: marketData.price || 0
   };
   
+  if (isDeadMarket(d)) {
+    return null;
+  }
+  
+  const institutionalScore = calculateInstitutionalScore(d);
+  symbolScores.set(symbol, institutionalScore);
+  
   const state = stateMap.get(symbol) || { stage: STAGES.IDLE };
   
   if (detectTrap(d)) {
@@ -137,6 +224,20 @@ export function processSymbol(symbol, marketData) {
   const allOI = Array.from(oiRanking.values());
   const oiRank = normalizeOI(Math.abs(d.oiChange) + Math.abs(d.fakeOI), allOI);
   const score = calculateScore(d, oiRank);
+  
+  if (state.stage === STAGES.IDLE) {
+    if (detectEarlyPump(d)) {
+      state.stage = STAGES.PRESSURE;
+      state.score = score;
+      state.startTime = Date.now();
+      state.earlyPump = true;
+      stateMap.set(symbol, state);
+      
+      console.log(`🚀 EARLY PUMP: ${symbol} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OI=${d.oiChange.toFixed(1)}% | Score=${institutionalScore}`);
+      
+      return { type: 'EARLY_PUMP', symbol, confidence: institutionalScore, data: d, entry: d.price };
+    }
+  }
   
   if (state.stage === STAGES.IDLE) {
     if (detectPressure(d)) {
@@ -229,14 +330,17 @@ export const signalPipeline = {
   processSymbol,
   getState,
   reset,
-  setOITracker
+  setOITracker,
+  getTopSymbols,
+  isSymbolEligible
 };
 
 export const signalStateMachine = {
   getState,
   setState: (s, s2, d) => stateMap.set(s, { stage: s2, ...d }),
   checkTimeout: () => false,
-  getActiveSignals: () => []
+  getActiveSignals: () => [],
+  getTopSymbols
 };
 
-export { STAGES };
+export { STAGES, calculateInstitutionalScore, detectEarlyPump, calculateBuyPressure, isDeadMarket };

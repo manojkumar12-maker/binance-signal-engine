@@ -68,19 +68,21 @@ export class OrderflowTracker {
         buyVolume: 0,
         sellVolume: 0,
         pressure: 'NEUTRAL',
-        tradeCount: 0
+        tradeCount: 0,
+        buyPressure: 0.5
       };
     }
 
     const buy = d.buy;
     const sell = d.sell;
     const ratio = buy / (sell || 1);
+    const buyPressure = buy / (buy + sell || 1);
 
     let pressure = 'NEUTRAL';
-    if (ratio > 1.6) pressure = 'EXTREME_BUY';
+    if (ratio > 1.6 || buyPressure > 0.65) pressure = 'EXTREME_BUY';
     else if (ratio > 1.3) pressure = 'STRONG_BUY';
     else if (ratio > 1.1) pressure = 'BUY';
-    else if (ratio < 0.7) pressure = 'EXTREME_SELL';
+    else if (ratio < 0.7 || buyPressure < 0.35) pressure = 'EXTREME_SELL';
     else if (ratio < 0.8) pressure = 'SELL';
 
     return {
@@ -88,7 +90,8 @@ export class OrderflowTracker {
       buyVolume: buy,
       sellVolume: sell,
       pressure,
-      tradeCount: d.trades.length
+      tradeCount: d.trades.length,
+      buyPressure
     };
   }
 
