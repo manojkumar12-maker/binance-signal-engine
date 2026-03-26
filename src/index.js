@@ -1,4 +1,6 @@
 import { createServer } from 'http';
+```javascript
+import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -6,6 +8,8 @@ import { fileURLToPath } from 'url';
 
 import { wsManager } from './websocket/binanceWS.js';
 import { pumpAnalyzer } from './analyzer/pumpAnalyzer.js';
+import { updateSniperState, runSniper } from './engine/sniperEngine.js';
+import { executeTrade } from './execution/execute.js';
 import { processSymbol, setOITracker, updateBTCPrice } from './engine/signalPipeline.js';
 import { orderflowTracker } from './engine/orderflowTracker.js';
 import { orderBookAnalyzer } from './engine/orderBookAnalyzer.js';
@@ -141,6 +145,13 @@ function handleTicker(ticker) {
 
   const snapshot = topPumpSelector.ingest(analysis, ticker);
 
+  updateSniperState(snapshot.symbol, {
+    imbalance: snapshot.imbalance,
+    volumeRatio: snapshot.volumeRatio || snapshot.volume,
+    price: snapshot.price,
+    oiChange: snapshot.oiChange
+  });
+
   const now = Date.now();
     if (now - lastDebugTelegram > 60000) {
       const topWeak = topPumpSelector.getTopByOI(1);
@@ -165,27 +176,32 @@ function handleTicker(ticker) {
       handleHighPumpCandidates(ranked);
       lastRankRun = now;
     }
+}
 
-  if (!topSymbols.has(ticker.symbol)) return;
+const notifiedSignals = new Set();
+async function notifySniperSignals(signals) {
+  for (const s of signals) {
+    const sigKey = `${s.type}-${s.symbol}`;
+    if (notifiedSignals.has(sigKey)) continue;
+    notifiedSignals.add(sigKey);
 
-  const pipelineInput = toPipelineInput(snapshot);
-  const result = processSymbol(ticker.symbol, pipelineInput);
+    const trade = await executeTrade(s.symbol, s.type, s.price, 1000);
+    const side = trade.direction === "LONG" ? "BUY (LONG) 🚀" : "SELL (SHORT) 🩸";
+    const formattedSymbol = s.symbol.replace("USDT", "/USDT");
+    const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
 
-  if (result?.type === 'SNIPER') {
-    signalGenerator.generateSignal(ticker.symbol, result).then(signal => {
-      if (!signal) return;
-      addSignal(signal);
-      broadcast('sniper', signal);
-      broadcast('signal', signal);
-      const isLong = signal.targets.tp1 > signal.entryPrice;
-      const side = isLong ? 'BUY (LONG) 🚀' : 'SELL (SHORT) 🩸';
-      const formattedSymbol = signal.symbol.replace('USDT', '/USDT');
-      const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
-      const msg = `💥SNIPER ENTRY 💥\n\n${formattedSymbol} — ${side}\n\n🟢 Leverage: Cross 5X\n\n⚡️ Entry: ${fmt(signal.entryPrice)}\n\n😵 Take Profits:\n\nTP1: ${fmt(signal.targets.tp1)}\nTP2: ${fmt(signal.targets.tp2)}\nTP3: ${fmt(signal.targets.tp3)}\n\nStop Loss: ${fmt(signal.stopLoss)}\n\n⚠️ Risk Management:\nUse only 3% – 5% of your portfolio.`;
-      
-      sendTelegram(msg).catch(() => {});
-      console.log(`🎯 SNIPER ${signal.symbol} | entry=${signal.entryPrice?.toFixed?.(6)} | conf=${signal.confidence}`);
-    }).catch(() => {});
+    const msg = `💥${s.type} 💥\n\n${formattedSymbol} — ${side}\n\n🟢 Leverage: Cross 5X\n\n⚡️ Entry: ${fmt(trade.entry)}\n\n😵 Take Profits:\n\nTP1: ${fmt(trade.tp1)}\nTP2: ${fmt(trade.tp2)}\nTP3: ${fmt(trade.tp3)}\n\nStop Loss: ${fmt(trade.sl)}\n\n⚠️ Risk Management:\nUse only 3% – 5% of your portfolio.\n(Simulated Risk: $10, Size: ${trade.size.toFixed(2)})`;
+
+    sendTelegram(msg).catch(() => {});
+
+    broadcast('sniper', {
+      symbol: s.symbol,
+      confidence: s.finalScore.toFixed(1),
+      entry: trade.entry,
+      stopLoss: trade.sl,
+      tp1: trade.tp1,
+      tp2: trade.tp2
+    });
   }
 }
 
@@ -202,19 +218,4 @@ async function start() {
     await wsManager.initialize();
     console.log('Connected:', wsManager.symbols.length);
     sendTelegram('✅ ENGINE STARTED: index.js').catch(() => {});
-
-    pumpAnalyzer.initialize(wsManager.symbols);
-    marketDataTracker.initialize(wsManager.symbols);
-    orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
-    setOITracker(oiTracker);
-    await oiTracker.init(wsManager.symbols);
-
-    setInterval(() => orderflowTracker.reset(), 60000);
-    setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
-    console.log('Running');
-  } catch (e) {
-    console.error('Error:', e.message, e.stack);
-  }
-}
-
 start();
