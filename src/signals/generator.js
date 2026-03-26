@@ -2,13 +2,27 @@ import { state } from '../core/state.js';
 import { config, STAGES } from '../core/config.js';
 import { calculateInstitutionalScore } from './scorer.js';
 import { canTrade, setSignalTime, isDeadMarket, detectEarlyPump, detectTrap, isWeak } from './filters.js';
-import { getVolumeRatio } from '../processing/volume.js';
+import { getVolumeRatio, getVolumeData } from '../processing/volume.js';
 import { getOrderflowData } from '../processing/orderflow.js';
 import { detectLiquiditySweep, smartEntry, confirmMTF, updateHTF } from '../processing/structure.js';
 import { calculateMomentum, updateMomentum } from '../processing/momentum.js';
-import { analyzeLiquidations } from '../data/liquidations.js';
+import { analyzeLiquidations, getLiquidations } from '../data/liquidations.js';
 import { analyzeFunding } from '../data/funding.js';
 import { getImbalance } from '../data/orderbook.js';
+import {
+  detectAccumulation,
+  detectCompression,
+  calculateVelocity,
+  detectBreakout,
+  detectExpansion,
+  detectTrapLongSqueeze,
+  detectTrapShortSqueeze,
+  calculatePumpScore,
+  isHighPumpSignal,
+  getPumpPhase,
+  updateVolumeWindow,
+  updateOIWindow
+} from '../processing/pumpDetector.js';
 
 const symbolScores = new Map();
 const symbolState = new Map();
@@ -19,25 +33,95 @@ export function generateSignal(symbol, ticker) {
   
   const price = ticker?.price || state.prices[symbol] || 0;
   const priceChange = ticker?.priceChangePercent || 0;
-  const volume = getVolumeRatio(symbol);
+  const volumeRatio = getVolumeRatio(symbol);
+  const volumeData = getVolumeData(symbol);
   const ofData = getOrderflowData(symbol);
   const momentum = calculateMomentum(symbol);
+  const oiChange = state.oi[symbol] || 0;
   
   updateMomentum(symbol, price);
+  updateVolumeWindow(symbol, volumeData.current || 0);
+  updateOIWindow(symbol, oiChange);
+  
+  const compression = detectCompression(symbol, price);
+  const velocity = calculateVelocity(symbol, price);
+  const pumpPhase = getPumpPhase(symbol);
   
   const data = {
     symbol,
     priceChange,
-    volume,
+    volume: volumeRatio,
     orderFlow: ofData.ratio,
-    oiChange: state.oi[symbol] || 0,
+    oiChange,
     fakeOI: 0,
     momentum,
-    price
+    price,
+    velocity,
+    compression,
+    pumpPhase
   };
   
   if (isDeadMarket(data.volume, data.oiChange)) return null;
   if (detectTrap(data.priceChange, data.orderFlow)) return null;
+  
+  const accumulation = detectAccumulation(symbol, volumeRatio, priceChange, oiChange);
+  const breakout = detectBreakout(symbol, price, priceChange > 0 ? 'UP' : 'DOWN');
+  const expansion = detectExpansion(symbol, volumeRatio, velocity);
+  
+  const liqSignal = analyzeLiquidations(symbol);
+  const liquidations = getLiquidations(symbol);
+  const fundingBias = analyzeFunding(symbol);
+  const imbalance = getImbalance(symbol);
+  
+  const priceReclaim = priceChange > 0;
+  const trapLong = detectTrapLongSqueeze(symbol, liquidations, fundingBias, priceReclaim);
+  const trapShort = detectTrapShortSqueeze(symbol, liquidations, fundingBias, !priceReclaim);
+  
+  const pumpData = {
+    accumulation,
+    compression,
+    breakout,
+    expansion,
+    volumeRatio,
+    oiChange,
+    imbalance,
+    velocity,
+    trapLong,
+    trapShort,
+    pumpPhase
+  };
+  
+  const pumpScore = calculatePumpScore(pumpData);
+  const isHighPump = isHighPumpSignal(pumpData);
+  
+  if (isHighPump) {
+    symbolScores.set(symbol, pumpScore);
+    symbolState.set(symbol, { stage: STAGES.SNIPER, score: pumpScore, startTime: Date.now(), type: 'HIGH_PUMP' });
+    setSignalTime(symbol);
+    
+    const direction = trapLong ? 'LONG' : trapShort ? 'SHORT' : priceChange > 0 ? 'LONG' : 'SHORT';
+    const risk = price * (config.STOP_LOSS_PERCENT / 100);
+    
+    console.log(`🔥 HIGH PUMP: ${symbol} | Phase: ${pumpPhase} | Score: ${pumpScore} | Vol: ${volumeRatio}x | Vel: ${velocity.toFixed(3)}`);
+    
+    return {
+      type: 'HIGH_PUMP',
+      symbol,
+      direction,
+      entry: price,
+      stopLoss: direction === 'LONG' ? price - risk : price + risk,
+      takeProfit: direction === 'LONG' ? price + risk * 3 : price - risk * 3,
+      confidence: pumpScore,
+      data: pumpData,
+      pumpPhase,
+      accumulation,
+      compression: compression.compressed,
+      breakout,
+      expansion,
+      trapLong,
+      trapShort
+    };
+  }
   
   const score = calculateInstitutionalScore(data);
   symbolScores.set(symbol, score);
@@ -45,25 +129,21 @@ export function generateSignal(symbol, ticker) {
   const sweep = detectLiquiditySweep(symbol, price);
   const entry = smartEntry(symbol, sweep, data.orderFlow);
   
-  const liqSignal = analyzeLiquidations(symbol);
-  const fundingBias = analyzeFunding(symbol);
-  const imbalance = getImbalance(symbol);
-  
   const currentState = symbolState.get(symbol) || { stage: STAGES.IDLE };
   
   if (currentState.stage === STAGES.IDLE) {
-    if (detectEarlyPump(data.volume, data.oiChange, data.priceChange)) {
+    if (accumulation || detectEarlyPump(data.volume, data.oiChange, data.priceChange)) {
       symbolState.set(symbol, { stage: STAGES.PRESSURE, score, startTime: Date.now() });
       setSignalTime(symbol);
       
       return {
-        type: 'EARLY_PUMP',
+        type: 'ACCUMULATION',
         symbol,
         confidence: score,
         entry: price,
-        data,
-        sweep,
-        entry
+        data: pumpData,
+        pumpPhase,
+        accumulation
       };
     }
   }
@@ -93,7 +173,8 @@ export function generateSignal(symbol, ticker) {
         stopLoss: entry === 'LONG' ? price - risk : price + risk,
         takeProfit: entry === 'LONG' ? price + risk * 3 : price - risk * 3,
         confidence: score,
-        data,
+        data: pumpData,
+        pumpPhase,
         sweep,
         liqSignal,
         fundingBias,
@@ -110,7 +191,8 @@ export function generateSignal(symbol, ticker) {
       symbol,
       confidence: score,
       entry: price,
-      data
+      data: pumpData,
+      pumpPhase
     };
   }
   
@@ -130,3 +212,5 @@ export function getSymbolState(symbol) {
 export function resetSymbol(symbol) {
   symbolState.set(symbol, { stage: STAGES.IDLE });
 }
+
+export { getPumpPhase, calculatePumpScore, isHighPumpSignal };
