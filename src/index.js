@@ -192,6 +192,7 @@ async function start() {
 
     await wsManager.initialize();
     console.log('Connected:', wsManager.symbols.length);
+    sendTelegram('✅ ENGINE STARTED: index.js').catch(() => {});
 
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
