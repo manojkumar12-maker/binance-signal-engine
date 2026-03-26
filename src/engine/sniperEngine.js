@@ -17,9 +17,12 @@ export function updateSniperState(symbol, data) {
   if (data.oiChange !== undefined) sniperState.oiChange[symbol] = data.oiChange;
 }
 
-function canEmitSignal(symbol, cooldownMs = 60000) {
+import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType } from '../signals/signalFilters.js';
+
+function canEmitSignal(symbol, type) {
+  const cooldown = getCooldownForType(type);
   const last = sniperState.signalHistory.get(symbol) || 0;
-  return Date.now() - last > cooldownMs;
+  return Date.now() - last > cooldown;
 }
 
 function recordSignal(symbol) {
@@ -102,7 +105,7 @@ function getEntrySignal(symbol, data) {
 
   // 🔥 EXPLOSION (HIGH CONFIDENCE)
   if (pressure && momentum && oiChange > 0.2 && volumeRatio > 2) {
-    if (canEmitSignal(symbol, 90000)) {
+    if (canEmitSignal(symbol, 'CONFIRMED_ENTRY')) {
       recordSignal(symbol);
       return {
         type: "CONFIRMED ENTRY",
@@ -114,7 +117,7 @@ function getEntrySignal(symbol, data) {
 
   // 🔴 SNIPER (Good conditions)
   if (pressure && breakout && oiChange > 0.1 && volumeRatio > 1.5) {
-    if (canEmitSignal(symbol, 60000)) {
+    if (canEmitSignal(symbol, 'SNIPER_ENTRY')) {
       recordSignal(symbol);
       return {
         type: "SNIPER ENTRY",
@@ -126,7 +129,7 @@ function getEntrySignal(symbol, data) {
 
   // ⚡ EARLY ENTRY (Building)
   if (pressure || breakout) {
-    if (canEmitSignal(symbol, 30000)) {
+    if (canEmitSignal(symbol, 'EARLY_ENTRY')) {
       recordSignal(symbol);
       return {
         type: "EARLY ENTRY",
@@ -138,7 +141,7 @@ function getEntrySignal(symbol, data) {
 
   // 👀 WATCH (Score based)
   if (score >= 30) {
-    if (canEmitSignal(symbol, 20000)) {
+    if (canEmitSignal(symbol, 'WATCH')) {
       recordSignal(symbol);
       return {
         type: "WATCH",
@@ -152,16 +155,10 @@ function getEntrySignal(symbol, data) {
 }
 
 // ==============================
-// STAGE 5 — RANKING (Always return top)
+// STAGE 5 — RANKING (Top 5 only)
 // ==============================
 function rankSignals(signals) {
-  return signals
-    .map(s => ({
-      ...s,
-      finalScore: s.finalScore || s.score
-    }))
-    .sort((a, b) => b.finalScore - a.finalScore)
-    .slice(0, 10);
+  return selectTopSignals(signals, 5);
 }
 
 // ==============================

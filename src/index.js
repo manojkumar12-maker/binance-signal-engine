@@ -17,6 +17,7 @@ import { topPumpSelector } from './engine/topPumpSelector.js';
 import { signalGenerator } from './signals/signalGenerator.js';
 import { addSignal, getRecentSignals } from './state.js';
 import { sendTelegram } from './utils/telegram.js';
+import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, formatSignalForTelegram, formatTopWatch, getCooldownForType } from './signals/signalFilters.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
@@ -167,30 +168,49 @@ function handleTicker(ticker) {
 }
 
 const notifiedSignals = new Set();
+
 async function notifySniperSignals(signals) {
-  for (const s of signals) {
+  const topSignals = selectTopSignals(signals, 5);
+  
+  for (const s of topSignals) {
+    const { allowed, cooldown } = shouldEmit(s.symbol, s.type);
+    if (!allowed) continue;
+    
     const sigKey = `${s.type}-${s.symbol}`;
     if (notifiedSignals.has(sigKey)) continue;
     notifiedSignals.add(sigKey);
-
+    
     const trade = await executeTrade(s.symbol, s.type, s.price, 1000);
-    const side = trade.direction === "LONG" ? "BUY (LONG) 🚀" : "SELL (SHORT) 🩸";
+    const side = trade.direction === "LONG" ? "🟢 LONG" : "🔴 SHORT";
     const formattedSymbol = s.symbol.replace("USDT", "/USDT");
     const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
 
-    const msg = `💥${s.type} 💥\n\n${formattedSymbol} — ${side}\n\n🟢 Leverage: Cross 5X\n\n⚡️ Entry: ${fmt(trade.entry)}\n\n😵 Take Profits:\n\nTP1: ${fmt(trade.tp1)}\nTP2: ${fmt(trade.tp2)}\nTP3: ${fmt(trade.tp3)}\n\nStop Loss: ${fmt(trade.sl)}\n\n⚠️ Risk Management:\nUse only 3% – 5% of your portfolio.\n(Simulated Risk: $10, Size: ${trade.size.toFixed(2)})`;
+    const msg = formatSignalForTelegram({
+      ...s,
+      entry: trade.entry,
+      stopLoss: trade.sl,
+      tp1: trade.tp1,
+      tp2: trade.tp2,
+      tp3: trade.tp3,
+      direction: side
+    });
 
-    if (s.type === "CONFIRMED ENTRY") {
+    if (isExecutionReady(s)) {
       sendTelegram(msg).catch(() => {});
     }
 
     broadcast('sniper', {
       symbol: s.symbol,
+      type: s.type,
+      level: s.level,
       confidence: s.finalScore.toFixed(1),
       entry: trade.entry,
       stopLoss: trade.sl,
       tp1: trade.tp1,
-      tp2: trade.tp2
+      tp2: trade.tp2,
+      oiChange: s.oiChange,
+      volumeRatio: s.volumeRatio,
+      orderFlow: s.imbalance
     });
   }
 }
@@ -220,15 +240,17 @@ async function start() {
 
     setInterval(() => {
       const topSignals = runSniper();
+      const topWatch = getTopWatching();
+      
+      broadcast('top_watch', topWatch);
+      
       if (topSignals.length > 0) {
-        const toNotify = topSignals.filter(s => 
-          s.type === "EARLY ENTRY" || 
-          s.type === "SNIPER ENTRY" || 
-          s.type === "CONFIRMED ENTRY"
-        );
-        notifySniperSignals(toNotify);
-        
-        broadcast('top_watch', getTopWatching());
+        const executionReady = topSignals.filter(s => isExecutionReady(s));
+        if (executionReady.length > 0) {
+          notifySniperSignals(executionReady);
+        } else {
+          notifySniperSignals(topSignals.slice(0, 2));
+        }
       }
     }, 3000);
 
