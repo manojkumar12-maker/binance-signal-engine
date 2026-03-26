@@ -83,21 +83,37 @@
     </div>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
+    // Allow overriding API/WS endpoints via query params for GitHub Pages:
+    // ?api=https://your-railway.app&ws=wss://your-railway.app
+    const params = new URLSearchParams(window.location.search);
+    const API_BASE = (params.get('api') || '').replace(/\/$/, '');
+    const WS_BASE = (params.get('ws') || '').replace(/\/$/, '');
     const apiStatus = document.getElementById('apiStatus');
-    
     const signals = { pressure: [], breakout: [], sniper: [] };
+
+    // Dynamically load socket.io from the backend to avoid GH Pages 404s
+    const socketScript = document.createElement('script');
+    socketScript.src = `${WS_BASE || ''}/socket.io/socket.io.js`;
+    socketScript.onload = init;
+    socketScript.onerror = () => {
+      apiStatus.textContent = 'WS SCRIPT ERROR';
+      apiStatus.style.color = '#ff4444';
+    };
+    document.head.appendChild(socketScript);
+
+    function init() {
+      const socket = io(WS_BASE || undefined, { transports: ['websocket', 'polling'] });
+      socket.on('connect', () => console.log('Connected WS'));
 
     socket.on('connect', () => console.log('Connected'));
     
-    socket.on('pressure', (data) => {
-      const card = `
-        <div class="signal-card pressure">
-          <div class="signal-header">
-            <span class="symbol">${data.symbol}</span>
-            <span class="confidence high">${data.score}%</span>
+      socket.on('pressure', (data) => {
+        const card = `
+          <div class="signal-card pressure">
+            <div class="signal-header">
+              <span class="symbol">${data.symbol}</span>
+              <span class="confidence high">${data.score}%</span>
           </div>
           <div class="metrics">
             <div class="metric"><div class="metric-value">${data.fakeOI?.toFixed(2) || '0'}</div><div>FakeOI</div></div>
@@ -106,30 +122,30 @@
             <div class="metric"><div class="metric-value">${data.score || 0}</div><div>Score</div></div>
           </div>
         </div>`;
-      signals.pressure.unshift(card);
-      signals.pressure = signals.pressure.slice(0, 15);
-      updateUI();
-    });
+        signals.pressure.unshift(card);
+        signals.pressure = signals.pressure.slice(0, 15);
+        updateUI();
+      });
 
-    socket.on('breakout', (data) => {
-      const card = `
-        <div class="signal-card breakout">
-          <div class="signal-header">
-            <span class="symbol">${data.symbol}</span>
-            <span class="breakout-timer">⏱️ ${data.seconds}s</span>
-          </div>
-        </div>`;
-      signals.breakout.unshift(card);
-      signals.breakout = signals.breakout.slice(0, 10);
-      updateUI();
-    });
+      socket.on('breakout', (data) => {
+        const card = `
+          <div class="signal-card breakout">
+            <div class="signal-header">
+              <span class="symbol">${data.symbol}</span>
+              <span class="breakout-timer">⏱️ ${data.seconds}s</span>
+            </div>
+          </div>`;
+        signals.breakout.unshift(card);
+        signals.breakout = signals.breakout.slice(0, 10);
+        updateUI();
+      });
 
-    socket.on('sniper', (data) => {
-      const card = `
-        <div class="signal-card sniper">
-          <div class="signal-header">
-            <span class="symbol">${data.symbol}</span>
-            <span class="confidence high">🚀 ${data.confidence}%</span>
+      socket.on('sniper', (data) => {
+        const card = `
+          <div class="signal-card sniper">
+            <div class="signal-header">
+              <span class="symbol">${data.symbol}</span>
+              <span class="confidence high">🚀 ${data.confidence}%</span>
           </div>
           <div class="metrics">
             <div class="metric"><div class="metric-value">${data.entry?.toFixed(4)}</div><div>Entry</div></div>
@@ -138,16 +154,17 @@
             <div class="metric"><div class="metric-value">${data.tp2?.toFixed(4)}</div><div>TP2</div></div>
           </div>
         </div>`;
-      signals.sniper.unshift(card);
-      signals.sniper = signals.sniper.slice(0, 10);
-      updateUI();
-    });
+        signals.sniper.unshift(card);
+        signals.sniper = signals.sniper.slice(0, 10);
+        updateUI();
+      });
 
-    socket.on('signal', (data) => {
-      if (data.type === 'SNIPER') {
-        socket.emit('sniper', data);
-      }
-    });
+      socket.on('signal', (data) => {
+        if (data.type === 'SNIPER') {
+          socket.emit('sniper', data);
+        }
+      });
+    }
 
     function updateUI() {
       document.getElementById('pressureSignals').innerHTML = signals.pressure.length ? signals.pressure.join('') : '<div class="empty-panel">Waiting...</div>';
@@ -156,7 +173,8 @@
     }
 
     async function fetchTop() {
-      const endpoints = ['/api/heatmap', '/heatmap'];
+      const base = API_BASE || '';
+      const endpoints = [`${base}/api/heatmap`, `${base}/heatmap`];
       for (const ep of endpoints) {
         try {
           const res = await fetch(ep);
