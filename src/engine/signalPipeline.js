@@ -86,31 +86,6 @@ function isNoise(d) {
   );
 }
 
-export function updateBTCPrice(btcChange) {
-  btcPriceChange = btcChange;
-}
-
-function normalizeOI(oi, allOI) {
-  if (!allOI || allOI.length === 0) return 0;
-  const max = Math.max(...allOI.filter(v => !isNaN(v) && v > 0));
-  return max > 0 ? oi / max : 0;
-}
-
-function detectTrap(d) {
-  return (
-    (d.priceChange > 5 && d.orderFlow < 1.1) ||
-    (d.priceChange < -5 && d.orderFlow < 1.1)
-  );
-}
-
-function isNoise(d) {
-  return (
-    Math.abs(d.oiChange) < 0.03 &&
-    Math.abs(d.fakeOI) < 0.15 &&
-    d.volume < 1.8
-  );
-}
-
 function detectAccumulation(d) {
   return (
     d.priceChange < 2 &&
