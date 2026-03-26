@@ -53,8 +53,8 @@ function handleHighPumpCandidates(ranked) {
     if (snap.oiSpike) {
       console.log(`⚡ OI SPIKE: ${snap.symbol} ΔOI=${(snap.oiChange || 0).toFixed(2)}%`);
     }
+    // ranked list is already candidate-filtered; extra guard
     if (!snap.isCandidate) return;
-
     const pump = topPumpSelector.pumpTrigger(snap);
     if (!pump.triggered) return;
     if (!topPumpSelector.canEmit(snap.symbol, 90_000)) return;
@@ -93,6 +93,12 @@ function handleTicker(ticker) {
     if (now - lastRankRun > 1000) {
       const ranked = topPumpSelector.evaluateTop(5);
       topSymbols = new Set(ranked.map(r => r.symbol));
+
+      if (ranked.length === 0) {
+        // No strong candidates — skip trading this cycle
+        return;
+      }
+
       ranked.forEach((s, i) => {
         console.log(`🏆 TOP ${i + 1}: ${s.symbol} score=${s.rankScore?.toFixed?.(2)} oi=${(s.oiChange || 0).toFixed(2)} vol=${(s.volumeRatio || s.volume || 0).toFixed(2)} mom=${(s.momentum || 0).toFixed(3)} imb=${(s.imbalance || 0).toFixed(2)}`);
       });

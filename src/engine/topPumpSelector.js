@@ -1,7 +1,7 @@
 const OI_SPIKE_THRESHOLD = 1.5;
-const CANDIDATE_OI_MIN = 1;
-const CANDIDATE_VOL_MIN = 2;
-const CANDIDATE_MOM_MIN = 0.02;
+const CANDIDATE_OI_MIN = 0.5;      // minimum meaningful OI change (%)
+const CANDIDATE_VOL_MIN = 2;       // volume ratio threshold
+const CANDIDATE_MOM_MIN = 0.002;   // minimal momentum
 
 class TopPumpSelector {
   constructor() {
@@ -65,10 +65,11 @@ class TopPumpSelector {
         const isCandidate =
           Math.abs(s.oiChange || 0) > CANDIDATE_OI_MIN &&
           (s.volumeRatio || s.volume || 0) > CANDIDATE_VOL_MIN &&
-          (Math.abs(s.momentum || 0) > CANDIDATE_MOM_MIN);
+          Math.abs(s.momentum || 0) > CANDIDATE_MOM_MIN;
         const oiSpike = Math.abs(s.oiChange || 0) > OI_SPIKE_THRESHOLD;
         return { ...s, rankScore, isCandidate, oiSpike };
       })
+      .filter(s => s.isCandidate)
       .sort((a, b) => (b.rankScore || 0) - (a.rankScore || 0))
       .slice(0, limit);
 
