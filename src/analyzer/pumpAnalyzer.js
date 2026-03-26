@@ -905,7 +905,13 @@ class PumpAnalyzer {
         acceleration: momentum,
         momentum,
         atr: analysis.atr,
-        entryPrice: analysis.entryPrice
+        atrPercent: analysis.atrPercent,
+        entryPrice: analysis.entryPrice,
+        orderbookImbalance,
+        imbalance: orderbookImbalance,
+        liquidationSignal: liqData.signal,
+        liquidationDirection: liqData.direction,
+        volumeRatio: volumeSpike
       };
     }
 
@@ -1013,7 +1019,13 @@ class PumpAnalyzer {
         acceleration: momentum,
         momentum,
         atr: analysis.atr,
-        entryPrice: analysis.entryPrice
+        atrPercent: analysis.atrPercent,
+        entryPrice: analysis.entryPrice,
+        orderbookImbalance,
+        imbalance: orderbookImbalance,
+        liquidationSignal: liqData.signal,
+        liquidationDirection: liqData.direction,
+        volumeRatio: volumeSpike
       };
     }
 
@@ -1028,7 +1040,13 @@ class PumpAnalyzer {
       acceleration: momentum || 0,
       momentum: momentum || 0,
       atr: analysis?.atr || 0,
-      entryPrice: analysis?.entryPrice || 0
+      atrPercent: analysis?.atrPercent || 0,
+      entryPrice: analysis?.entryPrice || 0,
+      orderbookImbalance,
+      imbalance: orderbookImbalance,
+      liquidationSignal: liqData.signal,
+      liquidationDirection: liqData.direction,
+      volumeRatio: volumeSpike
     };
   }
 
