@@ -2,219 +2,398 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🔥 Live Pump Detector</title>
+  <title>TRADING TERMINAL // ENGINE</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
-    .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px; border-bottom: 2px solid #f0b90b; display: flex; justify-content: space-between; align-items: center; }
-    .header h1 { color: #f0b90b; font-size: 1.8rem; }
-    .container { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 20px; }
-    .panel { background: #121212; border-radius: 10px; padding: 15px; min-height: 260px; max-height: 70vh; overflow-y: auto; }
-    .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #333; }
-    .panel-title { font-size: 1.2rem; font-weight: bold; }
-    .panel-pressure { border-top: 3px solid #9932cc; }
-    .panel-breakout { border-top: 3px solid #ff8c00; }
-    .panel-sniper { border-top: 3px solid #ff4444; }
-    .panel-pressure .panel-title { color: #9932cc; }
-    .panel-breakout .panel-title { color: #ff8c00; }
-    .panel-sniper .panel-title { color: #ff4444; }
-    .signal-card { background: #1e1e1e; border-radius: 8px; padding: 12px; margin-bottom: 10px; border-left: 3px solid; animation: slideIn 0.3s ease; }
-    @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
-    .signal-card.pressure { border-left-color: #9932cc; }
-    .signal-card.breakout { border-left-color: #ff8c00; }
-    .signal-card.sniper { border-left-color: #ff4444; }
-    .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .symbol { font-weight: bold; font-size: 1.1rem; }
-    .confidence { padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; }
-    .confidence.high { background: #22c55e; color: #000; }
-    .confidence.good { background: #3b82f6; color: #fff; }
-    .breakout-timer { font-size: 1.5rem; color: #ff8c00; font-weight: bold; }
-    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-size: 0.8rem; color: #aaa; }
-    .metric { text-align: center; }
-    .metric-value { color: #fff; font-weight: 500; }
-    .empty-panel { text-align: center; color: #666; padding: 30px; }
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: #1e1e1e; }
-    ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600;700&display=swap');
+
+    :root {
+      --bg: #0b0e14;
+      --card: rgba(18, 24, 38, 0.6);
+      --border: rgba(43, 214, 255, 0.15);
+      --accent: #2bd6ff;
+      --accent-glow: rgba(43, 214, 255, 0.4);
+      --green: #00ff88;
+      --red: #ff3366;
+      --text: #e2e8f0;
+      --muted: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 50%, rgba(43, 214, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 85% 30%, rgba(0, 255, 136, 0.03) 0%, transparent 40%);
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 3rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    h1 {
+      font-weight: 700;
+      letter-spacing: 2px;
+      font-size: 1.5rem;
+      text-transform: uppercase;
+      color: #fff;
+      text-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 255, 136, 0.1);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      padding: 6px 16px;
+      border-radius: 50px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--green);
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--green);
+      animation: pulsate 1.5s infinite;
+    }
+
+    @keyframes pulsate {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .panel-header {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Radar Feed (Left Panel) */
+    .radar-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 600px;
+      overflow-y: auto;
+      padding-right: 5px;
+    }
+
+    .radar-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .radar-list::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .radar-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      animation: fadeUp 0.3s ease-out forwards;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .radar-sym { font-weight: 700; color: #fff; }
+    .radar-data { font-size: 0.8rem; color: var(--muted); display: flex; flex-direction: column; text-align: right; gap: 4px;}
+    .data-hl { color: var(--accent); font-weight: 600; }
+
+    /* Signals Grid (Right Panel) */
+    .signals-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .signal-card {
+      background: linear-gradient(180deg, rgba(25, 33, 50, 0.7) 0%, rgba(14, 20, 31, 0.9) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+      animation: fadeUp 0.4s ease-out front;
+    }
+
+    .signal-card:hover {
+      transform: translateY(-5px);
+      border-color: var(--accent-glow);
+      box-shadow: 0 10px 20px rgba(43, 214, 255, 0.1);
+    }
+
+    .signal-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 3px;
+    }
+
+    .type-early::before { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+    .type-confirmed::before { background: var(--green); box-shadow: 0 0 10px var(--green); }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .sig-type {
+      font-size: 0.7rem;
+      padding: 4px 10px;
+      border-radius: 50px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    
+    .lbl-early { background: rgba(43, 214, 255, 0.15); color: var(--accent); }
+    .lbl-confirmed { background: rgba(0, 255, 136, 0.15); color: var(--green); }
+
+    .sig-sym { font-size: 1.4rem; font-weight: 700; color: #fff; }
+    
+    .sig-stats { margin-top: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat-box {
+      background: rgba(0,0,0,0.3);
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.02);
+    }
+    .sb-lbl { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+    .sb-val { font-size: 1rem; font-weight: 600; font-family: monospace; color: #fff; }
+    
+    .targets { margin-top: 1rem; font-size: 0.85rem; padding-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); display: flex; justify-content: space-between;}
+    .target-list { color: var(--green); font-family: monospace; display: flex; flex-direction: column; gap: 4px;}
+    .stop-loss { color: var(--red); font-family: monospace; }
+    
+    .empty-state {
+      grid-column: 1 / -1;
+      padding: 4rem 2rem;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+    }
+
   </style>
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-  <div class="header">
-    <h1>🔥 PUMP DETECTOR PRO</h1>
-    <div id="apiStatus" style="font-size:0.9rem;color:#9acd32;">API: checking...</div>
-  </div>
 
   <div class="container">
-    <div class="panel panel-pressure">
-      <div class="panel-header">
-        <div class="panel-title">🧃 PRESSURE</div>
+    <header>
+      <div class="logo-area">
+        <h1>TERMINAL // ENGINE</h1>
       </div>
-      <div id="pressureSignals">
-        <div class="empty-panel">Waiting...</div>
+      <div class="status-badge" id="connStatus">
+        <div class="pulse"></div>
+        CONNECTING...
       </div>
-    </div>
+    </header>
 
-    <div class="panel panel-breakout">
-      <div class="panel-header">
-        <div class="panel-title">⏱️ BREAKOUT TIMER</div>
+    <div class="grid">
+      <!-- Radar Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>Live Radar</span>
+          <span style="color: var(--muted); font-size:0.8rem;">[VOL &amp; OI]</span>
+        </div>
+        <div class="radar-list" id="radarList">
+          <div style="color: var(--muted); text-align: center; padding: 20px; font-size: 0.85rem;">Listening for market anomalies...</div>
+        </div>
       </div>
-      <div id="breakoutSignals">
-        <div class="empty-panel">Waiting...</div>
-      </div>
-    </div>
 
-    <div class="panel panel-sniper">
-      <div class="panel-header">
-        <div class="panel-title">🎯 SNIPER ENTRY</div>
-      </div>
-      <div id="sniperSignals">
-        <div class="empty-panel">Waiting...</div>
-      </div>
-    </div>
-
-    <div class="panel panel-sniper" style="grid-column: span 3;">
-      <div class="panel-header">
-        <div class="panel-title">📊 TOP OI MOVERS (last 120s)</div>
-      </div>
-      <div id="topOiList">
-        <div class="empty-panel">Waiting for data...</div>
+      <!-- Signlas Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>Active Execution Signals</span>
+          <span style="color: var(--muted); font-size:0.8rem;">[EARLY &amp; CONFIRMED]</span>
+        </div>
+        <div class="signals-container" id="signalsContainer">
+          <div class="empty-state" id="emptySignals">
+            Awaiting progressive breakouts...
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
-    // Allow overriding API/WS endpoints via query params for GitHub Pages:
-    // ?api=https://your-railway.app&ws=wss://your-railway.app
     const params = new URLSearchParams(window.location.search);
     const API_BASE = (params.get('api') || 'https://binance-signal-engine-production.up.railway.app').replace(/\/$/, '');
     const WS_BASE = (params.get('ws') || 'wss://binance-signal-engine-production.up.railway.app').replace(/\/$/, '');
-    const apiStatus = document.getElementById('apiStatus');
-    const signals = { pressure: [], breakout: [], sniper: [] };
-
-    // Dynamically load socket.io from the backend to avoid GH Pages 404s
-    const socketScript = document.createElement('script');
-    socketScript.src = `${WS_BASE || ''}/socket.io/socket.io.js`;
-    socketScript.onload = init;
-    socketScript.onerror = () => {
-      apiStatus.textContent = 'WS SCRIPT ERROR';
-      apiStatus.style.color = '#ff4444';
-    };
-    document.head.appendChild(socketScript);
-
-    function init() {
-      const socket = io(WS_BASE || undefined, { transports: ['websocket', 'polling'] });
-      socket.on('connect', () => console.log('Connected WS'));
-
-    socket.on('connect', () => console.log('Connected'));
     
-      socket.on('high_pump', (data) => {
-        const card = `
-          <div class="signal-card pressure">
-            <div class="signal-header">
-              <span class="symbol">${data.symbol}</span>
-              <span class="confidence high">${data.strength}%</span>
-          </div>
-          <div class="metrics">
-            <div class="metric"><div class="metric-value">${data.fakeOI?.toFixed(2) || '0'}</div><div>FakeOI</div></div>
-            <div class="metric"><div class="metric-value">${data.flow?.toFixed(1) || '1'}</div><div>Flow</div></div>
-            <div class="metric"><div class="metric-value">${data.volume?.toFixed(1) || '0'}x</div><div>Volume</div></div>
-            <div class="metric"><div class="metric-value">${data.rankScore || 0}</div><div>Score</div></div>
-          </div>
-        </div>`;
-        signals.pressure.unshift(card);
-        signals.pressure = signals.pressure.slice(0, 15);
-        updateUI();
-      });
+    // Auto-detect local dev vs production based on origin if running locally
+    const targetWs = window.location.hostname === 'localhost' ? undefined : WS_BASE;
+    const socket = typeof targetWs === 'undefined' ? io() : io(targetWs);
 
-      socket.on('breakout', (data) => {
-        const card = `
-          <div class="signal-card breakout">
-            <div class="signal-header">
-              <span class="symbol">${data.symbol}</span>
-              <span class="breakout-timer">⏱️ ${data.seconds}s</span>
-            </div>
-          </div>`;
-        signals.breakout.unshift(card);
-        signals.breakout = signals.breakout.slice(0, 10);
-        updateUI();
-      });
+    const connStatus = document.getElementById('connStatus');
+    const radarList = document.getElementById('radarList');
+    const signalsContainer = document.getElementById('signalsContainer');
+    const emptySignals = document.getElementById('emptySignals');
 
-      socket.on('sniper', (data) => {
-        const card = `
-          <div class="signal-card sniper">
-            <div class="signal-header">
-              <span class="symbol">${data.symbol}</span>
-              <span class="confidence high">🚀 ${data.confidence}%</span>
-          </div>
-          <div class="metrics">
-            <div class="metric"><div class="metric-value">${data.entry?.toFixed(4)}</div><div>Entry</div></div>
-            <div class="metric"><div class="metric-value">${data.stopLoss?.toFixed(4)}</div><div>SL</div></div>
-            <div class="metric"><div class="metric-value">${data.tp1?.toFixed(4)}</div><div>TP1</div></div>
-            <div class="metric"><div class="metric-value">${data.tp2?.toFixed(4)}</div><div>TP2</div></div>
-          </div>
-        </div>`;
-        signals.sniper.unshift(card);
-        signals.sniper = signals.sniper.slice(0, 10);
-        updateUI();
-      });
+    let radarItems = [];
+    let executedSignals = new Set(); // Prevent duplicates
 
-      socket.on('signal', (data) => {
-        // Do nothing, sniper event is handled separately
-      });
-    }
+    socket.on('connect', () => {
+      connStatus.innerHTML = '<div class="pulse"></div> ACTIVE';
+      connStatus.style.color = 'var(--green)';
+      connStatus.style.borderColor = 'rgba(0,255,136,0.3)';
+    });
 
-    function updateUI() {
-      document.getElementById('pressureSignals').innerHTML = signals.pressure.length ? signals.pressure.join('') : '<div class="empty-panel">Waiting...</div>';
-      document.getElementById('breakoutSignals').innerHTML = signals.breakout.length ? signals.breakout.join('') : '<div class="empty-panel">Waiting...</div>';
-      document.getElementById('sniperSignals').innerHTML = signals.sniper.length ? signals.sniper.join('') : '<div class="empty-panel">Waiting...</div>';
-    }
+    socket.on('disconnect', () => {
+      connStatus.innerHTML = '<div class="pulse" style="background:#ff3366;box-shadow:none;animation:none;"></div> OFFLINE';
+      connStatus.style.color = 'var(--red)';
+      connStatus.style.borderColor = 'rgba(255,51,102,0.3)';
+    });
 
-    async function fetchTop() {
-      const base = API_BASE || '';
-      const endpoints = [`${base}/api/heatmap`, `${base}/heatmap`];
-      for (const ep of endpoints) {
-        try {
-          const res = await fetch(ep);
-          if (!res.ok) continue;
-          const data = await res.json();
-          apiStatus.textContent = `API OK (${ep})`;
-          apiStatus.style.color = '#22c55e';
-
-          const top = data.top || [];
-          if (!top.length) {
-            document.getElementById('topOiList').innerHTML = '<div class="empty-panel">No movers yet</div>';
-            return;
-          }
-          const html = top.map((t, idx) => `
-            <div class="signal-card sniper">
-              <div class="signal-header">
-                <span class="symbol">${idx + 1}. ${t.symbol}</span>
-                <span class="confidence high">${(t.oi || 0).toFixed(3)}%</span>
-              </div>
-              <div class="metrics">
-                <div class="metric"><div class="metric-value">${(t.volume || 0).toFixed(2)}x</div><div>Vol</div></div>
-                <div class="metric"><div class="metric-value">${(t.momentum || 0).toFixed(3)}</div><div>Momentum</div></div>
-                <div class="metric"><div class="metric-value">${(t.imbalance || 0).toFixed(2)}</div><div>OB Imb</div></div>
-                <div class="metric"><div class="metric-value">${(t.rankScore || 0).toFixed(1)}</div><div>Score</div></div>
-              </div>
-            </div>
-          `).join('');
-          document.getElementById('topOiList').innerHTML = html;
-          return;
-        } catch (err) {
-          continue;
-        }
+    // 1. Radar Updates
+    socket.on('high_pump', (data) => {
+      // Avoid rapid UI thrashing, keep max 15 items
+      const existingIdx = radarItems.findIndex(i => i.symbol === data.symbol);
+      if (existingIdx !== -1) {
+        radarItems.splice(existingIdx, 1);
       }
-      apiStatus.textContent = 'API ERROR';
-      apiStatus.style.color = '#ff4444';
-      document.getElementById('topOiList').innerHTML = '<div class="empty-panel">API not reachable</div>';
+      radarItems.unshift(data);
+      if (radarItems.length > 15) radarItems.pop();
+      renderRadar();
+    });
+
+    function renderRadar() {
+      radarList.innerHTML = radarItems.map(item => `
+        <div class="radar-item">
+          <div>
+            <div class="radar-sym">${item.symbol}</div>
+            <div style="font-size:0.75rem; color:var(--muted); margin-top:4px;">Rank: ${item.rankScore}</div>
+          </div>
+          <div class="radar-data">
+            <span>Vol: <span class="data-hl">${parseFloat(item.volume).toFixed(2)}x</span></span>
+            <span>OI: <span class="data-hl">${parseFloat(item.fakeOI || 0).toFixed(2)}%</span></span>
+          </div>
+        </div>
+      `).join('');
     }
 
-    setInterval(fetchTop, 5000);
-    fetchTop();
+    // 2. Sniper Signals (Early & Confirmed)
+    socket.on('sniper', (data) => {
+      // Data format from index.js msg payload or direct: {symbol, type (early/confirmed missing from obj actually wait. No, index.js sends the signal object directly? Let's check.
+      // Ah, index.js sends { symbol, confidence, entry, stopLoss, tp1, tp2 }
+      // But we modified it to broadcast `s.type` ideally, we didn't fully, we just used {symbol, confidence, entry...}
+      // Wait, let's just make sure it formats cleanly:
+      
+      const sigKey = data.symbol + (data.confidence || Date.now());
+      if (executedSignals.has(sigKey)) return;
+      executedSignals.add(sigKey);
 
-    console.log('📊 Dashboard ready');
+      if (emptySignals) emptySignals.style.display = 'none';
+
+      // Guess type based on confidence/score logic or payload
+      const typeStr = data.confidence > 2 ? 'CONFIRMED ENTRY' : 'EARLY ENTRY';
+      const cClass = data.confidence > 2 ? 'lbl-confirmed' : 'lbl-early';
+      const borderClass = data.confidence > 2 ? 'type-confirmed' : 'type-early';
+
+      const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
+
+      const el = document.createElement('div');
+      el.className = `signal-card ${borderClass}`;
+      el.innerHTML = `
+        <div class="card-header">
+          <div class="sig-sym">${data.symbol}</div>
+          <div class="sig-type ${cClass}">${typeStr}</div>
+        </div>
+        
+        <div class="sig-stats">
+          <div class="stat-box">
+            <div class="sb-lbl">ENTRY</div>
+            <div class="sb-val">${fmt(data.entry)}</div>
+          </div>
+          <div class="stat-box">
+            <div class="sb-lbl">SCORE</div>
+            <div class="sb-val">${parseFloat(data.confidence || 0).toFixed(1)}</div>
+          </div>
+        </div>
+
+        <div class="targets">
+          <div class="target-list">
+            <div>TP1: ${fmt(data.tp1)}</div>
+            <div>TP2: ${fmt(data.tp2)}</div>
+          </div>
+          <div class="stop-loss">
+            SL: ${fmt(data.stopLoss)}
+          </div>
+        </div>
+      `;
+
+      signalsContainer.prepend(el);
+      
+      // Keep only last 12 signals in DOM
+      if (signalsContainer.children.length > 12) {
+        signalsContainer.removeChild(signalsContainer.lastChild);
+      }
+    });
+
   </script>
 </body>
 </html>

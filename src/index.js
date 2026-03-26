@@ -190,7 +190,9 @@ async function notifySniperSignals(signals) {
 
     const msg = `💥${s.type} 💥\n\n${formattedSymbol} — ${side}\n\n🟢 Leverage: Cross 5X\n\n⚡️ Entry: ${fmt(trade.entry)}\n\n😵 Take Profits:\n\nTP1: ${fmt(trade.tp1)}\nTP2: ${fmt(trade.tp2)}\nTP3: ${fmt(trade.tp3)}\n\nStop Loss: ${fmt(trade.sl)}\n\n⚠️ Risk Management:\nUse only 3% – 5% of your portfolio.\n(Simulated Risk: $10, Size: ${trade.size.toFixed(2)})`;
 
-    sendTelegram(msg).catch(() => {});
+    if (s.type === "CONFIRMED ENTRY") {
+      sendTelegram(msg).catch(() => {});
+    }
 
     broadcast('sniper', {
       symbol: s.symbol,
