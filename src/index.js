@@ -1,6 +1,4 @@
 import { createServer } from 'http';
-```javascript
-import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -218,4 +216,28 @@ async function start() {
     await wsManager.initialize();
     console.log('Connected:', wsManager.symbols.length);
     sendTelegram('✅ ENGINE STARTED: index.js').catch(() => {});
+
+    pumpAnalyzer.initialize(wsManager.symbols);
+    marketDataTracker.initialize(wsManager.symbols);
+    orderBookAnalyzer.start(wsManager.symbols.slice(0, 100));
+    setOITracker(oiTracker);
+    await oiTracker.init(wsManager.symbols);
+
+    setInterval(() => orderflowTracker.reset(), 60000);
+    setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
+
+    setInterval(() => {
+      const topSignals = runSniper();
+      if (topSignals.length > 0) {
+        const toNotify = topSignals.filter(s => s.type === "EARLY ENTRY" || s.type === "CONFIRMED ENTRY");
+        notifySniperSignals(toNotify);
+      }
+    }, 3000);
+
+    console.log('Running');
+  } catch (e) {
+    console.error('Error:', e.message, e.stack);
+  }
+}
+
 start();
