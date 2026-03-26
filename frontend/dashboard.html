@@ -87,8 +87,8 @@
     // Allow overriding API/WS endpoints via query params for GitHub Pages:
     // ?api=https://your-railway.app&ws=wss://your-railway.app
     const params = new URLSearchParams(window.location.search);
-    const API_BASE = (params.get('api') || '').replace(/\/$/, '');
-    const WS_BASE = (params.get('ws') || '').replace(/\/$/, '');
+    const API_BASE = (params.get('api') || 'https://binance-signal-engine-production.up.railway.app').replace(/\/$/, '');
+    const WS_BASE = (params.get('ws') || 'wss://binance-signal-engine-production.up.railway.app').replace(/\/$/, '');
     const apiStatus = document.getElementById('apiStatus');
     const signals = { pressure: [], breakout: [], sniper: [] };
 
