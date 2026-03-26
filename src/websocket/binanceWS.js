@@ -49,8 +49,10 @@ class BinanceWebSocketManager {
       ticker: [],
       kline: [],
       pump: [],
-      trade: []
+      trade: [],
+      liquidation: []
     };
+    this.liqStreamReady = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
     this.pingInterval = null;
@@ -286,6 +288,49 @@ class BinanceWebSocketManager {
         });
       }, index * 2000);
     });
+    
+    setTimeout(() => {
+      this.connectLiquidationStream();
+    }, 5000);
+  }
+  
+  connectLiquidationStream() {
+    if (this.liqStreamReady) return;
+    if (!this.symbols || this.symbols.length === 0) return;
+    
+    const topSymbols = this.symbols.slice(0, 30);
+    const streams = topSymbols.map(s => `${s.toLowerCase()}@forceOrder`);
+    const wsUrl = `wss://fstream.binance.com/stream?streams=${streams.join('/')}`;
+    
+    this.liqWs = new WebSocket(wsUrl);
+    
+    this.liqWs.on('open', () => {
+      this.liqStreamReady = true;
+      console.log('✅ Liquidation stream connected');
+    });
+    
+    this.liqWs.on('message', (data) => {
+      try {
+        const message = JSON.parse(data);
+        if (message.data) {
+          const liq = message.data;
+          const symbol = liq.s;
+          const side = liq.S;
+          const price = parseFloat(liq.p);
+          const qty = parseFloat(liq.q);
+          
+          console.log(`💥 LIQ ${symbol} ${side} ${price} x${qty}`);
+          
+          this.callbacks.liquidation.forEach(cb => cb({ symbol, side, price, qty }));
+        }
+      } catch (error) {}
+    });
+    
+    this.liqWs.on('close', () => {
+      console.log('⚠️ Liquidation stream closed, reconnecting...');
+      this.liqStreamReady = false;
+      setTimeout(() => this.connectLiquidationStream(), 5000);
+    });
   }
 
   handleTrade(trade) {
@@ -324,6 +369,10 @@ class BinanceWebSocketManager {
 
   onPump(callback) {
     this.callbacks.pump.push(callback);
+  }
+  
+  onLiquidation(callback) {
+    this.callbacks.liquidation.push(callback);
   }
 
   getTickers() {

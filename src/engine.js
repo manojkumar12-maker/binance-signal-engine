@@ -5,6 +5,8 @@ const { pumpAnalyzer } = await import('./analyzer/pumpAnalyzer.js');
 const { processSymbol, setOITracker, updateBTCPrice, getTopSymbols } = await import('./engine/signalPipeline.js');
 const { oiTracker } = await import('./engine/oiTracker.js');
 const { orderflowTracker } = await import('./engine/orderflowTracker.js');
+const { startFundingLoop, fetchFundingRates } = await import('./data/funding.js');
+const { getLiquidations, analyzeLiquidations } = await import('./data/liquidations.js');
 const { createServer } = await import('http');
 const { WebSocketServer } = await import('ws');
 const { readFileSync } = await import('fs');
@@ -20,6 +22,13 @@ const server = createServer((req, res) => {
   if (url === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end('{"status":"ok"}');
+    return;
+  }
+  
+  if (url === '/api/liquidations') {
+    const liqs = getLiquidations();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(liqs));
     return;
   }
   
@@ -79,6 +88,10 @@ wsManager.onTrade(trade => {
   oiTracker.handleTrade(trade);
 });
 
+wsManager.onLiquidation(liq => {
+  console.log(`💥 LIQUIDATION: ${liq.symbol} ${liq.side} ${liq.price}`);
+});
+
 await wsManager.initialize();
 console.log('Connected:', wsManager.symbols.length);
 
@@ -86,12 +99,15 @@ pumpAnalyzer.initialize(wsManager.symbols);
 await oiTracker.init(wsManager.symbols);
 setOITracker(oiTracker);
 
+fetchFundingRates();
+startFundingLoop(60000);
+
 setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
 
 setInterval(() => {
   const ofStats = orderflowTracker.getStats();
   if (ofStats.activeSymbols > 0) {
-    console.log(`🔥 Active trade symbols: ${ofStats.activeSymbols} | OF tracked: ${ofStats.trackedSymbols} | Last: ${ofStats.lastProcessedSymbol}`);
+    console.log(`🔥 Active trade symbols: ${ofStats.activeSymbols} | OF tracked: ${ofStats.trackedSymbols}`);
   }
 }, 30000);
 
