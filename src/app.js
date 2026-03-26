@@ -11,6 +11,7 @@ export async function start() {
   const { orderflowTracker } = await import('./engine/orderflowTracker.js');
   const { oiTracker } = await import('./engine/oiTracker.js');
   const { processSymbol, setOITracker, updateBTCPrice } = await import('./engine/signalPipeline.js');
+  const { sendTelegram } = await import('./utils/telegram.js');
 
   wsManager.onTicker((ticker) => {
     if (ticker.symbol === 'BTCUSDT') {
@@ -39,6 +40,9 @@ export async function start() {
   setInterval(() => orderflowTracker.reset(), 60000);
   setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
 
+  // Quick connectivity test (non-blocking)
+  sendTelegram('✅ TEST MESSAGE: engine start').catch(() => {});
+
   function processTicker(ticker) {
     const analysis = pumpAnalyzer.analyze(ticker);
     if (!analysis?.symbol) return;
@@ -62,6 +66,7 @@ export async function start() {
       signalGenerator.generateSignal(ticker.symbol, result).then(signal => {
         if (signal) {
           addSignal(signal);
+          sendTelegram(`🎯 SNIPER: ${signal.symbol}\nEntry: ${signal.entryPrice?.toFixed?.(6)}\nConf: ${signal.confidence}`);
           console.log(`🔴 SNIPER: ${signal.symbol}`);
         }
       });

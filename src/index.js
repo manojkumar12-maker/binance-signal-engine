@@ -13,15 +13,48 @@ import { marketDataTracker } from './engine/marketDataTracker.js';
 import { oiTracker } from './engine/oiTracker.js';
 import { topPumpSelector } from './engine/topPumpSelector.js';
 import { signalGenerator } from './signals/signalGenerator.js';
-import { addSignal } from './state.js';
+import { addSignal, getRecentSignals } from './state.js';
+import { sendTelegram } from './utils/telegram.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
 
 const server = createServer((req, res) => {
+  // Basic CORS for API endpoints
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   if (req.url === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end('{"status":"ok"}');
+    return;
+  }
+  if (req.url === '/heatmap') {
+    try {
+      const signals = getRecentSignals(200);
+      const grouped = {};
+      signals.forEach(sig => {
+        if (!grouped[sig.symbol]) grouped[sig.symbol] = [];
+        grouped[sig.symbol].push({
+          tier: sig.tier,
+          type: sig.type,
+          confidence: sig.confidence,
+          entryPrice: sig.entryPrice,
+          timestamp: sig.timestamp
+        });
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(grouped));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'heatmap_error', message: e.message }));
+    }
     return;
   }
 
@@ -70,6 +103,7 @@ function handleHighPumpCandidates(ranked) {
 
     console.log(`🚀 HIGH_PUMP ${payload.symbol} | rank=${payload.rankScore} | strength=${payload.strength}`);
     broadcast('high_pump', payload);
+    sendTelegram(`🚀 HIGH PUMP: ${payload.symbol}\nScore: ${payload.rankScore}\nStrength: ${payload.strength}`).catch(() => {});
   });
 }
 
@@ -117,6 +151,7 @@ function handleTicker(ticker) {
       addSignal(signal);
       broadcast('sniper', signal);
       broadcast('signal', signal);
+      sendTelegram(`🎯 SNIPER: ${signal.symbol}\nEntry: ${signal.entryPrice?.toFixed?.(6) || ticker.price}\nConf: ${signal.confidence || ''}`).catch(() => {});
       console.log(`🎯 SNIPER ${signal.symbol} | entry=${signal.entryPrice?.toFixed?.(6)} | conf=${signal.confidence}`);
     }).catch(() => {});
   }
