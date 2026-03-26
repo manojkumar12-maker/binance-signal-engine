@@ -262,11 +262,13 @@ class BinanceWebSocketManager {
         tradeWs.on('message', (data) => {
           try {
             const message = JSON.parse(data);
-            if (message.stream && message.data) {
+            if (message.data) {
               this.handleTrade(message.data);
+            } else if (message.stream && message.stream.includes('@trade')) {
+              console.log('⚠️ Unexpected trade format:', JSON.stringify(message).slice(0, 200));
             }
           } catch (error) {
-            // Silent fail
+            console.error('❌ Trade parse error:', error.message);
           }
         });
         
@@ -295,11 +297,20 @@ class BinanceWebSocketManager {
       timestamp: trade.T
     };
 
+    if (!tradeData.symbol) {
+      if ((this.tradeCount || 0) % 50000 === 0) {
+        console.log('❌ Trade missing symbol:', JSON.stringify(trade).slice(0, 200));
+      }
+      return;
+    }
+
     this.callbacks.trade.forEach(cb => cb(tradeData));
 
     this.tradeCount = (this.tradeCount || 0) + 1;
+    this.lastSymbol = tradeData.symbol;
+    
     if (this.tradeCount % 10000 === 0) {
-      console.log(`📊 Trades received: ${this.tradeCount} (${Object.keys(this.tickers).length} symbols)`);
+      console.log(`📊 Trades received: ${this.tradeCount} (${this.tickers.size} symbols) | Last: ${this.lastSymbol}`);
     }
   }
 

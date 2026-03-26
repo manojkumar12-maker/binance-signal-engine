@@ -84,4 +84,11 @@ setOITracker(oiTracker);
 
 setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
 
+setInterval(() => {
+  const ofStats = orderflowTracker.getStats();
+  if (ofStats.activeSymbols > 0) {
+    console.log(`🔥 Active trade symbols: ${ofStats.activeSymbols} | OF tracked: ${ofStats.trackedSymbols} | Last: ${ofStats.lastProcessedSymbol}`);
+  }
+}, 30000);
+
 console.log('Running');

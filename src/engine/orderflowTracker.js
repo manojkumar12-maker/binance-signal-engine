@@ -6,10 +6,19 @@ export class OrderflowTracker {
 
   handleTrade(trade) {
     const symbol = trade.symbol;
-    if (!symbol) return;
+    if (!symbol) {
+      this._missingSymbolCount = (this._missingSymbolCount || 0) + 1;
+      if (this._missingSymbolCount % 50000 === 0) {
+        console.log('❌ Orderflow received trade without symbol:', JSON.stringify(trade).slice(0, 200));
+      }
+      return;
+    }
     
     const qty = parseFloat(trade.quantity) || parseFloat(trade.q) || 0;
-    if (!qty) return;
+    if (!qty) {
+      this._zeroQtyCount = (this._zeroQtyCount || 0) + 1;
+      return;
+    }
 
     if (!this.data.has(symbol)) {
       this.data.set(symbol, {
@@ -30,6 +39,7 @@ export class OrderflowTracker {
 
     d.trades.push({ qty, isBuyerMaker: trade.isBuyerMaker || trade.m, time: Date.now() });
     d.lastUpdate = Date.now();
+    this.setLastSymbol(symbol);
 
     if (d.trades.length > 500) {
       d.trades = d.trades.slice(-500);
@@ -117,8 +127,13 @@ export class OrderflowTracker {
       activeSymbols,
       totalBuyVolume: totalBuy,
       totalSellVolume: totalSell,
-      lastReset: this.lastReset
+      lastReset: this.lastReset,
+      lastProcessedSymbol: this._lastSymbol
     };
+  }
+  
+  setLastSymbol(symbol) {
+    this._lastSymbol = symbol;
   }
 }
 
