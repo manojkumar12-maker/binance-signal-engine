@@ -67,7 +67,7 @@ function getEntrySignal(symbol, data) {
   const momentum = detectMomentum(symbol, price);
 
   // 🔥 CONFIRMED ENTRY
-  if (pressure && breakout && momentum && oiChange > 0.3 && volumeRatio > 1.5) {
+  if (pressure && breakout && momentum && oiChange > 0.5 && volumeRatio > 2.0) {
     return {
       type: "CONFIRMED ENTRY",
       score: 3
