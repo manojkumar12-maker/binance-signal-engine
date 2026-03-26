@@ -64,7 +64,7 @@ const server = createServer((req, res) => {
   if (req.url === '/' || req.url === '/dashboard') {
     try {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(readFileSync(join(__dirname, '../frontend/dashboard.html')));
+      res.end(readFileSync(join(__dirname, '../frontend/index.html')));
     } catch (e) {
       res.writeHead(500).end('Error');
     }
