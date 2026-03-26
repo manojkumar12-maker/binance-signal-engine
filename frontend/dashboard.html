@@ -10,7 +10,7 @@
     .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px; border-bottom: 2px solid #f0b90b; display: flex; justify-content: space-between; align-items: center; }
     .header h1 { color: #f0b90b; font-size: 1.8rem; }
     .container { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 20px; }
-    .panel { background: #121212; border-radius: 10px; padding: 15px; min-height: 400px; max-height: 70vh; overflow-y: auto; }
+    .panel { background: #121212; border-radius: 10px; padding: 15px; min-height: 260px; max-height: 70vh; overflow-y: auto; }
     .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #333; }
     .panel-title { font-size: 1.2rem; font-weight: bold; }
     .panel-pressure { border-top: 3px solid #9932cc; }
@@ -30,10 +30,10 @@
     .confidence.high { background: #22c55e; color: #000; }
     .confidence.good { background: #3b82f6; color: #fff; }
     .breakout-timer { font-size: 1.5rem; color: #ff8c00; font-weight: bold; }
-    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 0.8rem; color: #aaa; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-size: 0.8rem; color: #aaa; }
     .metric { text-align: center; }
     .metric-value { color: #fff; font-weight: 500; }
-    .empty-panel { text-align: center; color: #666; padding: 40px; }
+    .empty-panel { text-align: center; color: #666; padding: 30px; }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #1e1e1e; }
     ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
@@ -42,12 +42,13 @@
 <body>
   <div class="header">
     <h1>🔥 PUMP DETECTOR PRO</h1>
+    <div id="apiStatus" style="font-size:0.9rem;color:#9acd32;">API: checking...</div>
   </div>
 
   <div class="container">
     <div class="panel panel-pressure">
       <div class="panel-header">
-        <div class="panel-title">🟣 PRESSURE</div>
+        <div class="panel-title">🧃 PRESSURE</div>
       </div>
       <div id="pressureSignals">
         <div class="empty-panel">Waiting...</div>
@@ -56,7 +57,7 @@
 
     <div class="panel panel-breakout">
       <div class="panel-header">
-        <div class="panel-title">🟠 BREAKOUT TIMER</div>
+        <div class="panel-title">⏱️ BREAKOUT TIMER</div>
       </div>
       <div id="breakoutSignals">
         <div class="empty-panel">Waiting...</div>
@@ -65,10 +66,19 @@
 
     <div class="panel panel-sniper">
       <div class="panel-header">
-        <div class="panel-title">🔴 SNIPER ENTRY</div>
+        <div class="panel-title">🎯 SNIPER ENTRY</div>
       </div>
       <div id="sniperSignals">
         <div class="empty-panel">Waiting...</div>
+      </div>
+    </div>
+
+    <div class="panel panel-sniper" style="grid-column: span 3;">
+      <div class="panel-header">
+        <div class="panel-title">📊 TOP OI MOVERS (last 120s)</div>
+      </div>
+      <div id="topOiList">
+        <div class="empty-panel">Waiting for data...</div>
       </div>
     </div>
   </div>
@@ -76,6 +86,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
+    const apiStatus = document.getElementById('apiStatus');
     
     const signals = { pressure: [], breakout: [], sniper: [] };
 
@@ -92,6 +103,7 @@
             <div class="metric"><div class="metric-value">${data.fakeOI?.toFixed(2) || '0'}</div><div>FakeOI</div></div>
             <div class="metric"><div class="metric-value">${data.flow?.toFixed(1) || '1'}</div><div>Flow</div></div>
             <div class="metric"><div class="metric-value">${data.volume?.toFixed(1) || '0'}x</div><div>Volume</div></div>
+            <div class="metric"><div class="metric-value">${data.score || 0}</div><div>Score</div></div>
           </div>
         </div>`;
       signals.pressure.unshift(card);
@@ -123,6 +135,7 @@
             <div class="metric"><div class="metric-value">${data.entry?.toFixed(4)}</div><div>Entry</div></div>
             <div class="metric"><div class="metric-value">${data.stopLoss?.toFixed(4)}</div><div>SL</div></div>
             <div class="metric"><div class="metric-value">${data.tp1?.toFixed(4)}</div><div>TP1</div></div>
+            <div class="metric"><div class="metric-value">${data.tp2?.toFixed(4)}</div><div>TP2</div></div>
           </div>
         </div>`;
       signals.sniper.unshift(card);
@@ -141,6 +154,49 @@
       document.getElementById('breakoutSignals').innerHTML = signals.breakout.length ? signals.breakout.join('') : '<div class="empty-panel">Waiting...</div>';
       document.getElementById('sniperSignals').innerHTML = signals.sniper.length ? signals.sniper.join('') : '<div class="empty-panel">Waiting...</div>';
     }
+
+    async function fetchTop() {
+      const endpoints = ['/api/heatmap', '/heatmap'];
+      for (const ep of endpoints) {
+        try {
+          const res = await fetch(ep);
+          if (!res.ok) continue;
+          const data = await res.json();
+          apiStatus.textContent = `API OK (${ep})`;
+          apiStatus.style.color = '#22c55e';
+
+          const top = data.top || [];
+          if (!top.length) {
+            document.getElementById('topOiList').innerHTML = '<div class="empty-panel">No movers yet</div>';
+            return;
+          }
+          const html = top.map((t, idx) => `
+            <div class="signal-card sniper">
+              <div class="signal-header">
+                <span class="symbol">${idx + 1}. ${t.symbol}</span>
+                <span class="confidence high">${(t.oi || 0).toFixed(3)}%</span>
+              </div>
+              <div class="metrics">
+                <div class="metric"><div class="metric-value">${(t.volume || 0).toFixed(2)}x</div><div>Vol</div></div>
+                <div class="metric"><div class="metric-value">${(t.momentum || 0).toFixed(3)}</div><div>Momentum</div></div>
+                <div class="metric"><div class="metric-value">${(t.imbalance || 0).toFixed(2)}</div><div>OB Imb</div></div>
+                <div class="metric"><div class="metric-value">${(t.rankScore || 0).toFixed(1)}</div><div>Score</div></div>
+              </div>
+            </div>
+          `).join('');
+          document.getElementById('topOiList').innerHTML = html;
+          return;
+        } catch (err) {
+          continue;
+        }
+      }
+      apiStatus.textContent = 'API ERROR';
+      apiStatus.style.color = '#ff4444';
+      document.getElementById('topOiList').innerHTML = '<div class="empty-panel">API not reachable</div>';
+    }
+
+    setInterval(fetchTop, 5000);
+    fetchTop();
 
     console.log('📊 Dashboard ready');
   </script>
