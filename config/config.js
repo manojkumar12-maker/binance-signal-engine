@@ -69,6 +69,7 @@ export const config = {
     fundingThreshold: 0.01
   },
   advancedFeatures: {
+    fastMode: true,
     orderflow: {
       enabled: true,
       windowMs: 60000,

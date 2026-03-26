@@ -774,12 +774,38 @@ class PumpAnalyzer {
       return null;
     }
 
-    const oiHistoryLen = oiTracker.getOIHistoryLength(symbol);
-    const oiReady = oiHistoryLen >= 10;
-    
-    if (!oiReady && Math.random() < 0.01) {
-      console.log(`⏳ ${symbol}: OI building ${oiHistoryLen}/10, waiting...`);
+    // Fast fallback when OI history not ready: early pump heuristic
+    const earlyConditions = volumeSpike > 2 && momentum > 0 && orderbookImbalance > 1.3;
+    const confirmedPump = earlyConditions && Math.abs(oiChange || 0) > 1.5;
+    enhancedResult.earlyPump = earlyConditions;
+    enhancedResult.confirmedPump = confirmedPump;
+
+    if (!oiReady && earlyConditions) {
+      return {
+        symbol,
+        type: 'EARLY_PUMP',
+        priceChange,
+        volumeSpike,
+        orderflow: { ratio: ofRatio },
+        openInterest: { change: oiChange || 0 },
+        fakeOI,
+        acceleration: momentum,
+        momentum,
+        atr: analysis?.atr || 0,
+        atrPercent: analysis?.atrPercent || 0,
+        entryPrice: analysis?.entryPrice || 0,
+        orderbookImbalance,
+        imbalance: orderbookImbalance,
+        liquidationSignal: liqData.signal,
+        liquidationDirection: liqData.direction,
+        volumeRatio: volumeSpike,
+        earlySignal: true
+      };
     }
+
+    const oiRequired = config?.advancedFeatures?.fastMode ? 2 : 10;
+    const oiHistoryLen = oiTracker.getOIHistoryLength(symbol);
+    const oiReady = oiHistoryLen >= oiRequired;
 
     const checkRR = (entry, atr, atrPct, tier) => {
       const ex = this.generateEntryExit(entry, atr, atrPct, tier);
@@ -865,7 +891,7 @@ class PumpAnalyzer {
     };
 
     if (priceChange >= 5 && volumeSpike >= 3 && ofRatio >= 1.5 && priceChange <= 15) {
-      const oiValid = (Math.abs(oiChange) >= 0.05 || Math.abs(fakeOI || 0) >= 0.6) && (oiReady || (fakeOI && Math.abs(fakeOI) > 0.5));
+      const oiValid = (Math.abs(oiChange) >= 0.05 || Math.abs(fakeOI || 0) >= 0.6) && (oiReady || config?.advancedFeatures?.fastMode || (fakeOI && Math.abs(fakeOI) > 0.5));
       if (!oiValid) {
         if (Math.random() < 0.01) console.log(`⚠️ ${symbol} SNIPER: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)} ready=${oiReady})`);
         return null;
@@ -916,7 +942,7 @@ class PumpAnalyzer {
     }
 
     if (priceChange >= 8 && volumeSpike >= 5 && ofRatio >= 2.0 && priceChange <= 15) {
-      const oiValid = (Math.abs(oiChange) >= 0.03 || Math.abs(fakeOI || 0) >= 0.4) && (oiReady || fakeOI);
+      const oiValid = (Math.abs(oiChange) >= 0.03 || Math.abs(fakeOI || 0) >= 0.4) && (oiReady || config?.advancedFeatures?.fastMode || fakeOI);
       if (!oiValid) {
         if (Math.random() < 0.01) console.log(`⚠️ ${symbol} CONFIRMED: OI not valid (OI=${oiChange.toFixed(4)}% fake=${(fakeOI || 0).toFixed(2)} ready=${oiReady})`);
         return null;

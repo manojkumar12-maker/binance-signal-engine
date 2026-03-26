@@ -6,7 +6,7 @@ const MAX_BATCH = 50;
 const FETCH_INTERVAL = 5000;
 const HISTORY_SIZE = 60;
 const MAX_TRACKED = 200;
-const MIN_HISTORY_FOR_SIGNALS = 3;
+const MIN_HISTORY_FOR_SIGNALS = 2;
 
 const oiMemory = new Map();
 
@@ -101,7 +101,7 @@ function updateMemoryOI(symbol, value) {
 
 function getOIChangeFast(symbol) {
   const arr = oiMemory.get(symbol);
-  if (!arr || arr.length < 3) return 0;
+  if (!arr || arr.length < 2) return 0;
 
   const first = arr[0].value;
   const last = arr[arr.length - 1].value;
