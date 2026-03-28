@@ -2,9 +2,7 @@ import { calculatePositionSize } from "./risk.js";
 import { getLevels } from "./levels.js";
 import { placeOrder } from "./binance.js";
 
-export async function executeTrade(symbol, signalType, price, balance = 1000) {
-  const direction = "LONG"; // Default for pump sniper
-
+export async function executeTrade(symbol, signalType, price, balance = 1000, direction = "LONG") {
   const { sl, tp1, tp2, tp3 } = getLevels(price, direction);
 
   const size = calculatePositionSize({

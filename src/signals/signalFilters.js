@@ -95,16 +95,19 @@ export function isExecutionReady(signal) {
 
 export function formatSignalForTelegram(s) {
   const fmt = n => Number(n || 0).toFixed(4);
-  const fmtPrice = n => Number(n || 0).toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+  const fmtPrice = n => Number(n || 0).toFixed(2);
   
   const type = s.type || 'SIGNAL';
   const symbol = s.symbol || 'N/A';
   const score = s.finalScore || s.score || s.confidence || 0;
   const level = s.level || 'WATCH';
   
-  const oi = s.oiChange || 0;
-  const vol = s.volumeRatio || s.volume || 1;
-  const oflow = s.orderFlow || s.imbalance || 1;
+  const oi = s.oiChange || s.data?.oiChange || 0;
+  const vol = s.volumeRatio || s.volume || s.data?.volume || 1;
+  const oflow = s.orderFlow || s.imbalance || s.data?.orderFlow || 1;
+  const whale = s.whale || s.data?.whale || null;
+  const newsScore = s.newsImpact || s.newsScore || 0;
+  const session = s.session || 'N/A';
   
   let emoji = '👀';
   if (type.includes('CONFIRMED') || score >= 70) emoji = '✅';
@@ -112,25 +115,52 @@ export function formatSignalForTelegram(s) {
   else if (type.includes('EXPLOSION') || score >= 40) emoji = '💥';
   else if (type.includes('ENTRY') || score >= 30) emoji = '🚀';
   else if (type.includes('BUILDING')) emoji = '🔥';
+  else if (type.includes('TRAP')) emoji = '⚠️';
   
-  const direction = s.direction || (s.priceChange > 0 ? 'LONG' : 'SHORT');
-  const side = direction === 'LONG' ? '🟢 LONG' : '🔴 SHORT';
+  const direction = s.rawDirection || s.direction || (s.priceChange > 0 ? 'LONG' : 'SHORT');
+  const side = direction === '🟢 LONG' || direction === 'LONG' ? '🟢 LONG' : '🔴 SHORT';
+  const dirEmoji = direction === '🟢 LONG' || direction === 'LONG' ? '📈' : '📉';
   
-  let msg = `${emoji} ${type}\n\n`;
-  msg += `📊 ${symbol.replace('USDT', '/USDT')} — ${side}\n\n`;
-  msg += `📈 Score: ${score.toFixed(0)} | Level: ${level}\n\n`;
-  msg += `--- METRICS ---\n`;
-  msg += `OI: ${fmt(oi)}%\n`;
-  msg += `Vol: ${fmt(vol)}x\n`;
-  msg += `OF: ${fmt(oflow)}\n\n`;
+  const whaleEmoji = whale === 'ACCUMULATION' ? '🐋🟢' : whale === 'DISTRIBUTION' ? '🐋🔴' : '—';
+  const newsEmoji = newsScore > 0 ? '📰🟢' : newsScore < 0 ? '📰🔴' : '📰—';
+  
+  const strength = score >= 70 ? 'VERY HIGH' : score >= 50 ? 'HIGH' : score >= 30 ? 'MEDIUM' : 'LOW';
+  
+  let msg = `🚨 ${symbol} PERPETUAL SIGNAL\n\n`;
+  msg += `📊 Type: ${type} (${level})\n`;
+  msg += `${dirEmoji} Direction: ${side}\n`;
+  if (whale) msg += `🐋 Whale: ${whale} ${whaleEmoji}\n`;
+  if (newsScore !== 0) msg += `${newsEmoji} News Impact: ${newsScore > 0 ? '+' : ''}${newsScore} (${newsScore > 0 ? 'Bullish' : 'Bearish'})\n`;
+  msg += `\n━━━━━━━━━━━━━━━\n`;
   
   if (s.entry) {
-    msg += `--- ENTRY ---\n`;
-    msg += `Entry: ${fmtPrice(s.entry)}\n`;
-    if (s.tp1) msg += `TP1: ${fmtPrice(s.tp1)}\n`;
-    if (s.tp2) msg += `TP2: ${fmtPrice(s.tp2)}\n`;
-    if (s.stopLoss) msg += `SL: ${fmtPrice(s.stopLoss)}\n`;
+    msg += `💰 Entry: ${fmtPrice(s.entry)}\n`;
+    msg += `🛑 Stop Loss: ${fmtPrice(s.stopLoss)}\n`;
+    msg += `🎯 Take Profit:\n`;
+    if (s.tp1) msg += `• TP1: ${fmtPrice(s.tp1)}\n`;
+    if (s.tp2) msg += `• TP2: ${fmtPrice(s.tp2)}\n`;
+    if (s.tp3) msg += `• TP3: ${fmtPrice(s.tp3)}\n`;
+    msg += `\n━━━━━━━━━━━━━━━\n`;
   }
+  
+  msg += `📊 Confidence Score: ${score.toFixed(0)}\n`;
+  msg += `⚙️ Signal Strength: ${strength}\n`;
+  msg += `📍 Session: ${session}\n`;
+  
+  const now = new Date();
+  const istTime = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+  msg += `🕒 Time: ${istTime} IST\n`;
+  msg += `\n━━━━━━━━━━━━━━━\n`;
+  
+  if (whale) {
+    msg += `🧠 Logic:\n`;
+    if (whale === 'ACCUMULATION') msg += `• Whale accumulation detected\n`;
+    if (whale === 'DISTRIBUTION') msg += `• Whale distribution detected\n`;
+    msg += `• OI increasing + strong orderflow\n`;
+    msg += `• ${level} signal confirmed\n`;
+  }
+  
+  msg += `\n⚠️ Trade with proper risk management`;
   
   return msg;
 }

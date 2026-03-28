@@ -180,8 +180,9 @@ async function notifySniperSignals(signals) {
     if (notifiedSignals.has(sigKey)) continue;
     notifiedSignals.add(sigKey);
     
-    const trade = await executeTrade(s.symbol, s.type, s.price, 1000);
-    const side = trade.direction === "LONG" ? "🟢 LONG" : "🔴 SHORT";
+    const signalDirection = s.direction || "LONG";
+    const trade = await executeTrade(s.symbol, s.type, s.price, 1000, signalDirection);
+    const side = signalDirection === "LONG" ? "🟢 LONG" : "🔴 SHORT";
     const formattedSymbol = s.symbol.replace("USDT", "/USDT");
     const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
 
@@ -192,7 +193,8 @@ async function notifySniperSignals(signals) {
       tp1: trade.tp1,
       tp2: trade.tp2,
       tp3: trade.tp3,
-      direction: side
+      direction: side,
+      rawDirection: signalDirection
     });
 
     if (isExecutionReady(s)) {
