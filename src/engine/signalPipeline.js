@@ -1,3 +1,15 @@
+import { 
+  filterByD1Trend, 
+  filterByH4Zone, 
+  filterBySession, 
+  confirmM15Entry,
+  calculateWeightedScore,
+  formatEnhancedSignal,
+  applyAllFilters,
+  getSessionInfo,
+  updateMarketTimeframes
+} from '../signals/advancedFilters.js';
+
 const STAGES = {
   WATCH: 'WATCH',
   BUILDING: 'BUILDING',
@@ -18,6 +30,7 @@ const MIN_SIGNAL_SCORE = 20;
 const MAX_ACTIVE_SIGNALS = 10;
 
 let btcPriceChange = 0;
+let enableAdvancedFilters = true;
 
 export function setOITracker(tracker) {
   oiTrackerModule = tracker;
@@ -137,6 +150,25 @@ function canTrade(symbol) {
   return Date.now() - last > SIGNAL_COOLDOWN;
 }
 
+function applyFiltersToSignal(signal) {
+  if (!signal || !enableAdvancedFilters) return signal;
+  
+  const filterResult = applyAllFilters(signal, {
+    allowAsia: false,
+    requireM15: true,
+    requireD1: true,
+    requireH4: true
+  });
+  
+  if (filterResult.filtered) {
+    console.log(`🚫 FILTERED: ${signal.symbol} - ${filterResult.reason}`);
+    return null;
+  }
+  
+  const enhanced = formatEnhancedSignal(signal);
+  return enhanced;
+}
+
 export function getTopSymbols(limit = 10) {
   const sorted = [...symbolScores.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -171,23 +203,26 @@ export function processSymbol(symbol, marketData) {
   }
   
   const score = calculateAdaptiveScore(d);
-  d.score = score;
-  symbolScores.set(symbol, score);
+  const weightedScore = calculateWeightedScore(d);
+  const finalScore = Math.max(score, weightedScore);
+  d.score = finalScore;
+  symbolScores.set(symbol, finalScore);
   
-  const level = getSignalLevel(score);
+  const level = getSignalLevel(finalScore);
   const state = stateMap.get(symbol) || { stage: STAGES.WATCH };
+  d.weightedScore = weightedScore;
   
   if (detectHighPump(d)) {
-    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score, startTime: Date.now() });
+    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score: finalScore, startTime: Date.now() });
     lastSignalTime[symbol] = Date.now();
     
     const direction = d.priceChange > 0 ? 'LONG' : 'SHORT';
     const entry = d.price;
     const risk = entry * 0.02;
     
-    console.log(`🔥 HIGH_PUMP: ${symbol} | Score=${score} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
+    console.log(`🔥 HIGH_PUMP: ${symbol} | Score=${finalScore} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
     
-    return {
+    const signal = {
       type: 'HIGH_PUMP',
       symbol,
       direction,
@@ -196,23 +231,27 @@ export function processSymbol(symbol, marketData) {
       tp1: entry + risk * 1,
       tp2: entry + risk * 2,
       tp3: entry + risk * 3,
-      confidence: score,
+      confidence: finalScore,
+      score: finalScore,
       level,
       data: d
     };
+    
+    return applyFiltersToSignal(signal);
   }
   
-  if (detectExplosion(d) && score >= 40) {
+  if (detectExplosion(d) && finalScore >= 40) {
     const direction = d.priceChange > 0 ? 'LONG' : 'SHORT';
     const entry = d.price;
     const risk = entry * 0.02;
     
-    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score, startTime: Date.now() });
+    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score: finalScore, startTime: Date.now() });
     lastSignalTime[symbol] = Date.now();
     
-    console.log(`🔴 SNIPER: ${symbol} | Score=${score} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x`);
+    const sessionInfo = getSessionInfo();
+    console.log(`🔴 SNIPER: ${symbol} | Score=${finalScore} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
     
-    return {
+    const signal = {
       type: 'SNIPER',
       symbol,
       direction,
@@ -221,10 +260,14 @@ export function processSymbol(symbol, marketData) {
       tp1: entry + risk * 1,
       tp2: entry + risk * 2,
       tp3: entry + risk * 3,
-      confidence: score,
+      confidence: finalScore,
+      score: finalScore,
       level,
-      data: d
+      data: d,
+      session: sessionInfo.session
     };
+    
+    return applyFiltersToSignal(signal);
   }
   
   if (detectPressure(d) && score >= 30) {
@@ -329,7 +372,10 @@ export const signalPipeline = {
   setOITracker,
   getTopSymbols,
   isSymbolEligible,
-  getAllScores
+  getAllScores,
+  setAdvancedFilters: (enabled) => { enableAdvancedFilters = enabled; },
+  isAdvancedFiltersEnabled: () => enableAdvancedFilters,
+  updateTimeframes: updateMarketTimeframes
 };
 
 export const signalStateMachine = {
@@ -340,4 +386,4 @@ export const signalStateMachine = {
   getTopSymbols
 };
 
-export { STAGES, calculateAdaptiveScore, getSignalLevel, detectEarlyPump, calculateBuyPressure, detectTrap, isNoise };
+export { STAGES, calculateAdaptiveScore, calculateWeightedScore, getSignalLevel, detectEarlyPump, calculateBuyPressure, detectTrap, isNoise, getSessionInfo };
