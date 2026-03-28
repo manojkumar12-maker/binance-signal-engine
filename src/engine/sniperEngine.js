@@ -18,6 +18,7 @@ export function updateSniperState(symbol, data) {
 }
 
 import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection } from '../signals/signalFilters.js';
+import { getSessionInfo } from '../signals/advancedFilters.js';
 
 function canEmitSignal(symbol, type) {
   const cooldown = getCooldownForType(type);
@@ -131,6 +132,14 @@ function getEntrySignal(symbol, data) {
     }
   }
 
+  const sessionInfo = getSessionInfo();
+  const isHighScore = score >= 40;
+  const isHighVolume = volumeRatio > 2;
+  
+  if (!isHighScore && !isHighVolume) {
+    return null;
+  }
+
   // 🔴 SNIPER (Good conditions + DIRECTION)
   if (pressure && breakout && volumeRatio > 1.5 && score >= 30) {
     if (canEmitSignal(symbol, 'SNIPER_ENTRY')) {
@@ -139,33 +148,43 @@ function getEntrySignal(symbol, data) {
         type: "SNIPER ENTRY",
         finalScore: score + 20,
         level: "ENTRY",
-        direction
+        direction,
+        session: sessionInfo.session,
+        score
       };
     }
   }
 
-  // ⚡ EARLY ENTRY (Building + DIRECTION)
-  if ((pressure || breakout) && score >= 25) {
+  // ⚡ EARLY ENTRY (Building + DIRECTION) - BLOCK in elite mode if score < 40
+  if (score < 40) {
+    return null;
+  }
+  
+  if ((pressure || breakout) && score >= 30) {
     if (canEmitSignal(symbol, 'EARLY_ENTRY')) {
       recordSignal(symbol);
       return {
         type: "EARLY ENTRY",
         finalScore: score + 10,
         level: "BUILDING",
-        direction
+        direction,
+        session: sessionInfo.session,
+        score
       };
     }
   }
 
-  // 👀 WATCH (Score based + DIRECTION)
-  if (score >= 25 && direction) {
+  // 👀 WATCH - BLOCK in elite mode
+  if (score >= 40 && direction) {
     if (canEmitSignal(symbol, 'WATCH')) {
       recordSignal(symbol);
       return {
         type: "WATCH",
         finalScore: score,
         level: "WATCH",
-        direction
+        direction,
+        session: sessionInfo.session,
+        score
       };
     }
   }
