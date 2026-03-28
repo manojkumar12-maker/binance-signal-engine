@@ -170,7 +170,11 @@ function handleTicker(ticker) {
 const notifiedSignals = new Set();
 
 async function notifySniperSignals(signals) {
-  const topSignals = selectTopSignals(signals, 5);
+  const allowedTypes = ['SNIPER', 'HIGH_PUMP'];
+  const filtered = signals.filter(s => allowedTypes.includes(s.type));
+  const topSignals = selectTopSignals(filtered, 5);
+  
+  if (topSignals.length === 0) return;
   
   for (const s of topSignals) {
     const { allowed, cooldown } = shouldEmit(s.symbol, s.type);

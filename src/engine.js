@@ -85,26 +85,12 @@ wsManager.onTicker(ticker => {
   });
   
   if (r?.type === 'SNIPER') {
-    console.log('🔴 SNIPER:', r.symbol);
-    wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
-  }
-  
-  if (r?.type === 'EARLY_PUMP') {
-    console.log('🚀 EARLY PUMP:', r.symbol, '| Score:', r.confidence);
+    console.log('🎯 SNIPER:', r.symbol, '| Score:', r.confidence);
     wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
   }
   
   if (r?.type === 'HIGH_PUMP') {
-    console.log('🔥🔥🔥 HIGH PUMP SIGNAL:', r.symbol, '| Phase:', r.pumpPhase, '| Score:', r.confidence);
-    wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
-  }
-  
-  if (r?.type === 'ACCUMULATION') {
-    console.log('📍 ACCUMULATION:', r.symbol, '| Phase:', r.pumpPhase);
-    wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
-  }
-  
-  if (r?.type === 'PRESSURE' && r.confidence >= 7) {
+    console.log('🚀 HIGH_PUMP:', r.symbol, '| Score:', r.confidence);
     wss.clients.forEach(c => c.send(JSON.stringify({ signal: r })));
   }
 });
