@@ -95,7 +95,14 @@ export function isExecutionReady(signal) {
 
 export function formatSignalForTelegram(s) {
   const fmt = n => Number(n || 0).toFixed(4);
-  const fmtPrice = n => Number(n || 0).toFixed(2);
+  const fmtPrice = n => {
+    if (!n || isNaN(n)) return '0';
+    const val = Number(n);
+    if (val >= 100) return val.toFixed(2);
+    if (val >= 10) return val.toFixed(3);
+    if (val >= 1) return val.toFixed(4);
+    return val.toFixed(5);
+  };
   
   const type = s.type || 'SIGNAL';
   const symbol = s.symbol || 'N/A';

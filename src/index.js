@@ -229,7 +229,9 @@ async function start() {
 
     await wsManager.initialize();
     console.log('Connected:', wsManager.symbols.length);
-    sendTelegram('✅ ENGINE STARTED: index.js').catch(() => {});
+    const now = new Date();
+    const istTime = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+    sendTelegram(`🚀 SIGNAL ENGINE STARTED\n\n📊 Monitoring ${wsManager.symbols.length} USDT Perpetuals\n🕐 Started at: ${istTime} IST\n\n✅ Ready to detect signals`).catch(() => {});
 
     pumpAnalyzer.initialize(wsManager.symbols);
     marketDataTracker.initialize(wsManager.symbols);
