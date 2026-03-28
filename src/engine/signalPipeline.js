@@ -233,7 +233,18 @@ function detectHighPump(d) {
     d.volume > 2.5 &&
     d.orderFlow > 1.5 &&
     d.oiChange > 0.5 &&
-    Math.abs(d.priceChange) > 1 &&
+    d.priceChange > 1 &&
+    d.score >= 50 &&
+    d.momentum > 0
+  );
+}
+
+function detectSniper(d) {
+  return (
+    d.volume > 2 &&
+    d.orderFlow > 1.4 &&
+    d.oiChange > 0.3 &&
+    d.priceAcceleration > 0.002 &&
     d.score >= 40
   );
 }
@@ -298,11 +309,18 @@ export function processSymbol(symbol, marketData) {
   
   const whale = detectWhale(d);
   
-  if (isTrap && whale) {
-    return null;
-  }
-  
   if (isTrap) {
+    if (whale) {
+      const reversalDirection = d.priceChange > 0 ? 'SHORT' : 'LONG';
+      console.log(`⚠️ REVERSAL_SETUP: ${symbol} | Price rising but weak OF = fade opportunity | Direction: ${reversalDirection}`);
+      return { 
+        symbol, 
+        type: 'REVERSAL_SETUP', 
+        direction: reversalDirection, 
+        confidence: 30,
+        reason: 'TRAP_WITH_WHALE_FADE'
+      };
+    }
     stateMap.set(symbol, { stage: STAGES.WATCH });
     const trapDirection = d.priceChange > 0 ? 'SHORT' : 'LONG';
     return { symbol, type: 'TRAP', direction: trapDirection, confidence: 0 };
@@ -354,10 +372,15 @@ export function processSymbol(symbol, marketData) {
     return null;
   }
   
-  if (detectHighPump(d)) {
+  if (detectHighPump(d) && normalizedScore >= 50) {
     
     if (!whale) {
       console.log(`🚫 HIGH_PUMP FILTERED: ${symbol} - NO WHALE ACTIVITY`);
+      return null;
+    }
+    
+    if (!smartDirection) {
+      console.log(`🚫 HIGH_PUMP FILTERED: ${symbol} - NO CLEAR DIRECTION`);
       return null;
     }
     
@@ -367,7 +390,7 @@ export function processSymbol(symbol, marketData) {
     const entry = d.price;
     const risk = entry * 0.015;
     
-    console.log(`🔥 HIGH_PUMP: ${symbol} | Score=${normalizedScore} | Dir=${smartDirection} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
+    console.log(`🚀 HIGH_PUMP: ${symbol} | Score=${normalizedScore} | Dir=${smartDirection} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
     
     const signal = {
       type: 'HIGH_PUMP',
@@ -389,7 +412,7 @@ export function processSymbol(symbol, marketData) {
     return applyFiltersToSignal(signal);
   }
   
-  if (detectExplosion(d) && normalizedScore >= 40) {
+  if (detectSniper(d) && normalizedScore >= 40) {
     if (!smartDirection) {
       console.log(`🚫 SNIPER FILTERED: ${symbol} - NO CLEAR DIRECTION`);
       return null;
@@ -407,7 +430,7 @@ export function processSymbol(symbol, marketData) {
     lastSignalTime[symbol] = Date.now();
     
     const sessionInfo = getSessionInfo();
-    console.log(`🔴 SNIPER: ${symbol} | Score=${normalizedScore} | Dir=${smartDirection} | Whale=${whale || 'NONE'} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
+    console.log(`🎯 SNIPER: ${symbol} | Score=${normalizedScore} | Dir=${smartDirection} | Whale=${whale || 'NONE'} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
     
     const signal = {
       type: 'SNIPER',
