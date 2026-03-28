@@ -3,6 +3,61 @@ const h4Zones = new Map();
 const m15Data = new Map();
 const WEIGHT = { volume: 10, oiChange: 20, orderFlow: 15, momentum: 10 };
 
+export function getDirection(d) {
+  const { orderFlow, oiChange, momentum, priceChange } = d;
+  const priceUp = priceChange > 0;
+  const priceDown = priceChange < 0;
+  
+  if (
+    orderFlow > 1.1 &&
+    oiChange > 0 &&
+    momentum > 0
+  ) {
+    return 'LONG';
+  }
+  
+  if (
+    orderFlow < 0.9 &&
+    oiChange > 0 &&
+    momentum < 0
+  ) {
+    return 'SHORT';
+  }
+  
+  if (priceUp && orderFlow < 1.0) {
+    return 'SHORT';
+  }
+  
+  if (priceDown && orderFlow > 1.0) {
+    return 'LONG';
+  }
+  
+  return null;
+}
+
+export function getDirectionForSignalType(type, d) {
+  const direction = getDirection(d);
+  
+  switch (type) {
+    case 'HIGH_PUMP':
+    case 'SNIPER':
+      return direction;
+      
+    case 'PRESSURE':
+    case 'ACCUMULATION':
+      return direction;
+      
+    case 'EARLY_PUMP':
+      return direction;
+      
+    case 'TRAP':
+      return direction === 'LONG' ? 'SHORT' : 'LONG';
+      
+    default:
+      return direction;
+  }
+}
+
 export function getD1Bias(symbol, d1Data) {
   if (!d1Data) return 'NEUTRAL';
   
@@ -102,20 +157,29 @@ export function getM15Data(symbol) {
   return m15Data.get(symbol) || null;
 }
 
-export function confirmM15Entry(symbol) {
+export function confirmM15Entry(symbol, direction) {
   const m15 = getM15Data(symbol);
   
   if (!m15) return { confirmed: false, reason: 'NO_M15_DATA' };
   
-  const bos = m15.breakOfStructure || m15.bos || false;
+  const bosUp = m15.breakStructureUp || m15.bosUp || false;
+  const bosDown = m15.breakStructureDown || m15.bosDown || false;
   const mom = m15.momentum || m15.mom || 0;
   
-  if (!bos) {
-    return { confirmed: false, reason: 'M15_NO_BOS' };
+  if (direction === 'LONG' && !bosUp) {
+    return { confirmed: false, reason: 'M15_NO_BOS_UP' };
   }
   
-  if (mom < 0) {
+  if (direction === 'SHORT' && !bosDown) {
+    return { confirmed: false, reason: 'M15_NO_BOS_DOWN' };
+  }
+  
+  if (direction === 'LONG' && mom < 0) {
     return { confirmed: false, reason: 'M15_NEGATIVE_MOMENTUM' };
+  }
+  
+  if (direction === 'SHORT' && mom > 0) {
+    return { confirmed: false, reason: 'M15_POSITIVE_MOMENTUM' };
   }
   
   return { confirmed: true, reason: null, data: m15 };
@@ -173,10 +237,15 @@ export function applyAllFilters(signal, options = {}) {
     allowAsia = false,
     requireM15 = true,
     requireD1 = true,
-    requireH4 = true
+    requireH4 = true,
+    requireDirection = true
   } = options;
   
   if (!signal) return { filtered: null, reason: 'NO_SIGNAL' };
+  
+  if (requireDirection && !signal.direction) {
+    return { filtered: true, reason: 'NO_DIRECTION' };
+  }
   
   if (requireD1) {
     const d1Result = filterByD1Trend(signal, signal.symbol);
@@ -192,11 +261,51 @@ export function applyAllFilters(signal, options = {}) {
   if (sessionResult.filtered) return sessionResult;
   
   if (requireM15) {
-    const m15Result = confirmM15Entry(signal.symbol);
+    const m15Result = confirmM15Entry(signal.symbol, signal.direction);
     if (!m15Result.confirmed) return { filtered: true, reason: m15Result.reason };
   }
   
   return { filtered: false, reason: null };
+}
+
+export function getTradeSignal(d) {
+  if (!d) return null;
+  
+  const score = calculateWeightedScore(d);
+  const direction = getDirection(d);
+  
+  if (!direction) {
+    return { filtered: true, reason: 'NO_CLEAR_DIRECTION' };
+  }
+  
+  let type = 'WATCH';
+  if (score >= 50) type = 'HIGH_PUMP';
+  else if (score >= 40) type = 'SNIPER';
+  else if (score >= 30) type = 'PRESSURE';
+  else if (score >= 20) type = 'EARLY_PUMP';
+  
+  const isTrap = (d.priceChange > 5 && d.orderFlow < 1.1) ||
+                 (d.priceChange < -5 && d.orderFlow < 1.1);
+  if (isTrap) {
+    type = 'TRAP';
+    return {
+      type,
+      direction: direction === 'LONG' ? 'SHORT' : 'LONG',
+      level: 'TRAP',
+      confidence: score,
+      filtered: false,
+      reason: 'TRAP_DETECTED_FADE'
+    };
+  }
+  
+  return {
+    type,
+    direction,
+    level: score >= 30 ? 'ENTRY' : 'WATCH',
+    confidence: score,
+    data: d,
+    filtered: false
+  };
 }
 
 export function fetchD1Data(symbol) {
@@ -236,5 +345,8 @@ export const advancedFilters = {
   formatEnhancedSignal,
   applyAllFilters,
   updateMarketTimeframes,
+  getDirection,
+  getDirectionForSignalType,
+  getTradeSignal,
   WEIGHT
 };

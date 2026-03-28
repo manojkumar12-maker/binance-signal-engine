@@ -7,7 +7,8 @@ import {
   formatEnhancedSignal,
   applyAllFilters,
   getSessionInfo,
-  updateMarketTimeframes
+  updateMarketTimeframes,
+  getDirection
 } from '../signals/advancedFilters.js';
 
 const STAGES = {
@@ -212,22 +213,28 @@ export function processSymbol(symbol, marketData) {
   const state = stateMap.get(symbol) || { stage: STAGES.WATCH };
   d.weightedScore = weightedScore;
   
+  const smartDirection = getDirection(d);
+  
   if (detectHighPump(d)) {
+    if (!smartDirection) {
+      console.log(`🚫 HIGH_PUMP FILTERED: ${symbol} - NO CLEAR DIRECTION`);
+      return null;
+    }
+    
     stateMap.set(symbol, { stage: STAGES.EXPLOSION, score: finalScore, startTime: Date.now() });
     lastSignalTime[symbol] = Date.now();
     
-    const direction = d.priceChange > 0 ? 'LONG' : 'SHORT';
     const entry = d.price;
-    const risk = entry * 0.02;
+    const risk = entry * 0.015;
     
-    console.log(`🔥 HIGH_PUMP: ${symbol} | Score=${finalScore} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
+    console.log(`🔥 HIGH_PUMP: ${symbol} | Score=${finalScore} | Dir=${smartDirection} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
     
     const signal = {
       type: 'HIGH_PUMP',
       symbol,
-      direction,
+      direction: smartDirection,
       entry,
-      stopLoss: direction === 'LONG' ? entry - risk : entry + risk,
+      stopLoss: smartDirection === 'LONG' ? entry - risk : entry + risk,
       tp1: entry + risk * 1,
       tp2: entry + risk * 2,
       tp3: entry + risk * 3,
@@ -241,22 +248,26 @@ export function processSymbol(symbol, marketData) {
   }
   
   if (detectExplosion(d) && finalScore >= 40) {
-    const direction = d.priceChange > 0 ? 'LONG' : 'SHORT';
+    if (!smartDirection) {
+      console.log(`🚫 SNIPER FILTERED: ${symbol} - NO CLEAR DIRECTION`);
+      return null;
+    }
+    
     const entry = d.price;
-    const risk = entry * 0.02;
+    const risk = entry * 0.015;
     
     stateMap.set(symbol, { stage: STAGES.EXPLOSION, score: finalScore, startTime: Date.now() });
     lastSignalTime[symbol] = Date.now();
     
     const sessionInfo = getSessionInfo();
-    console.log(`🔴 SNIPER: ${symbol} | Score=${finalScore} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
+    console.log(`🔴 SNIPER: ${symbol} | Score=${finalScore} | Dir=${smartDirection} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
     
     const signal = {
       type: 'SNIPER',
       symbol,
-      direction,
+      direction: smartDirection,
       entry,
-      stopLoss: direction === 'LONG' ? entry - risk : entry + risk,
+      stopLoss: smartDirection === 'LONG' ? entry - risk : entry + risk,
       tp1: entry + risk * 1,
       tp2: entry + risk * 2,
       tp3: entry + risk * 3,
@@ -271,13 +282,16 @@ export function processSymbol(symbol, marketData) {
   }
   
   if (detectPressure(d) && score >= 30) {
+    if (!smartDirection) return null;
+    
     stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
     
-    console.log(`🟣 PRESSURE: ${symbol} | Score=${score} | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
+    console.log(`🟣 PRESSURE: ${symbol} | Score=${score} | Dir=${smartDirection} | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
     
     return {
       type: 'PRESSURE',
       symbol,
+      direction: smartDirection,
       confidence: score,
       level,
       data: d,
@@ -286,13 +300,16 @@ export function processSymbol(symbol, marketData) {
   }
   
   if (detectAccumulation(d) && score >= 25) {
+    if (!smartDirection) return null;
+    
     stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
     
-    console.log(`📦 ACCUMULATION: ${symbol} | Score=${score} | Vol=${d.volume.toFixed(1)}x`);
+    console.log(`📦 ACCUMULATION: ${symbol} | Score=${score} | Dir=${smartDirection} | Vol=${d.volume.toFixed(1)}x`);
     
     return {
       type: 'ACCUMULATION',
       symbol,
+      direction: smartDirection,
       confidence: score,
       level,
       data: d,
@@ -301,13 +318,16 @@ export function processSymbol(symbol, marketData) {
   }
   
   if (detectEarlyPump(d) && score >= 20) {
+    if (!smartDirection) return null;
+    
     stateMap.set(symbol, { stage: STAGES.WATCH, score, startTime: Date.now() });
     
-    console.log(`👀 EARLY_PUMP: ${symbol} | Score=${score} | Vol=${d.volume.toFixed(1)}x | OI=${d.oiChange.toFixed(1)}%`);
+    console.log(`👀 EARLY_PUMP: ${symbol} | Score=${score} | Dir=${smartDirection} | Vol=${d.volume.toFixed(1)}x | OI=${d.oiChange.toFixed(1)}%`);
     
     return {
       type: 'EARLY_PUMP',
       symbol,
+      direction: smartDirection,
       confidence: score,
       level,
       data: d,
