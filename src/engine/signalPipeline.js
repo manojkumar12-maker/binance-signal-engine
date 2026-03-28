@@ -17,6 +17,8 @@ import {
   analyzeNewsSentiment
 } from '../signals/advancedFilters.js';
 
+import { isSystemReady } from './oiTracker.js';
+
 const STAGES = {
   WATCH: 'WATCH',
   BUILDING: 'BUILDING',
@@ -43,6 +45,9 @@ let btcPriceChange = 0;
 let enableAdvancedFilters = true;
 
 function isOIReady(symbol) {
+  if (!isSystemReady()) {
+    return false;
+  }
   if (!oiTrackerModule) return true;
   return oiTrackerModule.isOIReady(symbol);
 }

@@ -9,6 +9,67 @@ const MAX_TRACKED = 200;
 const MIN_HISTORY_FOR_SIGNALS = 2;
 
 const oiMemory = new Map();
+let systemReady = false;
+
+export function isSystemReady() {
+  return systemReady;
+}
+
+export async function preloadOIHistory(symbol) {
+  try {
+    const res = await axios.get(
+      `${BINANCE_API}/futures/data/openInterestHist`,
+      {
+        params: {
+          symbol,
+          period: "5m",
+          limit: 5
+        },
+        timeout: 5000
+      }
+    );
+
+    if (!res.data || res.data.length < 2) return null;
+
+    return res.data.map(d => parseFloat(d.sumOpenInterest));
+  } catch (e) {
+    return null;
+  }
+}
+
+async function bootstrapOIHistory(symbols) {
+  const batchSize = 20;
+  let loaded = 0;
+
+  for (let i = 0; i < symbols.length; i += batchSize) {
+    const batch = symbols.slice(i, i + batchSize);
+
+    await Promise.all(
+      batch.map(async (symbol) => {
+        try {
+          const history = await preloadOIHistory(symbol);
+
+          if (history && history.length >= 2) {
+            const arr = history.map(oi => ({ oi, time: Date.now() }));
+            oiTracker.cache.cache.set(symbol, arr);
+            loaded++;
+          }
+        } catch (e) {
+          // skip failed symbols
+        }
+      })
+    );
+
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  console.log(`📊 OI: preloaded ${loaded} symbols with history`);
+
+  if (loaded > 50) {
+    systemReady = true;
+    console.log('✅ OI System: READY (real historical data loaded)');
+  }
+}
 
 class FlowTracker {
   constructor() {
@@ -235,6 +296,9 @@ class OITracker {
     await this.cache.init();
     this.symbols = symbols.filter(s => this.cache.isValid(s));
     console.log(`📊 OIT: tracking ${this.symbols.length} symbols`);
+
+    console.log('📊 OI: loading historical data...');
+    await bootstrapOIHistory(this.symbols.slice(0, 100));
   }
 
   handleTrade(trade) {
@@ -363,6 +427,21 @@ class OITracker {
 
   getFlowData(symbol) {
     return this.flowTracker.data.get(symbol);
+  }
+
+  getCVD(symbol) {
+    const flow = this.flowTracker.data.get(symbol);
+    if (!flow) return { ratio: 1, bias: 'NEUTRAL', net: 0 };
+    
+    const net = flow.buy - flow.sell;
+    const total = flow.buy + flow.sell;
+    const ratio = total > 0 ? (flow.buy / total) : 1;
+    
+    let bias = 'NEUTRAL';
+    if (ratio > 1.1) bias = 'BUY_PRESSURE';
+    else if (ratio < 0.9) bias = 'SELL_PRESSURE';
+    
+    return { ratio, bias, net, buy: flow.buy, sell: flow.sell };
   }
 }
 
