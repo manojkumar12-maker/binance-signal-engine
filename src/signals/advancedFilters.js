@@ -3,6 +3,147 @@ const h4Zones = new Map();
 const m15Data = new Map();
 const WEIGHT = { volume: 10, oiChange: 20, orderFlow: 15, momentum: 10 };
 
+let whaleCache = new Map();
+let newsCache = new Map();
+let enableWhaleFilter = true;
+let enableNewsFilter = false;
+
+export function setWhaleFilter(enabled) {
+  enableWhaleFilter = enabled;
+}
+
+export function setNewsFilter(enabled) {
+  enableNewsFilter = enabled;
+}
+
+export function detectWhale(d) {
+  const { volume, oiChange, priceChange, orderFlow } = d;
+  
+  if (volume > 1.5 && oiChange > 0.2 && Math.abs(priceChange) < 0.3) {
+    if (orderFlow > 1.1) {
+      return 'ACCUMULATION';
+    }
+    if (orderFlow < 0.9) {
+      return 'DISTRIBUTION';
+    }
+  }
+  
+  if (volume > 2 && oiChange > 0.3 && Math.abs(priceChange) < 0.5) {
+    if (orderFlow > 1.2) {
+      return 'ACCUMULATION';
+    }
+    if (orderFlow < 0.8) {
+      return 'DISTRIBUTION';
+    }
+  }
+  
+  return null;
+}
+
+export function detectFuturesWhale(d) {
+  const { volume, oiChange, priceChange, takerBuyRatio, takerSellRatio } = d;
+  
+  if (
+    oiChange > 0.2 &&
+    takerBuyRatio > 1.2 &&
+    priceChange < 0.5
+  ) return 'ACCUMULATION';
+  
+  if (
+    oiChange > 0.2 &&
+    takerSellRatio > 1.2 &&
+    priceChange < 0.5
+  ) return 'DISTRIBUTION';
+  
+  return null;
+}
+
+export function getWhaleFromCache(symbol) {
+  const cached = whaleCache.get(symbol);
+  if (cached && Date.now() - cached.timestamp < 60000) {
+    return cached.whale;
+  }
+  return null;
+}
+
+export function setWhaleCache(symbol, whale) {
+  whaleCache.set(symbol, { whale, timestamp: Date.now() });
+}
+
+export function getDirectionFromWhale(whale) {
+  if (whale === 'ACCUMULATION') return 'LONG';
+  if (whale === 'DISTRIBUTION') return 'SHORT';
+  return null;
+}
+
+export function getNewsImpact(news) {
+  if (!news) return 0;
+  
+  if (news.positive) return 10;
+  if (news.negative) return -10;
+  if (news.impact === 'high') return 5;
+  if (news.impact === 'low') return 0;
+  
+  return 0;
+}
+
+export function getNewsFromCache(symbol) {
+  const cached = newsCache.get(symbol);
+  if (cached && Date.now() - cached.timestamp < 300000) {
+    return cached.news;
+  }
+  return null;
+}
+
+export function setNewsCache(symbol, news) {
+  newsCache.set(symbol, { news, timestamp: Date.now() });
+}
+
+export function analyzeNewsSentiment(newsList) {
+  if (!newsList || newsList.length === 0) return { score: 0, impact: 'none', sentiment: 'neutral' };
+  
+  let score = 0;
+  const keywords = {
+    positive: ['bullish', 'surge', 'rally', 'breakout', 'upgrade', 'ETF', 'adoption'],
+    negative: ['bearish', 'crash', 'hack', 'ban', 'regulation', 'lawsuit', 'liquidate']
+  };
+  
+  newsList.forEach(news => {
+    const title = (news.title || '').toLowerCase();
+    
+    keywords.positive.forEach(kw => {
+      if (title.includes(kw)) score += 2;
+    });
+    
+    keywords.negative.forEach(kw => {
+      if (title.includes(kw)) score -= 3;
+    });
+  });
+  
+  const impact = score > 5 ? 'high' : score > 2 ? 'medium' : 'low';
+  const sentiment = score > 3 ? 'positive' : score < -3 ? 'negative' : 'neutral';
+  
+  return { score, impact, sentiment };
+}
+
+export function isHighImpactNewsTime() {
+  const hour = new Date().getUTCHours();
+  const highImpactHours = [13, 14, 15, 8, 9, 10];
+  return highImpactHours.includes(hour);
+}
+
+export function filterByNewsRisk(session) {
+  if (!enableNewsFilter) return { filtered: false, reason: null };
+  
+  const isHighImpact = isHighImpactNewsTime();
+  
+  if (isHighImpact && session === 'ASIA') {
+    return { filtered: true, reason: 'HIGH_IMPACT_NEWS_ASIA_SESSION' };
+  }
+  
+  return { filtered: false, reason: null };
+}
+
 export function getDirection(d) {
   const { orderFlow, oiChange, momentum, priceChange } = d;
   const priceUp = priceChange > 0;
@@ -238,10 +379,15 @@ export function applyAllFilters(signal, options = {}) {
     requireM15 = true,
     requireD1 = true,
     requireH4 = true,
-    requireDirection = true
+    requireDirection = true,
+    requireWhale = true
   } = options;
   
   if (!signal) return { filtered: null, reason: 'NO_SIGNAL' };
+  
+  if (requireWhale && enableWhaleFilter && !signal.whale) {
+    return { filtered: true, reason: 'NO_WHALE_ACTIVITY' };
+  }
   
   if (requireDirection && !signal.direction) {
     return { filtered: true, reason: 'NO_DIRECTION' };
@@ -259,6 +405,9 @@ export function applyAllFilters(signal, options = {}) {
   
   const sessionResult = filterBySession(allowAsia);
   if (sessionResult.filtered) return sessionResult;
+  
+  const newsRiskResult = filterByNewsRisk(sessionResult?.session || getSession());
+  if (newsRiskResult.filtered) return newsRiskResult;
   
   if (requireM15) {
     const m15Result = confirmM15Entry(signal.symbol, signal.direction);
@@ -348,5 +497,16 @@ export const advancedFilters = {
   getDirection,
   getDirectionForSignalType,
   getTradeSignal,
+  detectWhale,
+  detectFuturesWhale,
+  getWhaleFromCache,
+  setWhaleCache,
+  getDirectionFromWhale,
+  getNewsImpact,
+  analyzeNewsSentiment,
+  isHighImpactNewsTime,
+  filterByNewsRisk,
+  setWhaleFilter,
+  setNewsFilter,
   WEIGHT
 };

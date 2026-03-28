@@ -8,7 +8,13 @@ import {
   applyAllFilters,
   getSessionInfo,
   updateMarketTimeframes,
-  getDirection
+  getDirection,
+  detectWhale,
+  getDirectionFromWhale,
+  getNewsImpact,
+  setWhaleFilter,
+  setNewsFilter,
+  analyzeNewsSentiment
 } from '../signals/advancedFilters.js';
 
 const STAGES = {
@@ -158,7 +164,8 @@ function applyFiltersToSignal(signal) {
     allowAsia: false,
     requireM15: true,
     requireD1: true,
-    requireH4: true
+    requireH4: true,
+    requireWhale: true
   });
   
   if (filterResult.filtered) {
@@ -205,15 +212,24 @@ export function processSymbol(symbol, marketData) {
   
   const score = calculateAdaptiveScore(d);
   const weightedScore = calculateWeightedScore(d);
-  const finalScore = Math.max(score, weightedScore);
+  const whale = detectWhale(d);
+  const newsImpact = d.newsScore || 0;
+  const whaleBonus = whale ? 15 : 0;
+  const finalScore = Math.min(100, Math.max(score, weightedScore) + whaleBonus + newsImpact);
   d.score = finalScore;
+  d.whale = whale;
+  d.newsImpact = newsImpact;
   symbolScores.set(symbol, finalScore);
   
   const level = getSignalLevel(finalScore);
   const state = stateMap.get(symbol) || { stage: STAGES.WATCH };
   d.weightedScore = weightedScore;
   
-  const smartDirection = getDirection(d);
+  let smartDirection = getDirection(d);
+  if (whale) {
+    const whaleDir = getDirectionFromWhale(whale);
+    if (whaleDir) smartDirection = whaleDir;
+  }
   
   if (detectHighPump(d)) {
     if (!smartDirection) {
@@ -241,7 +257,9 @@ export function processSymbol(symbol, marketData) {
       confidence: finalScore,
       score: finalScore,
       level,
-      data: d
+      data: d,
+      whale,
+      newsImpact
     };
     
     return applyFiltersToSignal(signal);
@@ -260,7 +278,7 @@ export function processSymbol(symbol, marketData) {
     lastSignalTime[symbol] = Date.now();
     
     const sessionInfo = getSessionInfo();
-    console.log(`🔴 SNIPER: ${symbol} | Score=${finalScore} | Dir=${smartDirection} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
+    console.log(`🔴 SNIPER: ${symbol} | Score=${finalScore} | Dir=${smartDirection} | Whale=${whale || 'NONE'} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
     
     const signal = {
       type: 'SNIPER',
@@ -275,14 +293,16 @@ export function processSymbol(symbol, marketData) {
       score: finalScore,
       level,
       data: d,
-      session: sessionInfo.session
+      session: sessionInfo.session,
+      whale,
+      newsImpact
     };
     
     return applyFiltersToSignal(signal);
   }
   
   if (detectPressure(d) && score >= 30) {
-    if (!smartDirection) return null;
+    if (!smartDirection || !whale) return null;
     
     stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
     
@@ -395,6 +415,8 @@ export const signalPipeline = {
   getAllScores,
   setAdvancedFilters: (enabled) => { enableAdvancedFilters = enabled; },
   isAdvancedFiltersEnabled: () => enableAdvancedFilters,
+  setWhaleFilter,
+  setNewsFilter,
   updateTimeframes: updateMarketTimeframes
 };
 
