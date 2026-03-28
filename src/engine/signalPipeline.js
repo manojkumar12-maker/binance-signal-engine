@@ -58,6 +58,39 @@ function isValidSignal(d) {
   );
 }
 
+function calculateNormalizedScore(d, whale, newsScore = 0) {
+  const vol = Math.min(d.volume, 3);
+  const oi = Math.min(Math.abs(d.oiChange), 1);
+  const of = Math.min(d.orderFlow, 2);
+  
+  let score = 0;
+  score += vol * 10;
+  score += oi * 25;
+  score += of * 10;
+  score += Math.max(0, d.momentum) * 10;
+  
+  if (whale) score += 15;
+  score += newsScore;
+  
+  return Math.round(Math.min(100, score));
+}
+
+function getDirectionWithWhale(d, whale) {
+  if (
+    whale === 'ACCUMULATION' &&
+    d.orderFlow > 1.1 &&
+    d.momentum > 0
+  ) return 'LONG';
+  
+  if (
+    whale === 'DISTRIBUTION' &&
+    d.orderFlow < 0.9 &&
+    d.momentum < 0
+  ) return 'SHORT';
+  
+  return null;
+}
+
 export function setOITracker(tracker) {
   oiTrackerModule = tracker;
 }
@@ -209,12 +242,11 @@ export function isSymbolEligible(symbol) {
 }
 
 export function processSymbol(symbol, marketData) {
-  if (isNoise(marketData)) return null;
-  if (!canTrade(symbol)) return null;
-  
   if (!isOIReady(symbol)) {
     return null;
   }
+  
+  if (isNoise(marketData)) return null;
   
   const d = {
     ...marketData,
@@ -228,59 +260,65 @@ export function processSymbol(symbol, marketData) {
     price: marketData.price || 0
   };
   
-  if (detectTrap(d)) {
+  const isTrap = detectTrap(d);
+  
+  const whale = detectWhale(d);
+  
+  if (isTrap && whale) {
+    return null;
+  }
+  
+  if (isTrap) {
     stateMap.set(symbol, { stage: STAGES.WATCH });
-    return { symbol, type: 'TRAP', confidence: 0 };
+    const trapDirection = d.priceChange > 0 ? 'SHORT' : 'LONG';
+    return { symbol, type: 'TRAP', direction: trapDirection, confidence: 0 };
+  }
+  
+  if (!whale) {
+    return null;
+  }
+  
+  if (!canTrade(symbol)) {
+    return null;
   }
   
   if (!isValidSignal(d)) {
     return null;
   }
   
-  const score = calculateAdaptiveScore(d);
-  const weightedScore = calculateWeightedScore(d);
-  const whale = detectWhale(d);
-  const newsImpact = d.newsScore || 0;
-  const whaleBonus = whale ? 15 : 0;
-  const finalScore = Math.min(100, Math.max(score, weightedScore) + whaleBonus + newsImpact);
+  const normalizedScore = calculateNormalizedScore(d, whale, d.newsScore || 0);
   
-  if (finalScore < MIN_SIGNAL_SCORE) {
+  if (normalizedScore < MIN_SIGNAL_SCORE) {
     return null;
   }
   
-  d.score = finalScore;
+  d.score = normalizedScore;
   d.whale = whale;
-  d.newsImpact = newsImpact;
-  symbolScores.set(symbol, finalScore);
+  symbolScores.set(symbol, normalizedScore);
   
-  const level = getSignalLevel(finalScore);
+  const level = getSignalLevel(normalizedScore);
   const state = stateMap.get(symbol) || { stage: STAGES.WATCH };
-  d.weightedScore = weightedScore;
   
-  let smartDirection = getDirection(d);
-  if (whale) {
-    const whaleDir = getDirectionFromWhale(whale);
-    if (whaleDir) smartDirection = whaleDir;
+  let smartDirection = getDirectionWithWhale(d, whale);
+  
+  if (!smartDirection) {
+    return null;
   }
   
   if (detectHighPump(d)) {
-    if (!smartDirection) {
-      console.log(`🚫 HIGH_PUMP FILTERED: ${symbol} - NO CLEAR DIRECTION`);
-      return null;
-    }
     
     if (!whale) {
       console.log(`🚫 HIGH_PUMP FILTERED: ${symbol} - NO WHALE ACTIVITY`);
       return null;
     }
     
-    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score: finalScore, startTime: Date.now() });
+    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score: normalizedScore, startTime: Date.now() });
     lastSignalTime[symbol] = Date.now();
     
     const entry = d.price;
     const risk = entry * 0.015;
     
-    console.log(`🔥 HIGH_PUMP: ${symbol} | Score=${finalScore} | Dir=${smartDirection} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
+    console.log(`🔥 HIGH_PUMP: ${symbol} | Score=${normalizedScore} | Dir=${smartDirection} | PC=${d.priceChange.toFixed(1)}% | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
     
     const signal = {
       type: 'HIGH_PUMP',
@@ -291,8 +329,8 @@ export function processSymbol(symbol, marketData) {
       tp1: entry + risk * 1,
       tp2: entry + risk * 2,
       tp3: entry + risk * 3,
-      confidence: finalScore,
-      score: finalScore,
+      confidence: normalizedScore,
+      score: normalizedScore,
       level,
       data: d,
       whale,
@@ -302,7 +340,7 @@ export function processSymbol(symbol, marketData) {
     return applyFiltersToSignal(signal);
   }
   
-  if (detectExplosion(d) && finalScore >= 40) {
+  if (detectExplosion(d) && normalizedScore >= 40) {
     if (!smartDirection) {
       console.log(`🚫 SNIPER FILTERED: ${symbol} - NO CLEAR DIRECTION`);
       return null;
@@ -316,11 +354,11 @@ export function processSymbol(symbol, marketData) {
     const entry = d.price;
     const risk = entry * 0.015;
     
-    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score: finalScore, startTime: Date.now() });
+    stateMap.set(symbol, { stage: STAGES.EXPLOSION, score: normalizedScore, startTime: Date.now() });
     lastSignalTime[symbol] = Date.now();
     
     const sessionInfo = getSessionInfo();
-    console.log(`🔴 SNIPER: ${symbol} | Score=${finalScore} | Dir=${smartDirection} | Whale=${whale || 'NONE'} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
+    console.log(`🔴 SNIPER: ${symbol} | Score=${normalizedScore} | Dir=${smartDirection} | Whale=${whale || 'NONE'} | Entry=${entry.toFixed(6)} | Vol=${d.volume.toFixed(1)}x | Session=${sessionInfo.session}`);
     
     const signal = {
       type: 'SNIPER',
@@ -331,8 +369,8 @@ export function processSymbol(symbol, marketData) {
       tp1: entry + risk * 1,
       tp2: entry + risk * 2,
       tp3: entry + risk * 3,
-      confidence: finalScore,
-      score: finalScore,
+      confidence: normalizedScore,
+      score: normalizedScore,
       level,
       data: d,
       session: sessionInfo.session,
