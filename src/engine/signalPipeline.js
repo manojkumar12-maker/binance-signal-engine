@@ -54,16 +54,16 @@ function getOIChange(symbol) {
 
 function isValidSignal(d) {
   return (
-    d.volume >= 1.1 &&
-    Math.abs(d.oiChange) >= 0.05 &&
-    d.orderFlow >= 1.05
+    d.volume >= 1.2 &&
+    Math.abs(d.oiChange) >= 0.01 &&
+    d.orderFlow >= 1.2
   );
 }
 
 function eliteFilter(d) {
   return (
     d.volume >= 1.5 &&
-    Math.abs(d.oiChange) >= 0.1 &&
+    Math.abs(d.oiChange) >= 0.01 &&
     d.orderFlow >= 1.2 &&
     d.momentum > 0
   );
@@ -80,7 +80,7 @@ function getDoubleWhaleConfirmation(d) {
   if (!futuresWhale) return null;
   
   const hasVolumeConfirmation = d.volume >= 1.5;
-  const hasOIConfirmation = Math.abs(d.oiChange) >= 0.1;
+  const hasOIConfirmation = Math.abs(d.oiChange) >= 0.01;
   const hasOrderFlowConfirmation = d.orderFlow >= 1.2;
   
   const confirmations = [hasVolumeConfirmation, hasOIConfirmation, hasOrderFlowConfirmation].filter(Boolean).length;
@@ -453,40 +453,14 @@ export function processSymbol(symbol, marketData) {
     return applyFiltersToSignal(signal);
   }
   
+  // BLOCK PRESSURE - too early
   if (detectPressure(d) && score >= 30) {
-    if (!smartDirection || !whale) return null;
-    
-    stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
-    
-    console.log(`🟣 PRESSURE: ${symbol} | Score=${score} | Dir=${smartDirection} | Vol=${d.volume.toFixed(1)}x | OF=${d.orderFlow.toFixed(1)}`);
-    
-    return {
-      type: 'PRESSURE',
-      symbol,
-      direction: smartDirection,
-      confidence: score,
-      level,
-      data: d,
-      entry: d.price
-    };
+    return null;
   }
   
+  // BLOCK ACCUMULATION - no breakout yet
   if (detectAccumulation(d) && score >= 25) {
-    if (!smartDirection || !whale) return null;
-    
-    stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
-    
-    console.log(`📦 ACCUMULATION: ${symbol} | Score=${score} | Dir=${smartDirection} | Vol=${d.volume.toFixed(1)}x`);
-    
-    return {
-      type: 'ACCUMULATION',
-      symbol,
-      direction: smartDirection,
-      confidence: score,
-      level,
-      data: d,
-      entry: d.price
-    };
+    return null;
   }
   
   if (detectEarlyPump(d) && score >= 20) {

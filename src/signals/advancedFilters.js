@@ -19,20 +19,20 @@ export function setNewsFilter(enabled) {
 export function detectWhale(d) {
   const { volume, oiChange, priceChange, orderFlow } = d;
   
-  if (volume >= 1.3 && oiChange >= 0.05 && Math.abs(priceChange) < 0.5) {
-    if (orderFlow > 1.1) {
+  if (volume >= 1.5 && oiChange >= 0.01 && Math.abs(priceChange) < 1.5) {
+    if (orderFlow > 1.2) {
       return 'ACCUMULATION';
     }
-    if (orderFlow < 0.9) {
+    if (orderFlow < 0.8) {
       return 'DISTRIBUTION';
     }
   }
   
-  if (volume >= 1.5 && oiChange >= 0.1 && Math.abs(priceChange) < 0.3) {
-    if (orderFlow > 1.15) {
+  if (volume >= 2 && oiChange >= 0.03 && Math.abs(priceChange) < 2) {
+    if (orderFlow > 1.3) {
       return 'ACCUMULATION';
     }
-    if (orderFlow < 0.85) {
+    if (orderFlow < 0.7) {
       return 'DISTRIBUTION';
     }
   }
