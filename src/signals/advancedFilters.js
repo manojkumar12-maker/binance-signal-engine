@@ -19,7 +19,7 @@ export function setNewsFilter(enabled) {
 export function detectWhale(d) {
   const { volume, oiChange, priceChange, orderFlow } = d;
   
-  if (volume > 1.5 && oiChange > 0.2 && Math.abs(priceChange) < 0.3) {
+  if (volume >= 1.3 && oiChange >= 0.05 && Math.abs(priceChange) < 0.5) {
     if (orderFlow > 1.1) {
       return 'ACCUMULATION';
     }
@@ -28,11 +28,11 @@ export function detectWhale(d) {
     }
   }
   
-  if (volume > 2 && oiChange > 0.3 && Math.abs(priceChange) < 0.5) {
-    if (orderFlow > 1.2) {
+  if (volume >= 1.5 && oiChange >= 0.1 && Math.abs(priceChange) < 0.3) {
+    if (orderFlow > 1.15) {
       return 'ACCUMULATION';
     }
-    if (orderFlow < 0.8) {
+    if (orderFlow < 0.85) {
       return 'DISTRIBUTION';
     }
   }
@@ -420,6 +420,11 @@ export function applyAllFilters(signal, options = {}) {
 export function getTradeSignal(d) {
   if (!d) return null;
   
+  const whale = detectWhale(d);
+  if (!whale) {
+    return { filtered: true, reason: 'NO_WHALE_ACTIVITY' };
+  }
+  
   const score = calculateWeightedScore(d);
   const direction = getDirection(d);
   
@@ -427,11 +432,14 @@ export function getTradeSignal(d) {
     return { filtered: true, reason: 'NO_CLEAR_DIRECTION' };
   }
   
+  if (score < 30) {
+    return { filtered: true, reason: 'SCORE_BELOW_30' };
+  }
+  
   let type = 'WATCH';
   if (score >= 50) type = 'HIGH_PUMP';
   else if (score >= 40) type = 'SNIPER';
   else if (score >= 30) type = 'PRESSURE';
-  else if (score >= 20) type = 'EARLY_PUMP';
   
   const isTrap = (d.priceChange > 5 && d.orderFlow < 1.1) ||
                  (d.priceChange < -5 && d.orderFlow < 1.1);
@@ -447,12 +455,19 @@ export function getTradeSignal(d) {
     };
   }
   
+  const level = score >= 40 ? 'EXPLOSION' : score >= 30 ? 'ENTRY' : 'WATCH';
+  
+  if (level === 'WATCH') {
+    return { filtered: true, reason: 'WATCH_LEVEL_BLOCKED' };
+  }
+  
   return {
     type,
     direction,
-    level: score >= 30 ? 'ENTRY' : 'WATCH',
+    level,
     confidence: score,
     data: d,
+    whale,
     filtered: false
   };
 }

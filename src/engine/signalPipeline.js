@@ -33,11 +33,30 @@ const SIGNAL_COOLDOWN = 2 * 60 * 1000;
 const lastSignalTime = {};
 
 const symbolScores = new Map();
-const MIN_SIGNAL_SCORE = 20;
+const MIN_SIGNAL_SCORE = 30;
+const MIN_OI_READY_HISTORY = 2;
 const MAX_ACTIVE_SIGNALS = 10;
 
 let btcPriceChange = 0;
 let enableAdvancedFilters = true;
+
+function isOIReady(symbol) {
+  if (!oiTrackerModule) return true;
+  return oiTrackerModule.isOIReady(symbol);
+}
+
+function getOIChange(symbol) {
+  if (!oiTrackerModule) return 0;
+  return oiTrackerModule.getChange(symbol) || 0;
+}
+
+function isValidSignal(d) {
+  return (
+    d.volume >= 1.1 &&
+    Math.abs(d.oiChange) >= 0.05 &&
+    d.orderFlow >= 1.05
+  );
+}
 
 export function setOITracker(tracker) {
   oiTrackerModule = tracker;
@@ -193,12 +212,16 @@ export function processSymbol(symbol, marketData) {
   if (isNoise(marketData)) return null;
   if (!canTrade(symbol)) return null;
   
+  if (!isOIReady(symbol)) {
+    return null;
+  }
+  
   const d = {
     ...marketData,
     priceChange: marketData.priceChange || 0,
     volume: marketData.volume || 1,
     orderFlow: marketData.orderFlow || 1,
-    oiChange: marketData.oiChange || 0,
+    oiChange: marketData.oiChange || getOIChange(symbol) || 0,
     fakeOI: marketData.fakeOI || 0,
     priceAcceleration: marketData.priceAcceleration || 0,
     momentum: marketData.momentum || 0,
@@ -210,12 +233,21 @@ export function processSymbol(symbol, marketData) {
     return { symbol, type: 'TRAP', confidence: 0 };
   }
   
+  if (!isValidSignal(d)) {
+    return null;
+  }
+  
   const score = calculateAdaptiveScore(d);
   const weightedScore = calculateWeightedScore(d);
   const whale = detectWhale(d);
   const newsImpact = d.newsScore || 0;
   const whaleBonus = whale ? 15 : 0;
   const finalScore = Math.min(100, Math.max(score, weightedScore) + whaleBonus + newsImpact);
+  
+  if (finalScore < MIN_SIGNAL_SCORE) {
+    return null;
+  }
+  
   d.score = finalScore;
   d.whale = whale;
   d.newsImpact = newsImpact;
@@ -234,6 +266,11 @@ export function processSymbol(symbol, marketData) {
   if (detectHighPump(d)) {
     if (!smartDirection) {
       console.log(`🚫 HIGH_PUMP FILTERED: ${symbol} - NO CLEAR DIRECTION`);
+      return null;
+    }
+    
+    if (!whale) {
+      console.log(`🚫 HIGH_PUMP FILTERED: ${symbol} - NO WHALE ACTIVITY`);
       return null;
     }
     
@@ -268,6 +305,11 @@ export function processSymbol(symbol, marketData) {
   if (detectExplosion(d) && finalScore >= 40) {
     if (!smartDirection) {
       console.log(`🚫 SNIPER FILTERED: ${symbol} - NO CLEAR DIRECTION`);
+      return null;
+    }
+    
+    if (!whale) {
+      console.log(`🚫 SNIPER FILTERED: ${symbol} - NO WHALE ACTIVITY`);
       return null;
     }
     
@@ -320,7 +362,7 @@ export function processSymbol(symbol, marketData) {
   }
   
   if (detectAccumulation(d) && score >= 25) {
-    if (!smartDirection) return null;
+    if (!smartDirection || !whale) return null;
     
     stateMap.set(symbol, { stage: STAGES.BUILDING, score, startTime: Date.now() });
     
