@@ -33,9 +33,11 @@ const SIGNAL_COOLDOWN = 2 * 60 * 1000;
 const lastSignalTime = {};
 
 const symbolScores = new Map();
-const MIN_SIGNAL_SCORE = 30;
+const MIN_SIGNAL_SCORE = 40;
+const ELITE_MIN_SCORE = 50;
 const MIN_OI_READY_HISTORY = 2;
 const MAX_ACTIVE_SIGNALS = 10;
+const USE_ELITE_MODE = true;
 
 let btcPriceChange = 0;
 let enableAdvancedFilters = true;
@@ -56,6 +58,38 @@ function isValidSignal(d) {
     Math.abs(d.oiChange) >= 0.05 &&
     d.orderFlow >= 1.05
   );
+}
+
+function eliteFilter(d) {
+  return (
+    d.volume >= 1.5 &&
+    Math.abs(d.oiChange) >= 0.1 &&
+    d.orderFlow >= 1.2 &&
+    d.momentum > 0
+  );
+}
+
+function isLondonOrNYSession() {
+  const hour = new Date().getUTCHours();
+  return (hour >= 7 && hour < 16) || (hour >= 13 && hour < 22);
+}
+
+function getDoubleWhaleConfirmation(d) {
+  const futuresWhale = detectWhale(d);
+  
+  if (!futuresWhale) return null;
+  
+  const hasVolumeConfirmation = d.volume >= 1.5;
+  const hasOIConfirmation = Math.abs(d.oiChange) >= 0.1;
+  const hasOrderFlowConfirmation = d.orderFlow >= 1.2;
+  
+  const confirmations = [hasVolumeConfirmation, hasOIConfirmation, hasOrderFlowConfirmation].filter(Boolean).length;
+  
+  if (confirmations >= 2) {
+    return futuresWhale;
+  }
+  
+  return null;
 }
 
 function calculateNormalizedScore(d, whale, newsScore = 0) {
@@ -276,6 +310,21 @@ export function processSymbol(symbol, marketData) {
   
   if (!whale) {
     return null;
+  }
+  
+  if (USE_ELITE_MODE) {
+    const doubleWhale = getDoubleWhaleConfirmation(d);
+    if (!doubleWhale) {
+      return null;
+    }
+    
+    if (!eliteFilter(d)) {
+      return null;
+    }
+    
+    if (!isLondonOrNYSession()) {
+      return null;
+    }
   }
   
   if (!canTrade(symbol)) {
