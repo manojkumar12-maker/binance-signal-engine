@@ -465,4 +465,4 @@ class OITracker {
 }
 
 export const oiTracker = new OITracker();
-export { MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS, forceSystemReady };
+export { MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS };
