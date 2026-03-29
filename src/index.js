@@ -18,6 +18,7 @@ import { signalGenerator } from './signals/signalGenerator.js';
 import { addSignal, getRecentSignals } from './state.js';
 import { sendTelegram } from './utils/telegram.js';
 import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, formatSignalForTelegram, formatTopWatch, getCooldownForType } from './signals/signalFilters.js';
+import { initDatabase, createSignal, getActiveSignals, closeDatabase } from './database/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
@@ -236,6 +237,8 @@ async function notifySniperSignals(signals) {
 
 async function start() {
   try {
+    await initDatabase();
+    
     wsManager.onTrade((trade) => {
       marketDataTracker.handleTrade(trade);
       orderflowTracker.handleTrade(trade);
@@ -280,5 +283,17 @@ async function start() {
     console.error('Error:', e.message, e.stack);
   }
 }
+
+process.on('SIGTERM', async () => {
+  console.log('Shutting down...');
+  await closeDatabase();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('Shutting down...');
+  await closeDatabase();
+  process.exit(0);
+});
 
 start().catch(e => console.error('Startup error:', e));
