@@ -29,15 +29,14 @@ jobs:
         with:
           static_site_generator: none
       
-      - name: Build
+      - name: Copy frontend to root
         run: |
-          mkdir -p _site
-          cp -r frontend/* _site/
+          cp -r frontend/* ./
       
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '_site'
+          path: '.'
       
       - name: Deploy to GitHub Pages
         id: deployment
