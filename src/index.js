@@ -237,7 +237,8 @@ async function notifySniperSignals(signals) {
 
 async function start() {
   try {
-    await initDatabase();
+    console.log('Initializing database...');
+    initDatabase().then(() => console.log('Database ready')).catch(e => console.log('DB init error:', e.message));
     
     wsManager.onTrade((trade) => {
       marketDataTracker.handleTrade(trade);
