@@ -23,9 +23,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
 
 const server = createServer((req, res) => {
+  const pathOnly = req.url.split('?')[0];
+
+  if (pathOnly === '/api/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('{"status":"ok"}');
+    return;
+  }
+
   // Basic CORS for API endpoints
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET', 'OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -268,4 +276,4 @@ async function start() {
   }
 }
 
-start();
+start().catch(e => console.error('Startup error:', e));
