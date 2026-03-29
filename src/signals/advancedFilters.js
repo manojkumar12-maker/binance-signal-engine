@@ -301,7 +301,7 @@ export function getM15Data(symbol) {
 export function confirmM15Entry(symbol, direction) {
   const m15 = getM15Data(symbol);
   
-  if (!m15) return { confirmed: true, reason: 'NO_M15_DATA_PASSTHROUGH' }; // ✅ FIX 2: Pass through when no data
+  if (!m15) return { confirmed: false, reason: 'NO_M15_DATA' };
   
   const bosUp = m15.breakStructureUp || m15.bosUp || false;
   const bosDown = m15.breakStructureDown || m15.bosDown || false;
