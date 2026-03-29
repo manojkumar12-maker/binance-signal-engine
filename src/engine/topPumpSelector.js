@@ -1,7 +1,7 @@
 const OI_SPIKE_THRESHOLD = 1.5;
-const CANDIDATE_OI_MIN = 0.5;      // minimum meaningful OI change (%)
-const CANDIDATE_VOL_MIN = 2.0;       // volume ratio threshold
-const CANDIDATE_MOM_MIN = 0.001;   // minimal momentum
+const CANDIDATE_OI_MIN = 0.05;     // Loosened: was 0.5%
+const CANDIDATE_VOL_MIN = 1.2;       // Loosened: was 2.0
+const CANDIDATE_MOM_MIN = 0.0001;  // Loosened: was 0.001
 
 class TopPumpSelector {
   constructor() {

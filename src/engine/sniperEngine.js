@@ -272,6 +272,7 @@ function getEntrySignal(symbol, data) {
   if (pressure && momentum && volumeRatio > 2 && score >= 40) {
     if (canEmitSignal(symbol, 'CONFIRMED_ENTRY')) {
       recordSignal(symbol);
+      console.log(`✅ SIGNAL: ${symbol} | type=CONFIRMED_ENTRY | score=${score} | direction=${direction}`);
       return {
         type: "CONFIRMED ENTRY",
         finalScore: score + 30,
@@ -293,6 +294,7 @@ function getEntrySignal(symbol, data) {
   if (pressure && breakout && volumeRatio > 1.5 && score >= 30) {
     if (canEmitSignal(symbol, 'SNIPER_ENTRY')) {
       recordSignal(symbol);
+      console.log(`✅ SIGNAL: ${symbol} | type=SNIPER_ENTRY | score=${score} | direction=${direction}`);
       return {
         type: "SNIPER ENTRY",
         finalScore: score + 20,

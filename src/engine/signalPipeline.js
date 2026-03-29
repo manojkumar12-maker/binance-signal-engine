@@ -265,10 +265,10 @@ function applyFiltersToSignal(signal) {
   if (!signal || !enableAdvancedFilters) return signal;
   
   const filterResult = applyAllFilters(signal, {
-    allowAsia: true,
-    requireM15: true,
-    requireD1: true,
-    requireH4: true,
+    allowAsia: true,      // Allow Asia session (IST = UTC+5:30)
+    requireM15: false,    // No M15 data - disabled
+    requireD1: false,     // No D1 data - disabled
+    requireH4: false,     // No H4 data - disabled
     requireWhale: true
   });
   

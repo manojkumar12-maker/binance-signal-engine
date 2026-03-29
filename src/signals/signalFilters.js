@@ -99,8 +99,9 @@ export function updateMarketBias(symbol, oiChange, priceChange) {
   
   const bias = marketBiasHistory.get(symbol);
   
-  if (oiChange > 0.02) bias.positive++;
-  else if (oiChange < -0.02) bias.negative++;
+  // Lowered threshold: was 0.02, now 0.005
+  if (oiChange > 0.005) bias.positive++;
+  else if (oiChange < -0.005) bias.negative++;
   else bias.neutral++;
   
   // Keep rolling window of 20
@@ -111,12 +112,12 @@ export function updateMarketBias(symbol, oiChange, priceChange) {
     else bias.negative -= remove;
   }
   
-  // Determine market bias
+  // Determine market bias - require larger diff to classify as CHOP
   const diff = Math.abs(bias.positive - bias.negative);
   
-  if (diff < 3) {
-    marketState.marketBias = 'CHOP'; // Balanced = chop
-    return 'CHOP';
+  if (diff < 5) {  // Was 3, now 5
+    marketState.marketBias = 'NEUTRAL';
+    return 'NEUTRAL';
   }
   
   if (bias.positive > bias.negative) {
@@ -138,22 +139,27 @@ export function isMarketChop() {
 }
 
 // ========== NOISE FILTERING ==========
-const OI_NOISE_THRESHOLD = 0.01; // < 0.01% = noise
-const VOL_NOISE_THRESHOLD = 0.1; // < 10% = low volume
+const OI_NOISE_THRESHOLD = 0.005; // Lowered: was 0.01
+const VOL_NOISE_THRESHOLD = 0.5;  // Lowered: was 0.1
 
 export function isNoise(oiChange, volumeRatio, priceChangePercent) {
+  // Skip noise check on startup if OI data not available yet
+  if (oiChange === undefined || oiChange === null) {
+    return { noise: false, reason: null };
+  }
+  
   // OI noise
   if (Math.abs(oiChange) < OI_NOISE_THRESHOLD) {
     return { noise: true, reason: 'OI_NOISE' };
   }
   
-  // Volume noise
-  if (volumeRatio < VOL_NOISE_THRESHOLD) {
+  // Volume noise - only check if we have volume data
+  if (volumeRatio !== undefined && volumeRatio < VOL_NOISE_THRESHOLD) {
     return { noise: true, reason: 'VOLUME_LOW' };
   }
   
-  // Price noise - tiny moves
-  if (Math.abs(priceChangePercent || 0) < 0.05) {
+  // Price noise - skip check when undefined (not yet available)
+  if (priceChangePercent !== undefined && Math.abs(priceChangePercent) < 0.01) {
     return { noise: true, reason: 'PRICE_NOISE' };
   }
   
@@ -162,9 +168,10 @@ export function isNoise(oiChange, volumeRatio, priceChangePercent) {
 
 // ========== OI + PRICE + VOLUME COMBINATION ==========
 export function analyzeOIContext(oiChange, priceChangePercent, volumeRatio) {
-  const oiDir = oiChange > 0.1 ? 'UP' : oiChange < -0.1 ? 'DOWN' : 'FLAT';
-  const priceDir = (priceChangePercent || 0) > 0.1 ? 'UP' : (priceChangePercent || 0) < -0.1 ? 'DOWN' : 'FLAT';
-  const volDir = volumeRatio > 1.5 ? 'HIGH' : volumeRatio > 0.8 ? 'NORMAL' : 'LOW';
+  // Lowered thresholds - was 0.1, now 0.02
+  const oiDir = oiChange > 0.02 ? 'UP' : oiChange < -0.02 ? 'DOWN' : 'FLAT';
+  const priceDir = (priceChangePercent || 0) > 0.02 ? 'UP' : (priceChangePercent || 0) < -0.02 ? 'DOWN' : 'FLAT';
+  const volDir = volumeRatio > 1.3 ? 'HIGH' : volumeRatio > 0.8 ? 'NORMAL' : 'LOW';
   
   let signal = 'NEUTRAL';
   let confidence = 0;
@@ -261,13 +268,13 @@ export function updateAvgVolume(symbol, volume) {
 }
 
 export function isNoTradeZone(symbol, volume) {
-  // Low volatility filter
-  if (marketState.atrValue < 0.001) {
+  // Only apply ATR check after it's been measured (not on startup when atrValue = 0)
+  if (marketState.atrValue > 0 && marketState.atrValue < 0.0001) {
     return { blocked: true, reason: 'LOW_VOLATILITY' };
   }
   
-  // Low volume filter
-  if (marketState.avgVolume > 0 && volume < marketState.avgVolume * 0.5) {
+  // Low volume filter - only if we have avgVolume data
+  if (marketState.avgVolume > 0 && volume < marketState.avgVolume * 0.3) {
     return { blocked: true, reason: 'LOW_VOLUME' };
   }
   
