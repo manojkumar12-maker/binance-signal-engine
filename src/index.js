@@ -150,20 +150,50 @@ function toPipelineInput(snapshot) {
 function handleTicker(ticker) {
   if (!ticker?.price || !ticker.symbol) return;
 
-  if (ticker.symbol === 'BTCUSDT') {
+  const symbol = ticker.symbol;
+  
+  if (symbol === 'BTCUSDT') {
     updateBTCPrice(ticker.priceChange || 0);
   }
 
-  const analysis = pumpAnalyzer.analyze(ticker);
-  if (!analysis?.symbol) return;
+  // Pull REAL data from all trackers
+  const orderFlow = orderflowTracker.getOrderflow(symbol) || 1;
+  const oiChange = oiTracker.getChange ? oiTracker.getChange(symbol)?.oiChangePercent || 0 : 0;
+  
+  // Calculate volume ratio from ticker's quote volume vs 20-tick rolling average
+  let volumeRatio = 1;
+  if (ticker.quoteVolume) {
+    const volHistory = marketDataTracker.volumeHistory?.get(symbol) || [];
+    volHistory.push(ticker.quoteVolume);
+    if (volHistory.length > 20) volHistory.shift();
+    marketDataTracker.volumeHistory = marketDataTracker.volumeHistory || new Map();
+    marketDataTracker.volumeHistory.set(symbol, volHistory);
+    
+    if (volHistory.length >= 5) {
+      const avg = volHistory.reduce((a, b) => a + b, 0) / volHistory.length;
+      volumeRatio = avg > 0 ? ticker.quoteVolume / avg : 1;
+    }
+  }
 
+  const analysis = pumpAnalyzer.analyze(ticker);
+  // Inject real data into the analysis
+  analysis.orderFlow = orderFlow;
+  analysis.imbalance = orderFlow;
+  analysis.volumeRatio = volumeRatio;
+  analysis.oiChange = oiChange;
+  
   const snapshot = topPumpSelector.ingest(analysis, ticker);
 
+  // Debug: show real data in logs
+  if (Math.abs(oiChange) > 0.05 || volumeRatio > 1.5) {
+    console.log(`📊 ${symbol}: OI=${oiChange.toFixed(2)}% Vol=${volumeRatio.toFixed(2)}x Flow=${orderFlow.toFixed(2)}`);
+  }
+
   updateSniperState(snapshot.symbol, {
-    imbalance: snapshot.imbalance,
-    volumeRatio: snapshot.volumeRatio || snapshot.volume,
+    imbalance: orderFlow,
+    volumeRatio: volumeRatio,
     price: snapshot.price,
-    oiChange: snapshot.oiChange,
+    oiChange: oiChange,
     priceChangePercent: ticker.priceChangePercent,
     high: ticker.highPrice,
     low: ticker.lowPrice
