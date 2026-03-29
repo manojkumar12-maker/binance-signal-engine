@@ -28,7 +28,7 @@ export function updateSniperState(symbol, data) {
   }
 }
 
-import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection, getOIDirection, isNoTradeZone, getTrendDirection, marketState, updateTrend, updateVolatility, updateAvgVolume, getAdaptiveWeights, isOI significant, detectOICluster, isMarketChop, isNoise, analyzeOIContext, updateMarketBias } from '../signals/signalFilters.js';
+import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection, getOIDirection, isNoTradeZone, getTrendDirection, marketState, updateTrend, updateVolatility, updateAvgVolume, getAdaptiveWeights, isOISignificant, detectOICluster, isMarketChop, isNoise, analyzeOIContext, updateMarketBias } from '../signals/signalFilters.js';
 import { getSessionInfo } from '../signals/advancedFilters.js';
 
 // ========== LIQUIDITY SWEEP DETECTION (Institutional) ==========
@@ -170,7 +170,7 @@ function calculateScore(data) {
   }
   
   // Z-score boost (unusual OI activity)
-  const oiSig = isOI significant(symbol, oiChange);
+  const oiSig = isOISignificant(symbol, oiChange);
   if (oiSig.zScore > 2) score += 10;
   if (oiSig.zScore > 3) score += 10;
   
@@ -234,7 +234,7 @@ function getEntrySignal(symbol, data) {
   }
 
   // Z-SCORE OI DETECTION - Only significant OI spikes
-  const oiSignificance = isOI significant(symbol, oiChange);
+  const oiSignificance = isOISignificant(symbol, oiChange);
   if (!oiSignificance.significant && Math.abs(oiChange) < 0.05) {
     return null; // Not a significant OI move
   }
@@ -367,7 +367,7 @@ export function getTopWatching() {
     const score = calculateScore(data);
     
     // Get additional context
-    const oiSig = isOI significant(s, data.oiChange);
+    const oiSig = isOISignificant(s, data.oiChange);
     const cluster = detectOICluster(s, data.oiChange);
     
     // Always show top symbols even if score is low (for monitoring)

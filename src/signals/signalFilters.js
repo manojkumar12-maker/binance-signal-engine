@@ -44,7 +44,7 @@ export function calculateZScore(symbol, currentOI) {
   return (currentOI - mean) / stdDev;
 }
 
-export function isOI significant(symbol, oiChange) {
+export function isOISignificant(symbol, oiChange) {
   const zScore = calculateZScore(symbol, oiChange);
   
   // Z-score > 2 means unusual activity (2 std deviations)
