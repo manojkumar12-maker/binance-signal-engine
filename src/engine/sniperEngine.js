@@ -412,3 +412,10 @@ export function runSniper() {
 
   return rankSignals(signals);
 }
+
+// ==============================
+// RANKING (Top 5 only)
+// ==============================
+function rankSignals(signals) {
+  return selectTopSignals(signals, 5);
+}
