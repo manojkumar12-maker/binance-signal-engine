@@ -27,10 +27,10 @@ console.log('Starting server on port:', PORT);
 const server = createServer((req, res) => {
   const pathOnly = req.url.split('?')[0];
 
-  if (pathOnly === '/api/health') {
+  if (pathOnly === '/api/health' || pathOnly === '/health' || pathOnly === '/') {
     console.log('Health check hit');
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end('{"status":"ok"}');
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('OK');
     return;
   }
 
