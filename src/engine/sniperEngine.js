@@ -197,58 +197,78 @@ function getEntrySignal(symbol, data) {
   if (isInNoTradeZone(imbalance)) return null;
   
   // Check No Trade Zone (low volatility/volume)
+  // ========== SOFT SCORING MODEL ==========
+  // Convert ALL hard filters to score contributors
+  let score = 0;
+  let reasons = [];
+  
+  // Get data
+  const direction = getDirection(imbalance);
   const noTrade = isNoTradeZone(symbol, volumeRatio);
-  if (noTrade.blocked) {
-    return null;
+  const oiContext = analyzeOIContext(oiChange, priceChangePercent, volumeRatio);
+  const oiSignificance = isOISignificant(symbol, oiChange);
+  const cluster = detectOICluster(symbol, oiChange);
+  const marketBias = updateMarketBias(symbol, oiChange, priceChangePercent);
+  
+  // Update volatility tracking
+  if (high && low) {
+    updateVolatility(symbol, price, high, low);
+  }
+  updateAvgVolume(symbol, volumeRatio);
+
+  // HARD FILTERS (only 2 - data validity + dead market)
+  if (!direction) return null;
+  if (noTrade.blocked && noTrade.reason === 'LOW_VOLATILITY') return null; // Dead market only
+  
+  // SOFT SCORING - convert to points instead of blocking
+  
+  // 1. Direction/OI context scoring
+  if (oiContext.signal === 'BULLISH' || oiContext.signal === 'BEARISH') {
+    score += 15;
+    reasons.push('OI_context');
   }
   
-  const direction = getDirection(imbalance);
-  if (!direction) return null;
-
-  // TREND FILTER - Only trade with trend
+  // 2. OI change scoring (lower threshold)
+  if (Math.abs(oiChange) > 0.02) score += 10;
+  if (Math.abs(oiChange) > 0.05) score += 10;
+  if (Math.abs(oiChange) > 0.1) score += 10;
+  
+  // 3. Z-score scoring (lowered from 2 to 1.2)
+  if (oiSignificance.zScore > 1.2) score += 15;
+  if (oiSignificance.zScore > 1.5) score += 10;
+  
+  // 4. Cluster scoring (relaxed)
+  if (cluster.count >= 2) score += 10;
+  if (cluster.isCluster) score += 10;
+  
+  // 5. Volume scoring
+  if (volumeRatio > 1.3) score += 15;
+  if (volumeRatio > 1.5) score += 10;
+  if (volumeRatio > 2.0) score += 10;
+  
+  // 6. Imbalance scoring (not binary)
+  if (imbalance > 1.1) score += 10;
+  if (imbalance > 1.3) score += 15;
+  if (imbalance < 0.9) score += 10;
+  if (imbalance < 0.7) score += 15;
+  
+  // 7. Market bias scoring (reduce score, not block)
+  if (marketBias === 'CHOP') score -= 10;
+  else if (marketBias === 'BULLISH' || marketBias === 'BEARISH') score += 10;
+  
+  // 8. Trend scoring (add points, not block)
   const priceHistory = sniperState.priceHistory?.get(symbol) || [];
   const trend = updateTrend(symbol, price, priceHistory);
   marketState.trend = trend;
-  
   const trendDirection = getTrendDirection(symbol, price);
-  if (trendDirection && trendDirection !== direction) {
-    // Counter-trend signal - BLOCK
-    return null;
-  }
-
-  // OI + PRICE + VOLUME COMBINATION (Enhanced Institutional Logic)
-  const oiContext = analyzeOIContext(oiChange, priceChangePercent, volumeRatio);
+  if (trendDirection === direction) score += 10; // Aligned with trend
+  else if (trendDirection) score += 5; // Counter-trend but still some points
   
-  // Block absorption signals
-  if (oiContext.signal === 'ABSORPTION') {
-    return null;
-  }
+  // Minimum score threshold
+  if (score < 25) return null;
   
-  // Only proceed if we have meaningful combination
-  if (oiContext.signal === 'NEUTRAL') {
-    return null;
-  }
-
-  // NOISE FILTER - Ignore tiny movements
-  const noiseCheck = isNoise(oiChange, volumeRatio, priceChangePercent);
-  if (noiseCheck.noise) {
-    return null;
-  }
-
-  // Z-SCORE OI DETECTION - Only significant OI spikes
-  const oiSignificance = isOISignificant(symbol, oiChange);
-  if (!oiSignificance.significant && Math.abs(oiChange) < 0.05) {
-    return null; // Not a significant OI move
-  }
-
-  // CLUSTER DETECTION - Consecutive OI builds are stronger
-  const cluster = detectOICluster(symbol, oiChange);
-  
-  // MARKET BIAS - Skip chop markets
-  const marketBias = updateMarketBias(symbol, oiChange, priceChangePercent);
-  if (marketBias === 'CHOP') {
-    return null; // Market is balanced/neutral - skip
-  }
+  // Store score for later use
+  data.score = score;
 
   // Update volatility tracking
   if (high && low) {
@@ -260,69 +280,62 @@ function getEntrySignal(symbol, data) {
   const breakout = detectBreakout(symbol, price);
   const momentum = detectMomentum(symbol, price);
   
-  // Liquidity Sweep Detection
-  const sweep = detectLiquiditySweep(symbol, price, high || price * 1.001, low || price * 0.999, price);
-  if (sweep && sweep.type === 'BEARISH_SWEEP' && direction === 'LONG') {
-    return null; // Block false bullish breakout
-  }
+  // Get the score we calculated earlier (or calculate if not set)
+  let finalScore = data.score || calculateScore(data);
   
-  const score = calculateScore(data);
-
-  // 🔥 EXPLOSION (HIGH CONFIDENCE + DIRECTION)
-  if (pressure && momentum && volumeRatio > 2 && score >= 40) {
+  // Use soft thresholds (35/45/60)
+  // Lower thresholds so signals actually fire
+  const pressure = detectPressure(symbol);
+  const sessionInfo = getSessionInfo();
+  
+  // EXPLOSION: score >= 60
+  if (finalScore >= 60) {
     if (canEmitSignal(symbol, 'CONFIRMED_ENTRY')) {
       recordSignal(symbol);
-      console.log(`✅ SIGNAL: ${symbol} | type=CONFIRMED_ENTRY | score=${score} | direction=${direction}`);
+      console.log(`✅ SIGNAL: ${symbol} | type=EXPLOSION | score=${finalScore} | direction=${direction}`);
       return {
-        type: "CONFIRMED ENTRY",
-        finalScore: score + 30,
+        type: "EXPLOSION",
+        finalScore: finalScore,
         level: "EXPLOSION",
         direction
       };
     }
   }
-
-  const sessionInfo = getSessionInfo();
-  const isHighScore = score >= 40;
-  const isHighVolume = volumeRatio > 2;
   
-  if (!isHighScore && !isHighVolume) {
-    return null;
-  }
-
-  // 🔴 SNIPER (Good conditions + DIRECTION)
-  if (pressure && breakout && volumeRatio > 1.5 && score >= 30) {
-    if (canEmitSignal(symbol, 'SNIPER_ENTRY')) {
+  // CONFIRMED: score >= 45
+  if (finalScore >= 45 || (pressure && finalScore >= 35)) {
+    if (canEmitSignal(symbol, 'CONFIRMED_ENTRY')) {
       recordSignal(symbol);
-      console.log(`✅ SIGNAL: ${symbol} | type=SNIPER_ENTRY | score=${score} | direction=${direction}`);
+      console.log(`✅ SIGNAL: ${symbol} | type=CONFIRMED_ENTRY | score=${finalScore} | direction=${direction}`);
       return {
-        type: "SNIPER ENTRY",
-        finalScore: score + 20,
+        type: "CONFIRMED ENTRY",
+        finalScore: finalScore + 20,
         level: "ENTRY",
         direction,
         session: sessionInfo.session,
-        score
+        score: finalScore
       };
     }
   }
-
-  // ⚡ EARLY ENTRY (Building + DIRECTION) - BLOCK in elite mode if score < 40
-  if (score < 40) {
-    return null;
-  }
   
-  if ((pressure || breakout) && score >= 30) {
-    if (canEmitSignal(symbol, 'EARLY_ENTRY')) {
+  // SNIPER: score >= 35
+  if (finalScore >= 35) {
+    if (canEmitSignal(symbol, 'SNIPER_ENTRY')) {
       recordSignal(symbol);
+      console.log(`✅ SIGNAL: ${symbol} | type=SNIPER_ENTRY | score=${finalScore} | direction=${direction}`);
       return {
-        type: "EARLY ENTRY",
-        finalScore: score + 10,
+        type: "SNIPER ENTRY",
+        finalScore: finalScore + 10,
         level: "BUILDING",
         direction,
         session: sessionInfo.session,
-        score
+        score: finalScore
       };
     }
+  }
+  
+  return null;
+}
   }
 
   // 👀 WATCH - BLOCK in elite mode
