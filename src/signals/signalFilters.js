@@ -8,8 +8,195 @@ export const marketState = {
   avgVolume: 0,
   lastUpdate: 0,
   consecutiveLosses: 0,
-  riskMultiplier: 1
+  riskMultiplier: 1,
+  marketBias: 'NEUTRAL', // BULLISH, BEARISH, NEUTRAL, CHOP
+  totalPositiveOI: 0,
+  totalNegativeOI: 0
 };
+
+// ========== Z-SCORE OI DETECTION (Adaptive) ==========
+const oiHistory = new Map();
+
+export function calculateZScore(symbol, currentOI) {
+  if (!oiHistory.has(symbol)) {
+    oiHistory.set(symbol, []);
+  }
+  
+  const history = oiHistory.get(symbol);
+  history.push(currentOI);
+  
+  // Keep last 50 data points
+  if (history.length > 50) history.shift();
+  
+  // Need at least 10 points for meaningful z-score
+  if (history.length < 10) return 0;
+  
+  // Calculate mean
+  const mean = history.reduce((a, b) => a + b, 0) / history.length;
+  
+  // Calculate std dev
+  const variance = history.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / history.length;
+  const stdDev = Math.sqrt(variance);
+  
+  if (stdDev === 0) return 0;
+  
+  // Z-score: how many std deviations from mean
+  return (currentOI - mean) / stdDev;
+}
+
+export function isOI significant(symbol, oiChange) {
+  const zScore = calculateZScore(symbol, oiChange);
+  
+  // Z-score > 2 means unusual activity (2 std deviations)
+  return {
+    significant: zScore > 2,
+    zScore: zScore,
+    tier: zScore > 3 ? 'STRONG' : zScore > 2 ? 'MODERATE' : 'NOISE'
+  };
+}
+
+// ========== CLUSTER DETECTION (Consecutive OI builds) ==========
+const oiConsecutiveCount = new Map();
+const OI_CLUSTER_THRESHOLD = 3; // 3 consecutive increases = cluster
+
+export function detectOICluster(symbol, oiChange) {
+  if (!oiConsecutiveCount.has(symbol)) {
+    oiConsecutiveCount.set(symbol, { count: 0, direction: 0 });
+  }
+  
+  const cluster = oiConsecutiveCount.get(symbol);
+  
+  if (Math.abs(oiChange) < 0.01) {
+    // Reset on noise
+    cluster.count = 0;
+    cluster.direction = 0;
+    return { isCluster: false, count: 0 };
+  }
+  
+  const direction = oiChange > 0 ? 1 : -1;
+  
+  if (cluster.direction === direction) {
+    cluster.count++;
+  } else {
+    cluster.count = 1;
+    cluster.direction = direction;
+  }
+  
+  return {
+    isCluster: cluster.count >= OI_CLUSTER_THRESHOLD,
+    count: cluster.count,
+    direction: direction > 0 ? 'BUILDING_UP' : 'BUILDING_DOWN'
+  };
+}
+
+// ========== MARKET BIAS FILTER (Skip chop) ==========
+const marketBiasHistory = new Map();
+
+export function updateMarketBias(symbol, oiChange, priceChange) {
+  if (!marketBiasHistory.has(symbol)) {
+    marketBiasHistory.set(symbol, { positive: 0, negative: 0, neutral: 0 });
+  }
+  
+  const bias = marketBiasHistory.get(symbol);
+  
+  if (oiChange > 0.02) bias.positive++;
+  else if (oiChange < -0.02) bias.negative++;
+  else bias.neutral++;
+  
+  // Keep rolling window of 20
+  const total = bias.positive + bias.negative + bias.neutral;
+  if (total > 20) {
+    const remove = total - 20;
+    if (bias.positive > bias.negative) bias.positive -= remove;
+    else bias.negative -= remove;
+  }
+  
+  // Determine market bias
+  const diff = Math.abs(bias.positive - bias.negative);
+  
+  if (diff < 3) {
+    marketState.marketBias = 'CHOP'; // Balanced = chop
+    return 'CHOP';
+  }
+  
+  if (bias.positive > bias.negative) {
+    marketState.marketBias = 'BULLISH';
+    return 'BULLISH';
+  }
+  
+  if (bias.negative > bias.positive) {
+    marketState.marketBias = 'BEARISH';
+    return 'BEARISH';
+  }
+  
+  marketState.marketBias = 'NEUTRAL';
+  return 'NEUTRAL';
+}
+
+export function isMarketChop() {
+  return marketState.marketBias === 'CHOP';
+}
+
+// ========== NOISE FILTERING ==========
+const OI_NOISE_THRESHOLD = 0.01; // < 0.01% = noise
+const VOL_NOISE_THRESHOLD = 0.1; // < 10% = low volume
+
+export function isNoise(oiChange, volumeRatio, priceChangePercent) {
+  // OI noise
+  if (Math.abs(oiChange) < OI_NOISE_THRESHOLD) {
+    return { noise: true, reason: 'OI_NOISE' };
+  }
+  
+  // Volume noise
+  if (volumeRatio < VOL_NOISE_THRESHOLD) {
+    return { noise: true, reason: 'VOLUME_LOW' };
+  }
+  
+  // Price noise - tiny moves
+  if (Math.abs(priceChangePercent || 0) < 0.05) {
+    return { noise: true, reason: 'PRICE_NOISE' };
+  }
+  
+  return { noise: false, reason: null };
+}
+
+// ========== OI + PRICE + VOLUME COMBINATION ==========
+export function analyzeOIContext(oiChange, priceChangePercent, volumeRatio) {
+  const oiDir = oiChange > 0.1 ? 'UP' : oiChange < -0.1 ? 'DOWN' : 'FLAT';
+  const priceDir = (priceChangePercent || 0) > 0.1 ? 'UP' : (priceChangePercent || 0) < -0.1 ? 'DOWN' : 'FLAT';
+  const volDir = volumeRatio > 1.5 ? 'HIGH' : volumeRatio > 0.8 ? 'NORMAL' : 'LOW';
+  
+  let signal = 'NEUTRAL';
+  let confidence = 0;
+  
+  // Strongest: OI UP + Price UP + High Volume = Bullish continuation
+  if (oiDir === 'UP' && priceDir === 'UP' && volDir === 'HIGH') {
+    signal = 'BULLISH';
+    confidence = 80;
+  }
+  // OI UP + Price DOWN = Shorts entering (liquidation) = Bearish
+  else if (oiDir === 'UP' && priceDir === 'DOWN') {
+    signal = 'BEARISH';
+    confidence = 70;
+  }
+  // OI UP + Price FLAT + High Volume = Absorption (trap)
+  else if (oiDir === 'UP' && priceDir === 'FLAT' && volDir === 'HIGH') {
+    signal = 'ABSORPTION';
+    confidence = 60;
+  }
+  // OI DOWN + Price DOWN = Shorts covering = Bullish
+  else if (oiDir === 'DOWN' && priceDir === 'DOWN') {
+    signal = 'BULLISH';
+    confidence = 50;
+  }
+  // OI DOWN + Price UP = Longs covering = Bearish
+  else if (oiDir === 'DOWN' && priceDir === 'UP') {
+    signal = 'BEARISH';
+    confidence = 50;
+  }
+  
+  return { signal, confidence, oiDir, priceDir, volDir };
+}
 
 // ========== TREND FILTER (EMA 200) ==========
 const ema200Cache = new Map();

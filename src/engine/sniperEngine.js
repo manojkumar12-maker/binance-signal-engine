@@ -28,7 +28,7 @@ export function updateSniperState(symbol, data) {
   }
 }
 
-import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection, getOIDirection, isNoTradeZone, getTrendDirection, marketState, updateTrend, updateVolatility, updateAvgVolume, getAdaptiveWeights } from '../signals/signalFilters.js';
+import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection, getOIDirection, isNoTradeZone, getTrendDirection, marketState, updateTrend, updateVolatility, updateAvgVolume, getAdaptiveWeights, isOI significant, detectOICluster, isMarketChop, isNoise, analyzeOIContext, updateMarketBias } from '../signals/signalFilters.js';
 import { getSessionInfo } from '../signals/advancedFilters.js';
 
 // ========== LIQUIDITY SWEEP DETECTION (Institutional) ==========
@@ -142,24 +142,39 @@ function detectMomentum(symbol, price) {
 }
 
 // ==============================
-// CALCULATE ADAPTIVE SCORE (Direction weighted)
+// CALCULATE ADAPTIVE SCORE (Direction weighted + Cluster + Z-Score)
 // ==============================
 function calculateScore(data) {
   let score = 0;
-  const { oiChange, volumeRatio, imbalance } = data;
+  const { oiChange, volumeRatio, imbalance, symbol } = data;
   
   if (isInNoTradeZone(imbalance)) return 0;
   
   const direction = getDirection(imbalance);
   if (!direction) return 0;
   
+  // Volume scoring
   if (volumeRatio > 1.5) score += 10;
   if (volumeRatio > 2) score += 5;
   if (volumeRatio > 3) score += 5;
   
+  // OI scoring with noise filtering
   if (Math.abs(oiChange) > 0.1) score += 10;
   if (Math.abs(oiChange) > 0.3) score += 5;
+  if (Math.abs(oiChange) > 0.5) score += 5;
   
+  // Cluster detection boost (consecutive OI builds are stronger)
+  const cluster = detectOICluster(symbol, oiChange);
+  if (cluster.isCluster) {
+    score += 15; // Significant boost for cluster
+  }
+  
+  // Z-score boost (unusual OI activity)
+  const oiSig = isOI significant(symbol, oiChange);
+  if (oiSig.zScore > 2) score += 10;
+  if (oiSig.zScore > 3) score += 10;
+  
+  // Imbalance scoring
   if (imbalance > 1.2) score += 20;
   if (imbalance > 1.4) score += 15;
   if (imbalance > 1.6) score += 10;
@@ -199,10 +214,38 @@ function getEntrySignal(symbol, data) {
     return null;
   }
 
-  // OI + PRICE DIRECTION Check (Institutional Logic)
-  const oiDir = getOIDirection(oiChange, priceChangePercent || 0);
-  if (oiDir === 'ABSORPTION') {
-    return null; // Skip absorption/trap
+  // OI + PRICE + VOLUME COMBINATION (Enhanced Institutional Logic)
+  const oiContext = analyzeOIContext(oiChange, priceChangePercent, volumeRatio);
+  
+  // Block absorption signals
+  if (oiContext.signal === 'ABSORPTION') {
+    return null;
+  }
+  
+  // Only proceed if we have meaningful combination
+  if (oiContext.signal === 'NEUTRAL') {
+    return null;
+  }
+
+  // NOISE FILTER - Ignore tiny movements
+  const noiseCheck = isNoise(oiChange, volumeRatio, priceChangePercent);
+  if (noiseCheck.noise) {
+    return null;
+  }
+
+  // Z-SCORE OI DETECTION - Only significant OI spikes
+  const oiSignificance = isOI significant(symbol, oiChange);
+  if (!oiSignificance.significant && Math.abs(oiChange) < 0.05) {
+    return null; // Not a significant OI move
+  }
+
+  // CLUSTER DETECTION - Consecutive OI builds are stronger
+  const cluster = detectOICluster(symbol, oiChange);
+  
+  // MARKET BIAS - Skip chop markets
+  const marketBias = updateMarketBias(symbol, oiChange, priceChangePercent);
+  if (marketBias === 'CHOP') {
+    return null; // Market is balanced/neutral - skip
   }
 
   // Update volatility tracking
@@ -314,7 +357,8 @@ export function getTopWatching() {
       price: sniperState.price[s],
       oiChange: sniperState.oiChange[s] || 0,
       volumeRatio: sniperState.volumeRatio[s] || 1,
-      imbalance: sniperState.imbalance[s] || 1
+      imbalance: sniperState.imbalance[s] || 1,
+      symbol: s
     };
     
     if (!data.price) continue;
@@ -322,11 +366,17 @@ export function getTopWatching() {
     const direction = getDirection(data.imbalance);
     const score = calculateScore(data);
     
+    // Get additional context
+    const oiSig = isOI significant(s, data.oiChange);
+    const cluster = detectOICluster(s, data.oiChange);
+    
     // Always show top symbols even if score is low (for monitoring)
     watching.push({
       symbol: s,
       ...data,
       score,
+      zScore: oiSig.zScore,
+      isCluster: cluster.isCluster,
       direction: direction || 'NEUTRAL',
       level: score >= 50 ? "EXPLOSION" : 
              score >= 40 ? "ENTRY" : 
