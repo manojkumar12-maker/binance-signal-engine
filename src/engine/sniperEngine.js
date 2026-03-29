@@ -224,39 +224,37 @@ function getEntrySignal(symbol, data) {
   
   // SOFT SCORING - convert to points instead of blocking
   
-  // 1. Direction/OI context scoring
+  // 1. Direction/OI context scoring - HIGHER thresholds
   if (oiContext.signal === 'BULLISH' || oiContext.signal === 'BEARISH') {
-    score += 15;
-    reasons.push('OI_context');
+    score += 20;
   }
   
-  // 2. OI change scoring (lower threshold)
-  if (Math.abs(oiChange) > 0.02) score += 10;
-  if (Math.abs(oiChange) > 0.05) score += 10;
-  if (Math.abs(oiChange) > 0.1) score += 10;
+  // 2. OI change scoring - require higher OI
+  if (Math.abs(oiChange) > 0.1) score += 15;
+  if (Math.abs(oiChange) > 0.2) score += 15;
+  if (Math.abs(oiChange) > 0.3) score += 15;
   
-  // 3. Z-score scoring (lowered from 2 to 1.2)
-  if (oiSignificance.zScore > 1.2) score += 15;
-  if (oiSignificance.zScore > 1.5) score += 10;
+  // 3. Z-score scoring - require higher z-score
+  if (oiSignificance.zScore > 2.0) score += 20;
+  if (oiSignificance.zScore > 2.5) score += 15;
   
-  // 4. Cluster scoring (relaxed)
-  if (cluster.count >= 2) score += 10;
-  if (cluster.isCluster) score += 10;
+  // 4. Cluster scoring - require confirmed cluster
+  if (cluster.isCluster) score += 15;
   
-  // 5. Volume scoring
-  if (volumeRatio > 1.3) score += 15;
-  if (volumeRatio > 1.5) score += 10;
-  if (volumeRatio > 2.0) score += 10;
+  // 5. Volume scoring - require higher volume
+  if (volumeRatio > 1.5) score += 15;
+  if (volumeRatio > 2.0) score += 15;
+  if (volumeRatio > 2.5) score += 10;
   
-  // 6. Imbalance scoring (not binary)
-  if (imbalance > 1.1) score += 10;
-  if (imbalance > 1.3) score += 15;
-  if (imbalance < 0.9) score += 10;
-  if (imbalance < 0.7) score += 15;
+  // 6. Imbalance scoring - require stronger imbalance
+  if (imbalance > 1.3) score += 20;
+  if (imbalance > 1.5) score += 15;
+  if (imbalance < 0.7) score += 20;
+  if (imbalance < 0.5) score += 15;
   
-  // 7. Market bias scoring (reduce score, not block)
-  if (marketBias === 'CHOP') score -= 10;
-  else if (marketBias === 'BULLISH' || marketBias === 'BEARISH') score += 10;
+  // 7. Market bias scoring
+  if (marketBias === 'BULLISH' || marketBias === 'BEARISH') score += 10;
+  if (marketBias === 'CHOP') score -= 15;
   
   // 8. Trend scoring (add points, not block)
   const priceHistory = sniperState.priceHistory?.get(symbol) || [];
@@ -267,7 +265,7 @@ function getEntrySignal(symbol, data) {
   else if (trendDirection) score += 5; // Counter-trend but still some points
   
   // Minimum score threshold
-  if (score < 25) return null;
+  if (score < 40) return null;
   
   // Store score for later use
   data.score = score;
@@ -285,12 +283,11 @@ function getEntrySignal(symbol, data) {
   // Get the score we calculated earlier (or calculate if not set)
   let finalScore = data.score || calculateScore(data);
   
-  // Use soft thresholds (35/45/60)
-  // Lower thresholds so signals actually fire
+  // Use TIGHTER thresholds for quality signals
   const sessionInfo = getSessionInfo();
   
-  // EXPLOSION: score >= 60
-  if (finalScore >= 60) {
+  // EXPLOSION: score >= 80 (very high quality only)
+  if (finalScore >= 80) {
     if (canEmitSignal(symbol, 'CONFIRMED_ENTRY')) {
       recordSignal(symbol);
       console.log(`✅ SIGNAL: ${symbol} | type=EXPLOSION | score=${finalScore} | direction=${direction}`);
@@ -303,8 +300,8 @@ function getEntrySignal(symbol, data) {
     }
   }
   
-  // CONFIRMED: score >= 45
-  if (finalScore >= 45 || (pressure && finalScore >= 35)) {
+  // CONFIRMED: score >= 60 (high quality)
+  if (finalScore >= 60 || (pressure && finalScore >= 50)) {
     if (canEmitSignal(symbol, 'CONFIRMED_ENTRY')) {
       recordSignal(symbol);
       console.log(`✅ SIGNAL: ${symbol} | type=CONFIRMED_ENTRY | score=${finalScore} | direction=${direction}`);
@@ -319,8 +316,8 @@ function getEntrySignal(symbol, data) {
     }
   }
   
-  // SNIPER: score >= 35
-  if (finalScore >= 35) {
+  // SNIPER: score >= 50 (medium quality)
+  if (finalScore >= 50) {
     if (canEmitSignal(symbol, 'SNIPER_ENTRY')) {
       recordSignal(symbol);
       console.log(`✅ SIGNAL: ${symbol} | type=SNIPER_ENTRY | score=${finalScore} | direction=${direction}`);
