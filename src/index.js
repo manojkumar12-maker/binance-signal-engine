@@ -199,9 +199,11 @@ function handleTicker(ticker) {
   
   const snapshot = topPumpSelector.ingest(analysis, ticker);
 
-  // Debug: show real data in logs (every 100th symbol to avoid spam)
-  if (Math.random() < 0.01) {
-    console.log(`📊 ${symbol}: OI=${oiChange.toFixed(4)}% Vol=${volumeRatio.toFixed(2)}x Flow=${orderFlow.toFixed(2)} Price=${ticker.price}`);
+  // Debug: show first 5 unique symbols each second
+  if (!handleTicker.debugged) handleTicker.debugged = new Set();
+  if (!handleTicker.debugged.has(symbol) && handleTicker.debugged.size < 5) {
+    handleTicker.debugged.add(symbol);
+    console.log(`📊 ${symbol}: OI=${oiChange.toFixed(4)}% Vol=${volumeRatio.toFixed(2)}x QV=${ticker.quoteVolume} Flow=${orderFlow.toFixed(2)} Price=${ticker.price}`);
   }
 
   updateSniperState(snapshot.symbol, {
