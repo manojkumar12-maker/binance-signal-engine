@@ -185,9 +185,7 @@ function handleTicker(ticker) {
   const snapshot = topPumpSelector.ingest(analysis, ticker);
 
   // Debug: show real data in logs
-  if (Math.abs(oiChange) > 0.05 || volumeRatio > 1.5) {
-    console.log(`📊 ${symbol}: OI=${oiChange.toFixed(2)}% Vol=${volumeRatio.toFixed(2)}x Flow=${orderFlow.toFixed(2)}`);
-  }
+  console.log(`📊 ${symbol}: OI=${oiChange.toFixed(4)}% Vol=${volumeRatio.toFixed(2)}x Flow=${orderFlow.toFixed(2)} Price=${ticker.price}`);
 
   updateSniperState(snapshot.symbol, {
     imbalance: orderFlow,
