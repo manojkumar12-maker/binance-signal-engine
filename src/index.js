@@ -237,9 +237,9 @@ function handleTicker(ticker) {
 const notifiedSignals = new Set();
 
 async function notifySniperSignals(signals) {
-  const allowedTypes = ['SNIPER', 'HIGH_PUMP'];
-  const filtered = signals.filter(s => allowedTypes.includes(s.type));
-  const topSignals = selectTopSignals(filtered, 5);
+  const allowedTypes = ['SNIPER', 'SNIPER ENTRY', 'CONFIRMED ENTRY', 'EXPLOSION', 'HIGH_PUMP'];
+  const filtered = signals.filter(s => allowedTypes.some(t => s.type?.includes(t) || t.includes(s.type)));
+  const topSignals = selectTopSignals(filtered, 3); // Limit to top 3
   
   if (topSignals.length === 0) return;
   

@@ -337,10 +337,14 @@ function getEntrySignal(symbol, data) {
 }
 
 // ==============================
-// STAGE 5 — RANKING (Top 5 only)
+// COOLDOWN (prevent spam) - longer cooldown
 // ==============================
-function rankSignals(signals) {
-  return selectTopSignals(signals, 5);
+function canEmitSignal(symbol, type) {
+  // Use longer cooldown to reduce noise
+  const baseCooldown = getCooldownForType(type);
+  const cooldown = Math.max(baseCooldown, 180000); // Minimum 3 minutes
+  const last = sniperState.signalHistory.get(symbol) || 0;
+  return Date.now() - last > cooldown;
 }
 
 // ==============================
