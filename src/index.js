@@ -159,11 +159,16 @@ function handleTicker(ticker) {
   // Pull REAL data from all trackers
   const orderFlow = orderflowTracker.getOrderflow(symbol) || 1;
   
-  // Get OI change - check multiple possible return formats
+  // Get OI change - getOIChangeFast returns raw number, not object
   let oiChange = 0;
   try {
     const oiData = oiTracker.getChange ? oiTracker.getChange(symbol) : null;
-    oiChange = oiData?.oiChangePercent || oiData?.changePercent || oiData?.change || 0;
+    // getOIChangeFast returns raw percentage number, not object
+    if (typeof oiData === 'number') {
+      oiChange = oiData || 0;
+    } else {
+      oiChange = oiData?.oiChangePercent || oiData?.changePercent || oiData?.change || 0;
+    }
   } catch (e) {
     // OI not ready yet
   }
