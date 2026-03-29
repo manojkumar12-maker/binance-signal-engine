@@ -92,7 +92,9 @@ export function detectAbsorption(symbol, volume, priceChange, high, low) {
 }
 
 function canEmitSignal(symbol, type) {
-  const cooldown = getCooldownForType(type);
+  // Longer cooldown to reduce noise - minimum 3 minutes
+  const baseCooldown = getCooldownForType(type);
+  const cooldown = Math.max(baseCooldown, 180000);
   const last = sniperState.signalHistory.get(symbol) || 0;
   return Date.now() - last > cooldown;
 }
@@ -335,18 +337,7 @@ function getEntrySignal(symbol, data) {
   
   return null;
 }
-
-// ==============================
-// COOLDOWN (prevent spam) - longer cooldown
-// ==============================
-function canEmitSignal(symbol, type) {
-  // Use longer cooldown to reduce noise
-  const baseCooldown = getCooldownForType(type);
-  const cooldown = Math.max(baseCooldown, 180000); // Minimum 3 minutes
-  const last = sniperState.signalHistory.get(symbol) || 0;
-  return Date.now() - last > cooldown;
-}
-
+ 
 // ==============================
 // GET TOP WATCHING (Even without signals)
 // ==============================
