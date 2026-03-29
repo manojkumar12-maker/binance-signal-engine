@@ -15,10 +15,10 @@ import { marketDataTracker } from './engine/marketDataTracker.js';
 import { oiTracker } from './engine/oiTracker.js';
 import { topPumpSelector } from './engine/topPumpSelector.js';
 import { signalGenerator } from './signals/signalGenerator.js';
-import { addSignal, getRecentSignals } from './state.js';
+import { addSignal, getRecentSignals, getActiveSignals } from './state.js';
 import { sendTelegram } from './utils/telegram.js';
 import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, formatSignalForTelegram, formatTopWatch, getCooldownForType } from './signals/signalFilters.js';
-import { initDatabase, createSignal, getActiveSignals, closeDatabase } from './database/db.js';
+import { initDatabase, createSignal, closeDatabase } from './database/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
