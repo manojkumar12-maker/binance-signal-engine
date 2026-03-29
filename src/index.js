@@ -158,21 +158,28 @@ function handleTicker(ticker) {
 
   // Pull REAL data from all trackers
   const orderFlow = orderflowTracker.getOrderflow(symbol) || 1;
-  const oiChange = oiTracker.getChange ? oiTracker.getChange(symbol)?.oiChangePercent || 0 : 0;
   
-  // Calculate volume ratio from ticker's quote volume vs 20-tick rolling average
+  // Get OI change - check multiple possible return formats
+  let oiChange = 0;
+  try {
+    const oiData = oiTracker.getChange ? oiTracker.getChange(symbol) : null;
+    oiChange = oiData?.oiChangePercent || oiData?.changePercent || oiData?.change || 0;
+  } catch (e) {
+    // OI not ready yet
+  }
+  
+  // Calculate volume ratio - use 24hr volume from ticker as baseline
   let volumeRatio = 1;
-  if (ticker.quoteVolume) {
-    const volHistory = marketDataTracker.volumeHistory?.get(symbol) || [];
-    volHistory.push(ticker.quoteVolume);
-    if (volHistory.length > 20) volHistory.shift();
-    marketDataTracker.volumeHistory = marketDataTracker.volumeHistory || new Map();
-    marketDataTracker.volumeHistory.set(symbol, volHistory);
+  if (ticker.volume && ticker.volume > 0) {
+    // Use a rolling average stored in marketDataTracker
+    if (!marketDataTracker.volumeAvg) marketDataTracker.volumeAvg = new Map();
     
-    if (volHistory.length >= 5) {
-      const avg = volHistory.reduce((a, b) => a + b, 0) / volHistory.length;
-      volumeRatio = avg > 0 ? ticker.quoteVolume / avg : 1;
-    }
+    const currentVol = ticker.volume;
+    const prevAvg = marketDataTracker.volumeAvg.get(symbol) || currentVol;
+    const newAvg = (prevAvg * 0.95) + (currentVol * 0.05); // EMA-style average
+    marketDataTracker.volumeAvg.set(symbol, newAvg);
+    
+    volumeRatio = newAvg > 0 ? currentVol / newAvg : 1;
   }
 
   const analysis = pumpAnalyzer.analyze(ticker);
@@ -184,8 +191,10 @@ function handleTicker(ticker) {
   
   const snapshot = topPumpSelector.ingest(analysis, ticker);
 
-  // Debug: show real data in logs
-  console.log(`📊 ${symbol}: OI=${oiChange.toFixed(4)}% Vol=${volumeRatio.toFixed(2)}x Flow=${orderFlow.toFixed(2)} Price=${ticker.price}`);
+  // Debug: show real data in logs (every 100th symbol to avoid spam)
+  if (Math.random() < 0.01) {
+    console.log(`📊 ${symbol}: OI=${oiChange.toFixed(4)}% Vol=${volumeRatio.toFixed(2)}x Flow=${orderFlow.toFixed(2)} Price=${ticker.price}`);
+  }
 
   updateSniperState(snapshot.symbol, {
     imbalance: orderFlow,
@@ -296,6 +305,12 @@ async function start() {
 
     setInterval(() => orderflowTracker.reset(), 60000);
     setInterval(() => oiTracker.runCycle().catch(() => {}), 5000);
+    
+    // Debug OI stats every 30 seconds
+    setInterval(() => {
+      const stats = oiTracker.getStats ? oiTracker.getStats() : {};
+      console.log(`📈 OI Stats: tracked=${stats.tracked || 0} BTC=${stats.btcChange || 0}% ready=${stats.ready || false}`);
+    }, 30000);
 
     setInterval(() => {
       const topSignals = runSniper();
