@@ -6,9 +6,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
   pages: write
-  id-token: write
+  contents: read
 
 jobs:
   deploy:
@@ -16,20 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-      
-      - name: Make index.html
-        run: |
-          ls -la frontend/
-          mkdir -p _site
-          cp frontend/index.html _site/
-          cp frontend/.nojekyll _site/ 2>/dev/null || true
-      
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v1
+      - uses: actions/upload-pages-artifact@v1
         with:
-          path: '_site'
+          path: '.'
       
-      - name: Deploy
-        uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v4

@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TRADING TERMINAL // ENGINE</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600;700&display=swap');
+
+    :root {
+      --bg: #0b0e14;
+      --card: rgba(18, 24, 38, 0.6);
+      --border: rgba(43, 214, 255, 0.15);
+      --accent: #2bd6ff;
+      --accent-glow: rgba(43, 214, 255, 0.4);
+      --green: #00ff88;
+      --red: #ff3366;
+      --text: #e2e8f0;
+      --muted: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 50%, rgba(43, 214, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 85% 30%, rgba(0, 255, 136, 0.03) 0%, transparent 40%);
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 3rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    h1 {
+      font-weight: 700;
+      letter-spacing: 2px;
+      font-size: 1.5rem;
+      text-transform: uppercase;
+      color: #fff;
+      text-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 255, 136, 0.1);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      padding: 6px 16px;
+      border-radius: 50px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--green);
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--green);
+      animation: pulsate 1.5s infinite;
+    }
+
+    @keyframes pulsate {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .panel-header {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Radar Feed (Left Panel) */
+    .radar-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 600px;
+      overflow-y: auto;
+      padding-right: 5px;
+    }
+
+    .radar-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .radar-list::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .radar-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      animation: fadeUp 0.3s ease-out forwards;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .radar-sym { font-weight: 700; color: #fff; }
+    .radar-data { font-size: 0.8rem; color: var(--muted); display: flex; flex-direction: column; text-align: right; gap: 4px;}
+    .data-hl { color: var(--accent); font-weight: 600; }
+
+    /* Signals Grid (Right Panel) */
+    .signals-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .signal-card {
+      background: linear-gradient(180deg, rgba(25, 33, 50, 0.7) 0%, rgba(14, 20, 31, 0.9) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+      animation: fadeUp 0.4s ease-out front;
+    }
+
+    .signal-card:hover {
+      transform: translateY(-5px);
+      border-color: var(--accent-glow);
+      box-shadow: 0 10px 20px rgba(43, 214, 255, 0.1);
+    }
+
+    .signal-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 3px;
+    }
+
+    .type-early::before { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+    .type-confirmed::before { background: var(--green); box-shadow: 0 0 10px var(--green); }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .sig-type {
+      font-size: 0.7rem;
+      padding: 4px 10px;
+      border-radius: 50px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    
+    .lbl-early { background: rgba(43, 214, 255, 0.15); color: var(--accent); }
+    .lbl-confirmed { background: rgba(0, 255, 136, 0.15); color: var(--green); }
+    .lbl-sniper { background: rgba(255, 51, 102, 0.15); color: var(--red); }
+    .lbl-watch { background: rgba(100, 116, 139, 0.15); color: var(--muted); }
+    .lbl-building { background: rgba(255, 184, 0, 0.15); color: #ffb800; }
+    .lbl-entry { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+    .lbl-explosion { background: rgba(255, 51, 102, 0.15); color: var(--red); }
+
+    .sig-sym { font-size: 1.4rem; font-weight: 700; color: #fff; }
+    
+    .sig-stats { margin-top: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat-box {
+      background: rgba(0,0,0,0.3);
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.02);
+    }
+    .sb-lbl { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+    .sb-val { font-size: 1rem; font-weight: 600; font-family: monospace; color: #fff; }
+    
+    .targets { margin-top: 1rem; font-size: 0.85rem; padding-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); display: flex; justify-content: space-between;}
+    .target-list { color: var(--green); font-family: monospace; display: flex; flex-direction: column; gap: 4px;}
+    .stop-loss { color: var(--red); font-family: monospace; }
+    
+    .empty-state {
+      grid-column: 1 / -1;
+      padding: 4rem 2rem;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+    }
+
+  </style>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="logo-area">
+        <h1>TERMINAL // ENGINE</h1>
+      </div>
+      <div class="status-badge" id="connStatus">
+        <div class="pulse"></div>
+        CONNECTING...
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Radar Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>Live Radar</span>
+          <span style="color: var(--muted); font-size:0.8rem;">[VOL &amp; OI]</span>
+        </div>
+        <div class="radar-list" id="radarList">
+          <div style="color: var(--muted); text-align: center; padding: 20px; font-size: 0.85rem;">Listening for market anomalies...</div>
+        </div>
+      </div>
+
+      <!-- Signlas Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>Active Execution Signals</span>
+          <span style="color: var(--muted); font-size:0.8rem;">[SNIPER & EXPLOSION]</span>
+        </div>
+        <div class="signals-container" id="signalsContainer">
+          <div class="empty-state" id="emptySignals">
+            Awaiting progressive breakouts...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const API_BASE = (params.get('api') || 'https://binance-signal-engine-production.up.railway.app').replace(/\/$/, '');
+    const WS_BASE = (params.get('ws') || 'wss://binance-signal-engine-production.up.railway.app').replace(/\/$/, '');
+    
+    // Auto-detect local dev vs production based on origin if running locally
+    const targetWs = window.location.hostname === 'localhost' ? undefined : WS_BASE;
+    const socket = typeof targetWs === 'undefined' ? io() : io(targetWs);
+
+    const connStatus = document.getElementById('connStatus');
+    const radarList = document.getElementById('radarList');
+    const signalsContainer = document.getElementById('signalsContainer');
+    const emptySignals = document.getElementById('emptySignals');
+
+    let radarItems = [];
+    let executedSignals = new Set(); // Prevent duplicates
+
+    socket.on('connect', () => {
+      connStatus.innerHTML = '<div class="pulse"></div> ACTIVE';
+      connStatus.style.color = 'var(--green)';
+      connStatus.style.borderColor = 'rgba(0,255,136,0.3)';
+    });
+
+    socket.on('disconnect', () => {
+      connStatus.innerHTML = '<div class="pulse" style="background:#ff3366;box-shadow:none;animation:none;"></div> OFFLINE';
+      connStatus.style.color = 'var(--red)';
+      connStatus.style.borderColor = 'rgba(255,51,102,0.3)';
+    });
+
+    // 1. Radar Updates - Top Watching Symbols
+    socket.on('top_watch', (data) => {
+      radarItems = data.slice(0, 15);
+      renderRadar();
+    });
+
+    socket.on('high_pump', (data) => {
+      const existingIdx = radarItems.findIndex(i => i.symbol === data.symbol);
+      if (existingIdx !== -1) {
+        radarItems.splice(existingIdx, 1);
+      }
+      radarItems.unshift(data);
+      if (radarItems.length > 15) radarItems.pop();
+      renderRadar();
+    });
+
+    function renderRadar() {
+      if (radarItems.length === 0) {
+        radarList.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 20px; font-size: 0.85rem;">Listening for market anomalies...</div>';
+        return;
+      }
+      radarList.innerHTML = radarItems.map(item => `
+        <div class="radar-item">
+          <div>
+            <div class="radar-sym">${item.symbol}</div>
+            <div style="font-size:0.75rem; color:var(--muted); margin-top:4px;">${item.level || 'WATCH'} | Score: ${(item.score || item.confidence || 0).toFixed(0)}</div>
+          </div>
+          <div class="radar-data">
+            <span>Vol: <span class="data-hl">${(item.volumeRatio || item.volume || 1).toFixed(2)}x</span></span>
+            <span>OI: <span class="data-hl">${(item.oiChange || 0).toFixed(2)}%</span></span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 2. Sniper Signals (All Types: WATCH, BUILDING, ENTRY, EXPLOSION, EARLY, SNIPER, CONFIRMED)
+    socket.on('sniper', (data) => {
+      const sigKey = data.symbol + (data.confidence || Date.now());
+      if (executedSignals.has(sigKey)) return;
+      executedSignals.add(sigKey);
+
+      if (emptySignals) emptySignals.style.display = 'none';
+
+      // Determine type and styling based on signal data
+      const type = data.type || 'EARLY ENTRY';
+      const confidence = parseFloat(data.confidence || 0);
+      
+      let typeStr, cClass, borderClass;
+      
+      if (type.includes('CONFIRMED') || confidence > 70) {
+        typeStr = 'CONFIRMED';
+        cClass = 'lbl-confirmed';
+        borderClass = 'type-confirmed';
+      } else if (type.includes('SNIPER') || confidence > 50) {
+        typeStr = 'SNIPER';
+        cClass = 'lbl-sniper';
+        borderClass = 'type-confirmed';
+      } else if (type.includes('EXPLOSION') || confidence > 40) {
+        typeStr = 'EXPLOSION';
+        cClass = 'lbl-explosion';
+        borderClass = 'type-confirmed';
+      } else if (type.includes('ENTRY')) {
+        typeStr = 'ENTRY';
+        cClass = 'lbl-entry';
+        borderClass = 'type-early';
+      } else if (type.includes('BUILDING')) {
+        typeStr = 'BUILDING';
+        cClass = 'lbl-building';
+        borderClass = 'type-early';
+      } else if (type.includes('WATCH')) {
+        typeStr = 'WATCH';
+        cClass = 'lbl-watch';
+        borderClass = 'type-early';
+      } else {
+        typeStr = 'EARLY';
+        cClass = 'lbl-early';
+        borderClass = 'type-early';
+      }
+
+      const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
+
+      const el = document.createElement('div');
+      el.className = `signal-card ${borderClass}`;
+      el.innerHTML = `
+        <div class="card-header">
+          <div class="sig-sym">${data.symbol}</div>
+          <div class="sig-type ${cClass}">${typeStr}</div>
+        </div>
+        
+        <div class="sig-stats">
+          <div class="stat-box">
+            <div class="sb-lbl">ENTRY</div>
+            <div class="sb-val">${data.entry ? fmt(data.entry) : 'MARKET'}</div>
+          </div>
+          <div class="stat-box">
+            <div class="sb-lbl">SCORE</div>
+            <div class="sb-val">${confidence.toFixed(1)}</div>
+          </div>
+        </div>
+
+        <div class="targets">
+          <div class="target-list">
+            <div>TP1: ${data.tp1 ? fmt(data.tp1) : '--'}</div>
+            <div>TP2: ${data.tp2 ? fmt(data.tp2) : '--'}</div>
+          </div>
+          <div class="stop-loss">
+            SL: ${data.stopLoss ? fmt(data.stopLoss) : '--'}
+          </div>
+        </div>
+      `;
+
+      signalsContainer.prepend(el);
+      
+      if (signalsContainer.children.length > 12) {
+        signalsContainer.removeChild(signalsContainer.lastChild);
+      }
+    });
+
+  </script>
+</body>
+</html>
