@@ -45,8 +45,6 @@ const server = createServer((req, res) => {
     return;
   }
 
-  const pathOnly = req.url.split('?')[0];
-
   if (pathOnly === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end('{"status":"ok"}');
