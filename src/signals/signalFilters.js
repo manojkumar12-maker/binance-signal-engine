@@ -548,3 +548,209 @@ export function getCooldownForType(type) {
   
   return 120000;
 }
+
+// ========== ADVANCED TRADING SYSTEM ==========
+
+// Loss Streak Protection
+const tradeResults = [];
+const MAX_CONSECUTIVE_LOSSES = 10;
+let tradingPaused = false;
+let pauseUntil = 0;
+
+export function recordTradeOutcome(won) {
+  tradeResults.push({ won, time: Date.now() });
+  
+  // Keep only last 50 trades
+  if (tradeResults.length > 50) tradeResults.shift();
+  
+  // Check consecutive losses
+  let consecutiveLosses = 0;
+  for (let i = tradeResults.length - 1; i >= 0; i--) {
+    if (!tradeResults[i].won) consecutiveLosses++;
+    else break;
+  }
+  
+  if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
+    tradingPaused = true;
+    pauseUntil = Date.now() + 24 * 60 * 60 * 1000; // Pause for 24 hours
+    console.log(`🛑 TRADING PAUSED: ${consecutiveLosses} consecutive losses. Resumes in 24h`);
+  }
+  
+  return { consecutiveLosses, tradingPaused, pauseUntil };
+}
+
+export function isTradingPaused() {
+  if (tradingPaused && Date.now() > pauseUntil) {
+    tradingPaused = false;
+    console.log(`✅ TRADING RESUMED: Pause period over`);
+  }
+  return tradingPaused;
+}
+
+// Trend Detection (Higher Highs/Lower Lows)
+const priceHistory = new Map();
+
+export function analyzeTrend(symbol, currentPrice) {
+  if (!priceHistory.has(symbol)) {
+    priceHistory.set(symbol, []);
+  }
+  
+  const history = priceHistory.get(symbol);
+  history.push(currentPrice);
+  if (history.length > 50) history.shift();
+  
+  if (history.length < 10) return { trend: 'UNKNOWN', signal: null };
+  
+  // Check for Higher Highs & Higher Lows (Uptrend)
+  let hhCount = 0, hlCount = 0, lhCount = 0, llCount = 0;
+  
+  for (let i = 2; i < history.length; i++) {
+    if (history[i] > history[i-1] && history[i-1] > history[i-2]) hhCount++;
+    if (history[i] > history[i-2] && history[i-1] > history[i-3]) hlCount++;
+    if (history[i] < history[i-1] && history[i-1] < history[i-2]) lhCount++;
+    if (history[i] < history[i-2] && history[i-1] < history[i-3]) llCount++;
+  }
+  
+  let trend = 'UNKNOWN';
+  let signal = null;
+  
+  if (hhCount > hlCount + 2 && hhCount > 2) {
+    trend = 'UP';
+    signal = 'BUY';
+  } else if (lhCount > llCount + 2 && lhCount > 2) {
+    trend = 'DOWN';
+    signal = 'SELL';
+  }
+  
+  return { trend, signal, hhCount, hlCount, lhCount, llCount };
+}
+
+// Liquidity Sweep Detection
+const liquidityZones = new Map();
+
+export function detectLiquiditySweep(symbol, currentPrice, high, low) {
+  if (!liquidityZones.has(symbol)) {
+    liquidityZones.set(symbol, { swingHigh: 0, swingLow: Infinity, lastSweep: 0 });
+  }
+  
+  const zone = liquidityZones.get(symbol);
+  
+  // Update swing levels
+  if (high > zone.swingHigh) zone.swingHigh = high;
+  if (low < zone.swingLow) zone.swingLow = low;
+  
+  const now = Date.now();
+  let sweepSignal = null;
+  
+  // Liquidity Sweep (Stop Hunt) detection
+  // Price takes out liquidity (swing high/low) then reverses
+  if (currentPrice < zone.swingLow * 1.001 && currentPrice > zone.swingLow) {
+    // Low swept - potential BUY (smart money absorbing)
+    if (now - zone.lastSweep > 60000) { // 1 min cooldown
+      sweepSignal = 'BUY_SWEEP';
+      zone.lastSweep = now;
+    }
+  }
+  
+  if (currentPrice > zone.swingHigh * 0.999 && currentPrice < zone.swingHigh) {
+    // High swept - potential SELL (smart money absorbing)
+    if (now - zone.lastSweep > 60000) {
+      sweepSignal = 'SELL_SWEEP';
+      zone.lastSweep = now;
+    }
+  }
+  
+  return { sweepSignal, swingHigh: zone.swingHigh, swingLow: zone.swingLow };
+}
+
+// Volume/CVD Confirmation
+const volumeProfile = new Map();
+
+export function analyzeVolumeConfirmation(symbol, priceChange, volume) {
+  if (!volumeProfile.has(symbol)) {
+    volumeProfile.set(symbol, []);
+  }
+  
+  const profile = volumeProfile.get(symbol);
+  profile.push({ priceChange, volume, time: Date.now() });
+  if (profile.length > 20) profile.shift();
+  
+  if (profile.length < 5) return { confirmed: false, reason: 'INSUFFICIENT_DATA' };
+  
+  // Calculate recent volume trend
+  const recentVol = profile.slice(-5).reduce((a, b) => a + b.volume, 0);
+  const avgVol = profile.reduce((a, b) => a + b.volume, 0) / profile.length;
+  
+  // CVD-like analysis: price direction vs volume
+  let positiveMoves = 0, negativeMoves = 0;
+  profile.forEach(p => {
+    if (p.priceChange > 0) positiveMoves++;
+    else if (p.priceChange < 0) negativeMoves++;
+  });
+  
+  // Divergence: price moving one way, volume confirming
+  const volumeConfirmed = recentVol > avgVol * 1.3;
+  
+  let signal = 'NEUTRAL';
+  if (priceChange > 0 && positiveMoves > negativeMoves && volumeConfirmed) {
+    signal = 'BULLISH_CONFIRMED';
+  } else if (priceChange < 0 && negativeMoves > positiveMoves && volumeConfirmed) {
+    signal = 'BEARISH_CONFIRMED';
+  } else if (priceChange > 0 && negativeMoves > positiveMoves) {
+    signal = 'BEARISH_DIVERGENCE'; // Weak - price up but selling pressure
+  } else if (priceChange < 0 && positiveMoves > negativeMoves) {
+    signal = 'BULLISH_DIVERGENCE'; // Weak - price down but buying pressure
+  }
+  
+  return { 
+    confirmed: signal.includes('CONFIRMED'), 
+    signal,
+    volumeRatio: recentVol / avgVol
+  };
+}
+
+// Combined Entry Check (Trend + Liquidity + Volume)
+export function checkProEntry(symbol, direction, priceChange, volume, currentPrice, high, low) {
+  const trend = analyzeTrend(symbol, currentPrice);
+  const liquidity = detectLiquiditySweep(symbol, currentPrice, high, low);
+  const volumeCheck = analyzeVolumeConfirmation(symbol, priceChange, volume);
+  
+  let score = 0;
+  let reasons = [];
+  
+  // Trend alignment
+  if (direction === 'LONG' && trend.signal === 'BUY') {
+    score += 30;
+    reasons.push('TREND_UP');
+  } else if (direction === 'SHORT' && trend.signal === 'SELL') {
+    score += 30;
+    reasons.push('TREND_DOWN');
+  }
+  
+  // Liquidity sweep
+  if (liquidity.sweepSignal) {
+    score += 25;
+    reasons.push('LIQUIDITY_SWEEP');
+  }
+  
+  // Volume confirmation
+  if (volumeCheck.confirmed) {
+    score += 25;
+    reasons.push('VOLUME_CONFIRMED');
+  } else if (volumeCheck.signal.includes('DIVERGENCE')) {
+    score -= 15;
+    reasons.push('DIVERGENCE');
+  }
+  
+  // Require ALL 3 for A+ signal
+  const isAPlus = score >= 70 && reasons.includes('TREND_UP' || reasons.includes('TREND_DOWN')) && reasons.includes('LIQUIDITY_SWEEP') && reasons.includes('VOLUME_CONFIRMED');
+  
+  return {
+    score,
+    isAPlus,
+    reasons,
+    trend: trend.trend,
+    liquiditySweep: liquidity.sweepSignal,
+    volumeConfirmed: volumeCheck.confirmed
+  };
+}

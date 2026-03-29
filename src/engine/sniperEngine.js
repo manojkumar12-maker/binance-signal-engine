@@ -30,7 +30,7 @@ export function updateSniperState(symbol, data) {
   }
 }
 
-import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection, getOIDirection, isNoTradeZone, getTrendDirection, marketState, updateTrend, updateVolatility, updateAvgVolume, getAdaptiveWeights, isOISignificant, detectOICluster, isMarketChop, isNoise, analyzeOIContext, updateMarketBias } from '../signals/signalFilters.js';
+import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection, getOIDirection, isNoTradeZone, getTrendDirection, marketState, updateTrend, updateVolatility, updateAvgVolume, getAdaptiveWeights, isOISignificant, detectOICluster, isMarketChop, isNoise, analyzeOIContext, updateMarketBias, checkProEntry, isTradingPaused, recordTradeOutcome } from '../signals/signalFilters.js';
 import { getSessionInfo } from '../signals/advancedFilters.js';
 
 // ========== LIQUIDITY SWEEP DETECTION (Institutional) ==========
@@ -196,6 +196,11 @@ function calculateScore(data) {
 function getEntrySignal(symbol, data) {
   const { price, oiChange, volumeRatio, imbalance, priceChangePercent, high, low } = data;
 
+  // Check if trading is paused due to consecutive losses
+  if (isTradingPaused()) {
+    return null;
+  }
+  
   if (isInNoTradeZone(imbalance)) return null;
   
   // Check No Trade Zone (low volatility/volume)
@@ -263,6 +268,23 @@ function getEntrySignal(symbol, data) {
   const trendDirection = getTrendDirection(symbol, price);
   if (trendDirection === direction) score += 10; // Aligned with trend
   else if (trendDirection) score += 5; // Counter-trend but still some points
+  
+  // ========== PRO ENTRY CHECK ==========
+  // Require Trend + Liquidity + Volume ALL aligned
+  // Get volume from volumeRatio * baseline
+  const volume = (volumeRatio || 1) * 1000000; // approximate
+  const proEntry = checkProEntry(symbol, direction, priceChangePercent || 0, volume, price, high, low);
+  
+  // A+ entries get bonus
+  if (proEntry.isAPlus) {
+    score += 30;
+    console.log(`🎯 A+ SIGNAL: ${symbol} | Pro Entry confirmed: ${proEntry.reasons.join(', ')}`);
+  }
+  
+  // If no volume confirmation, reduce score significantly
+  if (!proEntry.volumeConfirmed) {
+    score -= 10;
+  }
   
   // Minimum score threshold
   if (score < 40) return null;
