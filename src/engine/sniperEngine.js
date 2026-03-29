@@ -335,25 +335,6 @@ function getEntrySignal(symbol, data) {
   
   return null;
 }
-  }
-
-  // 👀 WATCH - BLOCK in elite mode
-  if (score >= 40 && direction) {
-    if (canEmitSignal(symbol, 'WATCH')) {
-      recordSignal(symbol);
-      return {
-        type: "WATCH",
-        finalScore: score,
-        level: "WATCH",
-        direction,
-        session: sessionInfo.session,
-        score
-      };
-    }
-  }
-
-  return null;
-}
 
 // ==============================
 // STAGE 5 — RANKING (Top 5 only)
