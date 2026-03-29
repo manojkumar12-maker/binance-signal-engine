@@ -22,10 +22,13 @@ import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, formatSi
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
 
+console.log('Starting server on port:', PORT);
+
 const server = createServer((req, res) => {
   const pathOnly = req.url.split('?')[0];
 
   if (pathOnly === '/api/health') {
+    console.log('Health check hit');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end('{"status":"ok"}');
     return;
@@ -88,7 +91,9 @@ const server = createServer((req, res) => {
 });
 
 const io = new Server(server);
-server.listen(PORT, '0.0.0.0', () => console.log('OK', PORT));
+server.listen(PORT, '0.0.0.0', () => console.log('OK', PORT)).on('error', (err) => {
+  console.error('Server error:', err);
+});
 
 let topSymbols = new Set();
 let lastRankRun = 0;
