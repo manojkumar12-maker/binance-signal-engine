@@ -175,21 +175,18 @@ function handleTicker(ticker) {
   
   // Calculate volume ratio - track tick-by-tick quoteVolume changes
   let volumeRatio = 1;
-  if (ticker.quoteVolume && ticker.quoteVolume > 0) {
-    if (!marketDataTracker.volumeAvg) marketDataTracker.volumeAvg = new Map();
-    if (!marketDataTracker.tickVolume) marketDataTracker.tickVolume = new Map();
+  const volData = ticker.quoteVolume || ticker.volume || 0;
+  if (volData > 0) {
+    if (!marketDataTracker.tickVol) marketDataTracker.tickVol = new Map();
     
-    // Track individual ticks
-    const tickVol = marketDataTracker.tickVolume.get(symbol) || [];
-    tickVol.push(ticker.quoteVolume);
-    if (tickVol.length > 20) tickVol.shift();
-    marketDataTracker.tickVolume.set(symbol, tickVol);
+    const ticks = marketDataTracker.tickVol.get(symbol) || [];
+    ticks.push(volData);
+    if (ticks.length > 20) ticks.shift();
+    marketDataTracker.tickVol.set(symbol, ticks);
     
-    // Calculate average from recent ticks
-    if (tickVol.length >= 5) {
-      const avg = tickVol.reduce((a, b) => a + b, 0) / tickVol.length;
-      const current = ticker.quoteVolume;
-      volumeRatio = avg > 0 ? current / avg : 1;
+    if (ticks.length >= 3) {
+      const avg = ticks.reduce((a, b) => a + b, 0) / ticks.length;
+      volumeRatio = avg > 0 ? volData / avg : 1;
     }
   }
 
