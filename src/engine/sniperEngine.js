@@ -379,8 +379,10 @@ export function getTopWatching() {
 }
 
 // ==============================
-// RUNNER
+// RANKING (Top 5 only)
 // ==============================
+const rankSignals = (signals) => selectTopSignals(signals, 5);
+
 export function runSniper() {
   const signals = [];
 
