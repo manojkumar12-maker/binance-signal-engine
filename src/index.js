@@ -89,7 +89,12 @@ const server = createServer((req, res) => {
   res.writeHead(404).end('Not found');
 });
 
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
+});
 server.listen(PORT, '0.0.0.0', () => console.log('OK', PORT)).on('error', (err) => {
   console.error('Server error:', err);
 });
