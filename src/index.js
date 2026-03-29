@@ -173,18 +173,24 @@ function handleTicker(ticker) {
     // OI not ready yet
   }
   
-  // Calculate volume ratio - use 24hr volume from ticker as baseline
+  // Calculate volume ratio - track tick-by-tick quoteVolume changes
   let volumeRatio = 1;
-  if (ticker.volume && ticker.volume > 0) {
-    // Use a rolling average stored in marketDataTracker
+  if (ticker.quoteVolume && ticker.quoteVolume > 0) {
     if (!marketDataTracker.volumeAvg) marketDataTracker.volumeAvg = new Map();
+    if (!marketDataTracker.tickVolume) marketDataTracker.tickVolume = new Map();
     
-    const currentVol = ticker.volume;
-    const prevAvg = marketDataTracker.volumeAvg.get(symbol) || currentVol;
-    const newAvg = (prevAvg * 0.95) + (currentVol * 0.05); // EMA-style average
-    marketDataTracker.volumeAvg.set(symbol, newAvg);
+    // Track individual ticks
+    const tickVol = marketDataTracker.tickVolume.get(symbol) || [];
+    tickVol.push(ticker.quoteVolume);
+    if (tickVol.length > 20) tickVol.shift();
+    marketDataTracker.tickVolume.set(symbol, tickVol);
     
-    volumeRatio = newAvg > 0 ? currentVol / newAvg : 1;
+    // Calculate average from recent ticks
+    if (tickVol.length >= 5) {
+      const avg = tickVol.reduce((a, b) => a + b, 0) / tickVol.length;
+      const current = ticker.quoteVolume;
+      volumeRatio = avg > 0 ? current / avg : 1;
+    }
   }
 
   const analysis = pumpAnalyzer.analyze(ticker);
