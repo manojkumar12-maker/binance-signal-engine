@@ -4,6 +4,7 @@ export const sniperState = {
   prevHigh: {},
   prevFast: {},
   price: {},
+  priceHistory: new Map(),
   oiChange: {},
   symbols: new Set(),
   signalHistory: new Map()
@@ -15,10 +16,78 @@ export function updateSniperState(symbol, data) {
   if (data.volumeRatio !== undefined) sniperState.volumeRatio[symbol] = data.volumeRatio;
   if (data.price !== undefined) sniperState.price[symbol] = data.price;
   if (data.oiChange !== undefined) sniperState.oiChange[symbol] = data.oiChange;
+  
+  // Track price history for EMA calculation
+  if (data.price !== undefined) {
+    if (!sniperState.priceHistory.has(symbol)) {
+      sniperState.priceHistory.set(symbol, []);
+    }
+    const history = sniperState.priceHistory.get(symbol);
+    history.push(data.price);
+    if (history.length > 250) history.shift();
+  }
 }
 
-import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection } from '../signals/signalFilters.js';
+import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, getCooldownForType, getDirection, isInNoTradeZone, validateDirection, getOIDirection, isNoTradeZone, getTrendDirection, marketState, updateTrend, updateVolatility, updateAvgVolume, getAdaptiveWeights } from '../signals/signalFilters.js';
 import { getSessionInfo } from '../signals/advancedFilters.js';
+
+// ========== LIQUIDITY SWEEP DETECTION (Institutional) ==========
+const priceCache = new Map();
+
+export function detectLiquiditySweep(symbol, currentPrice, high, low, close) {
+  if (!priceCache.has(symbol)) {
+    priceCache.set(symbol, { high: 0, low: Infinity, close: currentPrice });
+  }
+  
+  const cache = priceCache.get(symbol);
+  const prevHigh = cache.high;
+  const prevLow = cache.low;
+  
+  // Update cache
+  cache.high = Math.max(cache.high, high);
+  cache.low = Math.min(cache.low, low);
+  cache.close = close;
+  
+  // Liquidity Sweep UP (fake breakout) - bearish signal
+  if (high > prevHigh && close < prevHigh * 0.999) {
+    return { type: 'BEARISH_SWEEP', reason: 'Liquidity sweep up - weak bullish' };
+  }
+  
+  // Liquidity Sweep DOWN (fake breakdown) - bullish signal
+  if (low < prevLow && close > prevLow * 1.001) {
+    return { type: 'BULLISH_SWEEP', reason: 'Liquidity sweep down - weak bearish' };
+  }
+  
+  return null;
+}
+
+// ========== ABSORPTION DETECTION ==========
+const absorptionCache = new Map();
+
+export function detectAbsorption(symbol, volume, priceChange, high, low) {
+  const key = symbol;
+  
+  if (!absorptionCache.has(key)) {
+    absorptionCache.set(key, { volumeSum: 0, priceSum: 0, count: 0 });
+  }
+  
+  const cache = absorptionCache.get(key);
+  cache.volumeSum += volume;
+  cache.priceSum += Math.abs(priceChange);
+  cache.count++;
+  
+  if (cache.count < 10) return false;
+  
+  const avgVolume = cache.volumeSum / cache.count;
+  const avgPriceMove = cache.priceSum / cache.count;
+  
+  // High volume but low price movement = absorption
+  if (volume > avgVolume * 1.5 && Math.abs(priceChange) < avgPriceMove * 0.5) {
+    return true;
+  }
+  
+  return false;
+}
 
 function canEmitSignal(symbol, type) {
   const cooldown = getCooldownForType(type);
@@ -103,19 +172,54 @@ function calculateScore(data) {
 }
 
 // ==============================
-// STAGE 4 — ENTRY LOGIC (Direction required)
+// STAGE 4 — ENTRY LOGIC (Direction required + Trend Filter)
 // ==============================
 function getEntrySignal(symbol, data) {
-  const { price, oiChange, volumeRatio, imbalance } = data;
+  const { price, oiChange, volumeRatio, imbalance, priceChangePercent, high, low } = data;
 
   if (isInNoTradeZone(imbalance)) return null;
+  
+  // Check No Trade Zone (low volatility/volume)
+  const noTrade = isNoTradeZone(symbol, volumeRatio);
+  if (noTrade.blocked) {
+    return null;
+  }
   
   const direction = getDirection(imbalance);
   if (!direction) return null;
 
+  // TREND FILTER - Only trade with trend
+  const priceHistory = sniperState.priceHistory?.get(symbol) || [];
+  const trend = updateTrend(symbol, price, priceHistory);
+  marketState.trend = trend;
+  
+  const trendDirection = getTrendDirection(symbol, price);
+  if (trendDirection && trendDirection !== direction) {
+    // Counter-trend signal - BLOCK
+    return null;
+  }
+
+  // OI + PRICE DIRECTION Check (Institutional Logic)
+  const oiDir = getOIDirection(oiChange, priceChangePercent || 0);
+  if (oiDir === 'ABSORPTION') {
+    return null; // Skip absorption/trap
+  }
+
+  // Update volatility tracking
+  if (high && low) {
+    updateVolatility(symbol, price, high, low);
+  }
+  updateAvgVolume(symbol, volumeRatio);
+
   const pressure = detectPressure(symbol);
   const breakout = detectBreakout(symbol, price);
   const momentum = detectMomentum(symbol, price);
+  
+  // Liquidity Sweep Detection
+  const sweep = detectLiquiditySweep(symbol, price, high || price * 1.001, low || price * 0.999, price);
+  if (sweep && sweep.type === 'BEARISH_SWEEP' && direction === 'LONG') {
+    return null; // Block false bullish breakout
+  }
   
   const score = calculateScore(data);
 

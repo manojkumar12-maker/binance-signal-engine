@@ -1,5 +1,150 @@
 const lastSignalTime = {};
 
+// ========== MARKET STATE (for adaptive scoring) ==========
+export const marketState = {
+  trend: 'UNKNOWN', // UP, DOWN, UNKNOWN
+  volatility: 'NORMAL', // LOW, NORMAL, HIGH
+  atrValue: 0,
+  avgVolume: 0,
+  lastUpdate: 0,
+  consecutiveLosses: 0,
+  riskMultiplier: 1
+};
+
+// ========== TREND FILTER (EMA 200) ==========
+const ema200Cache = new Map();
+const EMA_PERIOD = 200;
+
+export function calculateEMA(prices, period = EMA_PERIOD) {
+  if (!prices || prices.length < period) return null;
+  
+  const k = 2 / (period + 1);
+  let ema = prices[0];
+  
+  for (let i = 1; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k);
+  }
+  
+  return ema;
+}
+
+export function updateTrend(symbol, currentPrice, priceHistory) {
+  if (!priceHistory || priceHistory.length < EMA_PERIOD) {
+    return 'UNKNOWN';
+  }
+  
+  const ema = calculateEMA(priceHistory);
+  if (!ema) return 'UNKNOWN';
+  
+  ema200Cache.set(symbol, ema);
+  
+  if (currentPrice > ema * 1.001) return 'UP';   // Price above EMA = bullish trend
+  if (currentPrice < ema * 0.999) return 'DOWN'; // Price below EMA = bearish trend
+  return 'UNKNOWN';
+}
+
+export function getTrendDirection(symbol, currentPrice) {
+  const ema = ema200Cache.get(symbol);
+  if (!ema) return null;
+  
+  if (currentPrice > ema * 1.001) return 'LONG';   // Only allow LONG in uptrend
+  if (currentPrice < ema * 0.999) return 'SHORT';  // Only allow SHORT in downtrend
+  return null;
+}
+
+// ========== NO TRADE ZONE (ATR/Volume) ==========
+const volumeHistory = new Map();
+
+export function updateVolatility(symbol, currentPrice, high, low) {
+  const trueRange = high - low;
+  marketState.atrValue = (marketState.atrValue * 14 + trueRange) / 15; // Smoothed ATR
+  marketState.lastUpdate = Date.now();
+}
+
+export function updateAvgVolume(symbol, volume) {
+  if (!volumeHistory.has(symbol)) {
+    volumeHistory.set(symbol, []);
+  }
+  const history = volumeHistory.get(symbol);
+  history.push(volume);
+  if (history.length > 20) history.shift();
+  
+  const sum = history.reduce((a, b) => a + b, 0);
+  marketState.avgVolume = sum / history.length;
+}
+
+export function isNoTradeZone(symbol, volume) {
+  // Low volatility filter
+  if (marketState.atrValue < 0.001) {
+    return { blocked: true, reason: 'LOW_VOLATILITY' };
+  }
+  
+  // Low volume filter
+  if (marketState.avgVolume > 0 && volume < marketState.avgVolume * 0.5) {
+    return { blocked: true, reason: 'LOW_VOLUME' };
+  }
+  
+  return { blocked: false, reason: null };
+}
+
+// ========== OI + PRICE DIRECTION (Institutional Logic) ==========
+export function getOIDirection(oiChange, priceChange) {
+  const oiUp = oiChange > 0.1;
+  const oiDown = oiChange < -0.1;
+  const priceUp = priceChange > 0;
+  const priceDown = priceChange < 0;
+  
+  if (oiUp && priceUp) return 'BULLISH';      // Longs entering ✅
+  if (oiUp && priceDown) return 'BEARISH';     // Shorts entering (liquidation) ❌
+  if (oiUp && !priceUp && !priceDown) return 'ABSORPTION'; // Absorption (trap)
+  if (oiDown && priceDown) return 'BEARISH';   // Shorts covering
+  if (oiDown && priceUp) return 'BULLISH';      // Longs covering
+  
+  return 'NEUTRAL';
+}
+
+// ========== ADAPTIVE SCORING ==========
+export function getAdaptiveWeights() {
+  const trend = marketState.trend;
+  const volatility = marketState.volatility;
+  
+  if (trend === 'UNKNOWN' || volatility === 'LOW') {
+    return { oi: 30, volume: 30, imbalance: 40 };
+  }
+  
+  if (volatility === 'HIGH') {
+    return { oi: 50, volume: 20, imbalance: 30 }; // OI more reliable in volatile
+  }
+  
+  if (trend === 'UP' || trend === 'DOWN') {
+    return { oi: 30, volume: 40, imbalance: 30 }; // Volume matters more in trend
+  }
+  
+  return { oi: 40, volume: 30, imbalance: 30 };
+}
+
+// ========== LOSS PROTECTION ==========
+export function recordTradeResult(won) {
+  if (!won) {
+    marketState.consecutiveLosses++;
+  } else {
+    marketState.consecutiveLosses = 0;
+  }
+  
+  // Reduce risk after 3 consecutive losses
+  if (marketState.consecutiveLosses >= 3) {
+    marketState.riskMultiplier = 0.5;
+  } else if (marketState.consecutiveLosses === 0) {
+    marketState.riskMultiplier = 1;
+  }
+  
+  return marketState.riskMultiplier;
+}
+
+export function getRiskMultiplier() {
+  return marketState.riskMultiplier;
+}
+
 export function shouldEmit(symbol, type, cooldownMs = 120000) {
   const key = `${symbol}_${type}`;
   const now = Date.now();

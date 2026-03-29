@@ -163,7 +163,10 @@ function handleTicker(ticker) {
     imbalance: snapshot.imbalance,
     volumeRatio: snapshot.volumeRatio || snapshot.volume,
     price: snapshot.price,
-    oiChange: snapshot.oiChange
+    oiChange: snapshot.oiChange,
+    priceChangePercent: ticker.priceChangePercent,
+    high: ticker.highPrice,
+    low: ticker.lowPrice
   });
 
   const now = Date.now();
