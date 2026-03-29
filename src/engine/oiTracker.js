@@ -10,9 +10,15 @@ const MIN_HISTORY_FOR_SIGNALS = 2;
 
 const oiMemory = new Map();
 let systemReady = false;
+let systemReadyForced = false;
 
 export function isSystemReady() {
-  return systemReady;
+  return systemReady || systemReadyForced;
+}
+
+export function forceSystemReady() {
+  systemReadyForced = true;
+  console.log('⚠️ OI System: FORCE READY MODE (using fakeOI fallback)');
 }
 
 export async function preloadOIHistory(symbol) {
@@ -65,9 +71,12 @@ async function bootstrapOIHistory(symbols) {
 
   console.log(`📊 OI: preloaded ${loaded} symbols with history`);
 
-  if (loaded > 50) {
+  if (loaded >= 10) {
     systemReady = true;
     console.log('✅ OI System: READY (real historical data loaded)');
+  } else if (loaded > 0) {
+    systemReadyForced = true;
+    console.log('⚠️ OI System: PARTIAL READY (using fallback for missing symbols)');
   }
 }
 
@@ -298,7 +307,17 @@ class OITracker {
     console.log(`📊 OIT: tracking ${this.symbols.length} symbols`);
 
     console.log('📊 OI: loading historical data...');
-    await bootstrapOIHistory(this.symbols.slice(0, 100));
+    
+    const bootstrapPromise = bootstrapOIHistory(this.symbols.slice(0, 100));
+    
+    setTimeout(() => {
+      if (!systemReady && !systemReadyForced) {
+        console.log('⚠️ OI System: Timeout reached, enabling fallback mode');
+        forceSystemReady();
+      }
+    }, 30000);
+    
+    await bootstrapPromise;
   }
 
   handleTrade(trade) {
@@ -446,4 +465,4 @@ class OITracker {
 }
 
 export const oiTracker = new OITracker();
-export { MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS };
+export { MAX_TRACKED, getOIChangeFast, getOIHistoryLength, MIN_HISTORY_FOR_SIGNALS, forceSystemReady };

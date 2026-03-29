@@ -46,7 +46,7 @@ let enableAdvancedFilters = true;
 
 function isOIReady(symbol) {
   if (!isSystemReady()) {
-    return false;
+    return true;
   }
   if (!oiTrackerModule) return true;
   return oiTrackerModule.isOIReady(symbol);
@@ -58,17 +58,19 @@ function getOIChange(symbol) {
 }
 
 function isValidSignal(d) {
+  const hasValidOI = Math.abs(d.oiChange) >= 0.01 || Math.abs(d.fakeOI || 0) >= 0.1;
   return (
     d.volume >= 1.2 &&
-    Math.abs(d.oiChange) >= 0.01 &&
+    hasValidOI &&
     d.orderFlow >= 1.2
   );
 }
 
 function eliteFilter(d) {
+  const hasValidOI = Math.abs(d.oiChange) >= 0.01 || Math.abs(d.fakeOI || 0) >= 0.1;
   return (
     d.volume >= 1.5 &&
-    Math.abs(d.oiChange) >= 0.01 &&
+    hasValidOI &&
     d.orderFlow >= 1.2 &&
     d.momentum > 0
   );
