@@ -318,19 +318,16 @@ export function getTopWatching() {
     };
     
     if (!data.price) continue;
-    if (isInNoTradeZone(data.imbalance)) continue;
     
     const direction = getDirection(data.imbalance);
-    if (!direction) continue;
-    
     const score = calculateScore(data);
-    if (score < 15) continue;
     
+    // Always show top symbols even if score is low (for monitoring)
     watching.push({
       symbol: s,
       ...data,
       score,
-      direction,
+      direction: direction || 'NEUTRAL',
       level: score >= 50 ? "EXPLOSION" : 
              score >= 40 ? "ENTRY" : 
              score >= 30 ? "BUILDING" : "WATCH"
@@ -339,7 +336,7 @@ export function getTopWatching() {
   
   return watching
     .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+    .slice(0, 15);
 }
 
 // ==============================
