@@ -6,6 +6,7 @@ export const sniperState = {
   price: {},
   priceHistory: new Map(),
   oiChange: {},
+  priceChangePercent: {},  // ✅ FIX 4: Add priceChangePercent to state
   symbols: new Set(),
   signalHistory: new Map()
 };
@@ -16,6 +17,7 @@ export function updateSniperState(symbol, data) {
   if (data.volumeRatio !== undefined) sniperState.volumeRatio[symbol] = data.volumeRatio;
   if (data.price !== undefined) sniperState.price[symbol] = data.price;
   if (data.oiChange !== undefined) sniperState.oiChange[symbol] = data.oiChange;
+  if (data.priceChangePercent !== undefined) sniperState.priceChangePercent[symbol] = data.priceChangePercent; // ✅ FIX 4
   
   // Track price history for EMA calculation
   if (data.price !== undefined) {
@@ -400,7 +402,8 @@ export function runSniper() {
       price: sniperState.price[s],
       oiChange: sniperState.oiChange[s] || 0,
       volumeRatio: sniperState.volumeRatio[s] || 1,
-      imbalance: sniperState.imbalance[s] || 1
+      imbalance: sniperState.imbalance[s] || 1,
+      priceChangePercent: sniperState.priceChangePercent?.[s] || 0  // ✅ FIX 4
     };
 
     if (!data.price) continue;

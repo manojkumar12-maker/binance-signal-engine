@@ -265,10 +265,10 @@ function applyFiltersToSignal(signal) {
   if (!signal || !enableAdvancedFilters) return signal;
   
   const filterResult = applyAllFilters(signal, {
-    allowAsia: false,
-    requireM15: true,
+    allowAsia: true,      // ✅ FIX 3: Allow Asia session (you're in India/IST)
+    requireM15: false,   // ✅ FIX 2: No M15 data is ever fed in
     requireD1: true,
-    requireH4: true,
+    requireH4: false,    // ✅ FIX 1: H4 zones are never set, disable this
     requireWhale: true
   });
   
