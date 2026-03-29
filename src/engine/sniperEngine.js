@@ -285,7 +285,6 @@ function getEntrySignal(symbol, data) {
   
   // Use soft thresholds (35/45/60)
   // Lower thresholds so signals actually fire
-  const pressure = detectPressure(symbol);
   const sessionInfo = getSessionInfo();
   
   // EXPLOSION: score >= 60
