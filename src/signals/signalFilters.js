@@ -737,13 +737,14 @@ export function checkProEntry(symbol, direction, priceChange, volume, currentPri
   if (volumeCheck.confirmed) {
     score += 25;
     reasons.push('VOLUME_CONFIRMED');
-  } else if (volumeCheck.signal.includes('DIVERGENCE')) {
+  } else if (volumeCheck.signal && volumeCheck.signal.includes('DIVERGENCE')) {
     score -= 15;
     reasons.push('DIVERGENCE');
   }
   
   // Require ALL 3 for A+ signal
-  const isAPlus = score >= 70 && reasons.includes('TREND_UP' || reasons.includes('TREND_DOWN')) && reasons.includes('LIQUIDITY_SWEEP') && reasons.includes('VOLUME_CONFIRMED');
+  const hasTrend = reasons.includes('TREND_UP') || reasons.includes('TREND_DOWN');
+  const isAPlus = score >= 70 && hasTrend && reasons.includes('LIQUIDITY_SWEEP') && reasons.includes('VOLUME_CONFIRMED');
   
   return {
     score,
