@@ -8,6 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY engine/ .
 
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/app
 
-CMD ["python", "-c", "import asyncio; from app.main import main; asyncio.run(main())"]
+CMD ["python", "app/main.py"]
