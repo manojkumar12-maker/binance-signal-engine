@@ -10,12 +10,9 @@ sys.path.insert(0, current)
 from core.websocket_manager import stream
 from core.scheduler import run_scanner, run_monitoring
 from data.oi_fetcher import run_oi_fetcher
+from core.logging_utils import setup_logger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger("main", logging.INFO)
 
 
 def print_banner():

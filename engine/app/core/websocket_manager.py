@@ -5,12 +5,9 @@ import websockets
 from core.config import MAX_PAIRS_PER_STREAM, TIMEFRAMES, MAX_CANDLES
 from core.config import PAIRS, chunk_pairs
 from core.redis_client import get_data, set_data
+from core.logging_utils import setup_logger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger("websocket", logging.INFO)
 
 WS_CONNECTIONS = 0
 MESSAGES_RECEIVED = 0

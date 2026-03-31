@@ -3,15 +3,12 @@ import logging
 from datetime import datetime
 from typing import Dict
 from core.config import SCAN_INTERVAL, PAIRS, WARMUP_SECONDS
+from core.logging_utils import setup_logger
 from strategy.signal_engine import scan_all_pairs, process_pair
 from alerts.telegram import send_alert
 from core.redis_client import get_data, set_data
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger("scheduler", logging.INFO)
 
 SENT_SIGNALS = {}
 SIGNAL_COUNT = 0

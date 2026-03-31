@@ -1,8 +1,9 @@
 import requests
 import logging
 from core.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from core.logging_utils import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("telegram", logging.WARNING)
 
 
 def send_alert(message):

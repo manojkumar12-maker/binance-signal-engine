@@ -5,6 +5,7 @@ from core.config import (
 )
 from core.redis_client import get_data
 from data.candle_builder import build_4h
+from data.oi_fetcher import register_active_pair
 import logging
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,8 @@ def process_pair(pair: str) -> Optional[Dict]:
     entry = refine_entry(candles_1h, trend)
     levels = build_trade_levels(entry, trend)
     risk_pct = round(abs(entry - levels["sl"]) / entry * 100, 2)
+    
+    register_active_pair(pair)
     
     return {
         "pair": pair,
