@@ -1,7 +1,8 @@
 const API_BASE_URL = 'https://binance-signal-engine-production.up.railway.app/api';
 
-let currentSignal = null;
-let autoRefreshInterval = null;
+let activeSignals = [];
+let closedSignals = [];
+let monitoringInterval = null;
 
 async function fetchSignal() {
     const pair = document.getElementById('pairSelect').value;
@@ -14,19 +15,13 @@ async function fetchSignal() {
     try {
         updateStatus('connecting');
         
-        const response = await fetch(`${API_BASE_URL}/signal/${pair}?timeframe=${timeframe}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+        const response = await fetch(`${API_BASE_URL}/signal/${pair}?timeframe=${timeframe}`);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const data = await response.json();
-        currentSignal = data;
         
         displaySignal(data);
         updateStatus('connected');
@@ -35,10 +30,6 @@ async function fetchSignal() {
     } catch (error) {
         console.error('Error fetching signal:', error);
         updateStatus('error');
-        
-        if (currentSignal) {
-            displaySignal(currentSignal);
-        }
     } finally {
         refreshBtn.classList.remove('loading');
         refreshBtn.disabled = false;
@@ -61,29 +52,26 @@ function displaySignal(signal) {
     const volumeValue = document.getElementById('volumeValue');
     const reasonBox = document.getElementById('reasonBox');
     const reasonText = document.getElementById('reasonText');
+    const addSignalBtn = document.getElementById('addSignalBtn');
     
     signalCard.classList.remove('buy', 'sell', 'no-trade');
     
     signalPair.textContent = signal.pair;
     signalType.textContent = signal.signal;
     signalType.classList.remove('buy', 'sell');
+    addSignalBtn.style.display = 'none';
     
-    if (signal.signal === 'BUY') {
-        signalCard.classList.add('buy');
-        signalType.classList.add('buy');
+    if (signal.signal === 'BUY' || signal.signal === 'SELL') {
+        signalCard.classList.add(signal.signal.toLowerCase());
+        signalType.classList.add(signal.signal.toLowerCase());
         signalEntry.textContent = formatPrice(signal.entry);
         slValue.textContent = formatPrice(signal.sl);
         tp1Value.textContent = formatPrice(signal.tp1);
         tp2Value.textContent = formatPrice(signal.tp2);
         tp3Value.textContent = formatPrice(signal.tp3);
-    } else if (signal.signal === 'SELL') {
-        signalCard.classList.add('sell');
-        signalType.classList.add('sell');
-        signalEntry.textContent = formatPrice(signal.entry);
-        slValue.textContent = formatPrice(signal.sl);
-        tp1Value.textContent = formatPrice(signal.tp1);
-        tp2Value.textContent = formatPrice(signal.tp2);
-        tp3Value.textContent = formatPrice(signal.tp3);
+        addSignalBtn.style.display = 'block';
+        
+        addSignalBtn.onclick = () => addSignal(signal);
     } else {
         signalCard.classList.add('no-trade');
         signalEntry.textContent = signal.entry > 0 ? formatPrice(signal.entry) : '--';
@@ -102,23 +90,16 @@ function displaySignal(signal) {
     
     trendValue.textContent = signal.trend || '--';
     trendValue.classList.remove('uptrend', 'downtrend');
-    if (signal.trend === 'UPTREND') {
-        trendValue.classList.add('uptrend');
-    } else if (signal.trend === 'DOWNTREND') {
-        trendValue.classList.add('downtrend');
-    }
+    if (signal.trend === 'UPTREND') trendValue.classList.add('uptrend');
+    else if (signal.trend === 'DOWNTREND') trendValue.classList.add('downtrend');
     
     liquidityValue.textContent = signal.liquidity || '--';
     liquidityValue.classList.remove('sweep');
-    if (signal.liquidity) {
-        liquidityValue.classList.add('sweep');
-    }
+    if (signal.liquidity) liquidityValue.classList.add('sweep');
     
     volumeValue.textContent = signal.volume ? 'Confirmed' : 'Weak';
     volumeValue.classList.remove('confirmed');
-    if (signal.volume) {
-        volumeValue.classList.add('confirmed');
-    }
+    if (signal.volume) volumeValue.classList.add('confirmed');
     
     if (signal.reason) {
         reasonBox.style.display = 'block';
@@ -128,11 +109,191 @@ function displaySignal(signal) {
     }
 }
 
+function addSignal(signal) {
+    const existingIndex = activeSignals.findIndex(s => s.pair === signal.pair);
+    if (existingIndex >= 0) {
+        alert('Signal for this pair already exists!');
+        return;
+    }
+    
+    const newSignal = {
+        ...signal,
+        id: Date.now(),
+        createdAt: new Date().toISOString()
+    };
+    
+    activeSignals.push(newSignal);
+    saveSignals();
+    renderActiveSignals();
+}
+
+function removeSignal(id) {
+    activeSignals = activeSignals.filter(s => s.id !== id);
+    saveSignals();
+    renderActiveSignals();
+}
+
+function closeSignal(id, remarks, closedPrice) {
+    const signal = activeSignals.find(s => s.id === id);
+    if (!signal) return;
+    
+    const closedSignal = {
+        ...signal,
+        closedAt: new Date().toISOString(),
+        closedPrice: closedPrice,
+        remarks: remarks
+    };
+    
+    closedSignals.unshift(closedSignal);
+    activeSignals = activeSignals.filter(s => s.id !== id);
+    
+    saveSignals();
+    renderActiveSignals();
+    renderClosedSignals();
+}
+
+async function monitorSignals() {
+    for (const signal of activeSignals) {
+        try {
+            const response = await fetch(`${API_BASE_URL}/signal/${signal.pair}?timeframe=1h`);
+            const data = await response.json();
+            
+            const currentPrice = data.entry;
+            let closed = false;
+            let remarks = '';
+            let closedPrice = currentPrice;
+            
+            if (signal.signal === 'BUY') {
+                if (currentPrice <= signal.sl) {
+                    closed = true;
+                    remarks = 'SL Hit';
+                    closedPrice = signal.sl;
+                } else if (currentPrice >= signal.tp3) {
+                    closed = true;
+                    remarks = 'TP3 Hit';
+                    closedPrice = signal.tp3;
+                } else if (currentPrice >= signal.tp2) {
+                    closed = true;
+                    remarks = 'TP2 Hit';
+                    closedPrice = signal.tp2;
+                } else if (currentPrice >= signal.tp1) {
+                    closed = true;
+                    remarks = 'TP1 Hit';
+                    closedPrice = signal.tp1;
+                }
+            } else if (signal.signal === 'SELL') {
+                if (currentPrice >= signal.sl) {
+                    closed = true;
+                    remarks = 'SL Hit';
+                    closedPrice = signal.sl;
+                } else if (currentPrice <= signal.tp3) {
+                    closed = true;
+                    remarks = 'TP3 Hit';
+                    closedPrice = signal.tp3;
+                } else if (currentPrice <= signal.tp2) {
+                    closed = true;
+                    remarks = 'TP2 Hit';
+                    closedPrice = signal.tp2;
+                } else if (currentPrice <= signal.tp1) {
+                    closed = true;
+                    remarks = 'TP1 Hit';
+                    closedPrice = signal.tp1;
+                }
+            }
+            
+            if (closed) {
+                closeSignal(signal.id, remarks, closedPrice);
+            }
+        } catch (error) {
+            console.error('Error monitoring signal:', signal.pair, error);
+        }
+    }
+}
+
+function renderActiveSignals() {
+    const tbody = document.getElementById('activeSignalsBody');
+    tbody.innerHTML = '';
+    
+    activeSignals.forEach(signal => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${signal.pair}</td>
+            <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
+            <td>${formatPrice(signal.entry)}</td>
+            <td>${formatPrice(signal.tp1)}</td>
+            <td>${formatPrice(signal.tp2)}</td>
+            <td>${formatPrice(signal.tp3)}</td>
+            <td>${formatPrice(signal.sl)}</td>
+            <td>${signal.confidence}%</td>
+            <td>
+                <button class="close-btn" onclick="closeSignalManual(${signal.id})">Close</button>
+                <button class="action-btn" onclick="removeSignal(${signal.id})">Remove</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function renderClosedSignals() {
+    const tbody = document.getElementById('closedSignalsBody');
+    tbody.innerHTML = '';
+    
+    closedSignals.forEach(signal => {
+        const pl = signal.signal === 'BUY' 
+            ? ((signal.closedPrice - signal.entry) / signal.entry * 100).toFixed(2)
+            : ((signal.entry - signal.closedPrice) / signal.entry * 100).toFixed(2);
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${signal.pair}</td>
+            <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
+            <td>${formatPrice(signal.entry)}</td>
+            <td>${formatPrice(signal.closedPrice)}</td>
+            <td>${signal.remarks}</td>
+            <td class="${parseFloat(pl) >= 0 ? 'profit' : 'loss'}">${pl}%</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+async function closeSignalManual(id) {
+    const signal = activeSignals.find(s => s.id === id);
+    if (!signal) return;
+    
+    const remarks = prompt('Enter closing remarks (e.g., Manual Close, TP Hit, SL Hit):', 'Manual Close');
+    if (remarks === null) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/signal/${signal.pair}?timeframe=1h`);
+        const data = await response.json();
+        closeSignal(id, remarks, data.entry);
+    } catch (error) {
+        closeSignal(id, remarks, signal.entry);
+    }
+}
+
+function saveSignals() {
+    localStorage.setItem('activeSignals', JSON.stringify(activeSignals));
+    localStorage.setItem('closedSignals', JSON.stringify(closedSignals));
+}
+
+function loadSignals() {
+    try {
+        const active = localStorage.getItem('activeSignals');
+        const closed = localStorage.getItem('closedSignals');
+        
+        if (active) activeSignals = JSON.parse(active);
+        if (closed) closedSignals = JSON.parse(closed);
+    } catch (e) {
+        console.error('Error loading signals:', e);
+    }
+}
+
 function formatPrice(price) {
     if (!price || price === 0) return '--';
     return price.toLocaleString('en-US', {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2
+        maximumFractionDigits: price < 1 ? 6 : 2
     });
 }
 
@@ -164,17 +325,11 @@ function updateLastUpdate() {
     lastUpdate.textContent = `Last update: ${timeString}`;
 }
 
-function startAutoRefresh() {
-    if (autoRefreshInterval) {
-        clearInterval(autoRefreshInterval);
-    }
-    
-    autoRefreshInterval = setInterval(() => {
-        fetchSignal();
-    }, 5 * 60 * 1000);
-}
-
 function init() {
+    loadSignals();
+    renderActiveSignals();
+    renderClosedSignals();
+    
     const refreshBtn = document.getElementById('refreshBtn');
     refreshBtn.addEventListener('click', fetchSignal);
     
@@ -186,7 +341,7 @@ function init() {
     
     fetchSignal();
     
-    startAutoRefresh();
+    monitoringInterval = setInterval(monitorSignals, 30000);
 }
 
 document.addEventListener('DOMContentLoaded', init);

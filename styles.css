@@ -22,13 +22,10 @@ body {
     background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100vh;
-    background-image: 
-        radial-gradient(ellipse at top, #1a2332 0%, transparent 50%),
-        radial-gradient(ellipse at bottom, #0d1219 0%, transparent 50%);
 }
 
 .app-container {
-    max-width: 600px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 16px;
     min-height: 100vh;
@@ -80,13 +77,8 @@ body {
     animation: pulse 2s infinite;
 }
 
-.status-dot.connected {
-    background: var(--accent-green);
-}
-
-.status-dot.error {
-    background: var(--accent-red);
-}
+.status-dot.connected { background: var(--accent-green); }
+.status-dot.error { background: var(--accent-red); }
 
 @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -114,7 +106,7 @@ body {
 
 .control-group {
     flex: 1;
-    min-width: 120px;
+    min-width: 150px;
 }
 
 .control-group label {
@@ -164,10 +156,6 @@ body {
 .refresh-btn:hover {
     background: #ffd54f;
     transform: translateY(-1px);
-}
-
-.refresh-btn:active {
-    transform: translateY(0);
 }
 
 .refresh-btn.loading .refresh-icon {
@@ -254,7 +242,7 @@ body {
 
 .trade-levels {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
     margin-bottom: 20px;
 }
@@ -268,13 +256,8 @@ body {
     gap: 4px;
 }
 
-.level-item.sl {
-    border-left: 3px solid var(--accent-red);
-}
-
-.level-item.tp {
-    border-left: 3px solid var(--accent-green);
-}
+.level-item.sl { border-left: 3px solid var(--accent-red); }
+.level-item.tp { border-left: 3px solid var(--accent-green); }
 
 .level-label {
     font-size: 10px;
@@ -300,13 +283,11 @@ body {
 
 .confidence-ring {
     position: relative;
-    width: 100px;
-    height: 100px;
+    width: 80px;
+    height: 80px;
 }
 
-.confidence-ring svg {
-    transform: rotate(-90deg);
-}
+.confidence-ring svg { transform: rotate(-90deg); }
 
 .confidence-bg {
     fill: none;
@@ -319,8 +300,8 @@ body {
     stroke: var(--accent-yellow);
     stroke-width: 8;
     stroke-linecap: round;
-    stroke-dasharray: 283;
-    stroke-dashoffset: 283;
+    stroke-dasharray: 226;
+    stroke-dashoffset: 226;
     transition: stroke-dashoffset 0.5s ease;
 }
 
@@ -330,12 +311,12 @@ body {
     left: 50%;
     transform: translate(-50%, -50%);
     font-family: 'Orbitron', sans-serif;
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 700;
 }
 
 .confidence-value .percent {
-    font-size: 12px;
+    font-size: 10px;
     color: var(--text-secondary);
 }
 
@@ -350,6 +331,7 @@ body {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 12px;
+    margin-bottom: 16px;
 }
 
 .indicator {
@@ -376,30 +358,137 @@ body {
 }
 
 .indicator-value.uptrend,
-.indicator-value.downtrend {
-    color: var(--accent-yellow);
-}
-
-.indicator-value.sweep {
-    color: var(--accent-green);
-}
-
-.indicator-value.confirmed {
-    color: var(--accent-green);
-}
+.indicator-value.downtrend { color: var(--accent-yellow); }
+.indicator-value.sweep,
+.indicator-value.confirmed { color: var(--accent-green); }
 
 .reason-box {
-    margin-top: 16px;
     padding: 12px;
     background: rgba(246, 70, 93, 0.1);
     border: 1px solid rgba(246, 70, 93, 0.3);
     border-radius: 8px;
     text-align: center;
+    margin-bottom: 16px;
 }
 
 .reason-text {
     font-size: 12px;
     color: var(--accent-red);
+}
+
+.add-signal-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent-yellow);
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.add-signal-btn:hover { background: #ffd54f; }
+
+.panels-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+.signals-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.signals-table th {
+    text-align: left;
+    padding: 10px 8px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+}
+
+.signals-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.signals-table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+.signals-table .signal-buy {
+    color: var(--accent-green);
+    font-weight: 600;
+}
+
+.signals-table .signal-sell {
+    color: var(--accent-red);
+    font-weight: 600;
+}
+
+.signals-table .profit { color: var(--accent-green); }
+.signals-table .loss { color: var(--accent-red); }
+
+.signals-table .action-btn {
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.signals-table .action-btn:hover {
+    border-color: var(--accent-yellow);
+    color: var(--accent-yellow);
+}
+
+.signals-table .close-btn {
+    padding: 4px 8px;
+    background: rgba(246, 70, 93, 0.2);
+    border: 1px solid var(--accent-red);
+    border-radius: 4px;
+    color: var(--accent-red);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.signals-table .close-btn:hover {
+    background: var(--accent-red);
+    color: #fff;
 }
 
 .footer {
@@ -415,7 +504,7 @@ body {
     color: var(--text-secondary);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 768px) {
     .header {
         flex-direction: column;
         gap: 12px;
@@ -426,20 +515,12 @@ body {
         flex-direction: column;
     }
     
-    .control-group {
-        width: 100%;
-    }
+    .control-group { width: 100%; }
+    .refresh-btn { width: 100%; justify-content: center; }
+    .trade-levels { grid-template-columns: repeat(2, 1fr); }
+    .strategy-indicators { grid-template-columns: 1fr; }
     
-    .refresh-btn {
-        width: 100%;
-        justify-content: center;
-    }
-    
-    .trade-levels {
-        grid-template-columns: 1fr;
-    }
-    
-    .strategy-indicators {
-        grid-template-columns: 1fr;
-    }
+    .signals-table { font-size: 11px; }
+    .signals-table th,
+    .signals-table td { padding: 6px 4px; }
 }
