@@ -1,0 +1,26 @@
+import os
+
+BINANCE_WS_URL = "wss://fstream.binance.com/stream"
+BINANCE_REST_URL = "https://api.binance.com"
+BINANCE_FUTURES_URL = "https://fapi.binance.com"
+
+PAIRS = [
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"
+]
+
+TIMEFRAMES = ["1h", "4h"]
+
+MAX_CANDLES = 100
+SCAN_INTERVAL = 15
+OI_FETCH_INTERVAL = 180
+
+SL_PERCENT = 0.005
+TP1_PERCENT = 0.01
+TP2_PERCENT = 0.02
+TP3_PERCENT = 0.03
+
+MIN_CONFIDENCE = 60
+
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
