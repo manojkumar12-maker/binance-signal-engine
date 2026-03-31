@@ -1,6 +1,6 @@
 import requests
 import logging
-from app.core.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from core.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 logger = logging.getLogger(__name__)
 
