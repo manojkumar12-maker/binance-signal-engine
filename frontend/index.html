@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Signal Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Orbitron:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">⚡</span>
+                <h1>BINANCE SIGNAL ENGINE</h1>
+            </div>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="controls-panel">
+                <div class="control-group">
+                    <label for="pairSelect">Trading Pair</label>
+                    <select id="pairSelect">
+                        <option value="BTCUSDT">BTC/USDT</option>
+                        <option value="ETHUSDT">ETH/USDT</option>
+                        <option value="BNBUSDT">BNB/USDT</option>
+                        <option value="SOLUSDT">SOL/USDT</option>
+                        <option value="XRPUSDT">XRP/USDT</option>
+                        <option value="ADAUSDT">ADA/USDT</option>
+                        <option value="DOGEUSDT">DOGE/USDT</option>
+                        <option value="AVAXUSDT">AVAX/USDT</option>
+                        <option value="DOTUSDT">DOT/USDT</option>
+                        <option value="MATICUSDT">MATIC/USDT</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="timeframeSelect">Timeframe</label>
+                    <select id="timeframeSelect">
+                        <option value="15m">15 Minutes</option>
+                        <option value="1h" selected>1 Hour</option>
+                        <option value="4h">4 Hours</option>
+                    </select>
+                </div>
+                <button class="refresh-btn" id="refreshBtn">
+                    <span class="refresh-icon">↻</span>
+                    Get Signal
+                </button>
+            </div>
+
+            <div class="signal-card" id="signalCard">
+                <div class="signal-header">
+                    <span class="signal-pair" id="signalPair">BTCUSDT</span>
+                    <span class="signal-type" id="signalType">--</span>
+                </div>
+                
+                <div class="signal-price" id="signalEntry">--</div>
+                <div class="signal-label">Entry Price</div>
+
+                <div class="trade-levels">
+                    <div class="level-item sl">
+                        <span class="level-label">Stop Loss</span>
+                        <span class="level-value" id="slValue">--</span>
+                    </div>
+                    <div class="level-item tp">
+                        <span class="level-label">Take Profit</span>
+                        <span class="level-value" id="tp1Value">--</span>
+                    </div>
+                    <div class="level-item tp">
+                        <span class="level-label">TP2</span>
+                        <span class="level-value" id="tp2Value">--</span>
+                    </div>
+                    <div class="level-item tp">
+                        <span class="level-label">TP3</span>
+                        <span class="level-value" id="tp3Value">--</span>
+                    </div>
+                </div>
+
+                <div class="confidence-section">
+                    <div class="confidence-ring">
+                        <svg viewBox="0 0 100 100">
+                            <circle class="confidence-bg" cx="50" cy="50" r="45"/>
+                            <circle class="confidence-progress" id="confidenceCircle" cx="50" cy="50" r="45"/>
+                        </svg>
+                        <div class="confidence-value">
+                            <span id="confidenceValue">0</span><span class="percent">%</span>
+                        </div>
+                    </div>
+                    <span class="confidence-label">Confidence</span>
+                </div>
+
+                <div class="strategy-indicators">
+                    <div class="indicator">
+                        <span class="indicator-label">Trend</span>
+                        <span class="indicator-value" id="trendValue">--</span>
+                    </div>
+                    <div class="indicator">
+                        <span class="indicator-label">Liquidity</span>
+                        <span class="indicator-value" id="liquidityValue">--</span>
+                    </div>
+                    <div class="indicator">
+                        <span class="indicator-label">Volume</span>
+                        <span class="indicator-value" id="volumeValue">--</span>
+                    </div>
+                </div>
+
+                <div class="reason-box" id="reasonBox" style="display: none;">
+                    <span class="reason-text" id="reasonText"></span>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <span class="last-update" id="lastUpdate">Last update: --</span>
+            <span class="auto-refresh">Auto-refresh: 5min</span>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
