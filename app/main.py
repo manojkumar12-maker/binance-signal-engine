@@ -1,30 +1,29 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.routes.signal import router as signal_router
+from flask import Flask, jsonify, request
+from app.services.strategy import generate_signal
 
-app = FastAPI(title="Binance Signal Engine", version="1.0.0")
+app = Flask(__name__)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(signal_router, prefix="/api", tags=["signals"])
-
-
-@app.get("/")
+@app.route('/')
 def root():
-    return {"status": "online", "app": "Binance Signal Engine"}
+    return jsonify({"status": "online", "app": "Binance Signal Engine"})
 
-
-@app.get("/health")
+@app.route('/health')
 def health():
-    return {"status": "healthy"}
+    return jsonify({"status": "healthy"})
 
+@app.route('/api/signal/<pair>')
+def get_signal(pair):
+    timeframe = request.args.get('timeframe', '1h')
+    return jsonify(generate_signal(pair.upper(), timeframe))
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.route('/api/pairs')
+def get_pairs():
+    return jsonify({
+        "pairs": [
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+            "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"
+        ]
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000)

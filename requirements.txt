@@ -1,5 +1,2 @@
-fastapi
-uvicorn
+flask
 requests
-pydantic
-python-dotenv
