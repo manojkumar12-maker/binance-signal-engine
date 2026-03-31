@@ -44,12 +44,13 @@ def get_all_usdt_pairs():
         pairs = []
         for symbol in data.get('symbols', []):
             if (
-                symbol['status'] == 'TRADING' and
-                symbol['quoteAsset'] == 'USDT' and
-                symbol['contractType'] == 'PERPETUAL' and
-                symbol['symbol'] not in BLACKLIST
+                symbol.get('status') == 'TRADING' and
+                symbol.get('quoteAsset') == 'USDT' and
+                symbol.get('contractType') == 'PERPETUAL' and
+                symbol.get('marginAsset') == 'USDT' and
+                symbol.get('symbol') not in BLACKLIST
             ):
-                pairs.append(symbol['symbol'])
+                pairs.append(symbol.get('symbol'))
         
         return pairs
     except Exception as e:
