@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import websockets
 from datetime import datetime
 from app.core.config import BINANCE_WS_URL, PAIRS, TIMEFRAMES, MAX_CANDLES
 from app.core.redis_client import get_data, set_data
@@ -22,21 +23,15 @@ async def connect_websocket():
     
     while True:
         try:
-            async with asyncio.wait_for(
-                asyncio.create_task(asyncio.open_connection(url.lstrip("wss://"), "443")),
-                timeout=30
-            ) as (reader, writer):
+            async with websockets.connect(url, ping_timeout=30) as ws:
                 logger.info("WebSocket connected")
                 
                 while True:
                     try:
-                        data = await asyncio.wait_for(reader.read(4096), timeout=30)
-                        if not data:
-                            break
-                        
-                        msg = json.loads(data.decode())
-                        if 'data' in msg:
-                            process_kline(msg['data'])
+                        msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                        data = json.loads(msg)
+                        if 'data' in data:
+                            process_kline(data['data'])
                     except asyncio.TimeoutError:
                         continue
                     except Exception as e:
