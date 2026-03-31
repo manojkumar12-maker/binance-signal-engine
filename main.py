@@ -1,4 +1,8 @@
 from flask import Flask, jsonify, request
+
+import sys
+sys.path.insert(0, 'app')
+
 from app.services.strategy import generate_signal
 
 app = Flask(__name__)
@@ -26,4 +30,5 @@ def get_pairs():
     })
 
 if __name__ == '__main__':
+    print("Starting Flask app...")
     app.run(host='0.0.0.0', port=8000)

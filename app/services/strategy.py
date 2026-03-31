@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 from datetime import datetime
-import app.config as config
+import config
 from app.services import market, structure, liquidity, volume, scoring
 
 

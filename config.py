@@ -1,0 +1,12 @@
+import requests
+
+BINANCE_API_URL = "https://api.binance.com"
+FUTURES_API_URL = "https://fapi.binance.com"
+
+DEFAULT_TIMEFRAME = "1h"
+CANDLE_LIMIT = 100
+
+SL_PERCENT = 0.005
+TP1_PERCENT = 0.01
+TP2_PERCENT = 0.02
+TP3_PERCENT = 0.03

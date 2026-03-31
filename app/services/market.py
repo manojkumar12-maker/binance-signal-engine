@@ -1,6 +1,6 @@
 import requests
 from typing import List, Dict, Optional
-import app.config as config
+import config
 
 
 def get_klines(symbol: str, interval: str = "1h", limit: int = 100) -> List[Dict]:

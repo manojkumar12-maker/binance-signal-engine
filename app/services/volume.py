@@ -1,5 +1,5 @@
 from typing import List
-import app.config as config
+import config
 
 
 def check_volume_confirmation(oi_data: List[float]) -> bool:
