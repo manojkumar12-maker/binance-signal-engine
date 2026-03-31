@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 COPY main.py .
+COPY config.py .
 
 EXPOSE 8000
 

@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+import os
 
 import sys
 sys.path.insert(0, 'app')
@@ -6,6 +7,8 @@ sys.path.insert(0, 'app')
 from app.services.strategy import generate_signal
 
 app = Flask(__name__)
+
+port = int(os.environ.get("PORT", 8000))
 
 @app.route('/')
 def root():
@@ -30,5 +33,5 @@ def get_pairs():
     })
 
 if __name__ == '__main__':
-    print("Starting Flask app...")
-    app.run(host='0.0.0.0', port=8000)
+    print(f"Starting on port {port}...")
+    app.run(host='0.0.0.0', port=port)
