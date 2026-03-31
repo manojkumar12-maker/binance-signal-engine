@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Dict
-from core.config import SCAN_INTERVAL, PAIRS
+from core.config import SCAN_INTERVAL, PAIRS, WARMUP_SECONDS
 from strategy.signal_engine import scan_all_pairs, process_pair
 from alerts.telegram import send_alert
 from core.redis_client import get_data, set_data
@@ -41,7 +41,13 @@ async def run_scanner():
     logger.info(f"🚀 SCANNER STARTED - Monitoring {len(PAIRS)} pairs")
     logger.info(f"⏱️ Scan interval: {SCAN_INTERVAL} seconds")
     logger.info(f"📊 Telegram alerts: {'Enabled' if hasattr(send_alert, '__call__') else 'Not configured'}")
+    logger.info(f"⏳ Warmup period: {WARMUP_SECONDS} seconds (waiting for data)")
     logger.info(f"=" * 50)
+    
+    logger.info(f"")
+    logger.info(f"⏳ WARMING UP - Waiting {WARMUP_SECONDS}s for candle data...")
+    await asyncio.sleep(WARMUP_SECONDS)
+    logger.info(f"✅ Warmup complete - Starting market scans!")
     
     while True:
         try:

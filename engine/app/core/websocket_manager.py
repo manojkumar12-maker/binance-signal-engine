@@ -91,38 +91,30 @@ async def start_all_streams():
     logger.info(f"")
     logger.info(f"📊 Total pairs to monitor: {len(PAIRS)}")
     logger.info(f"🔢 Pairs per WebSocket: {MAX_PAIRS_PER_STREAM}")
-    logger.info(f"⏱️ Timeframes: {TIMEFRAMES}")
+    logger.info(f"⏱️ Timeframes: {TIMEFRAMES} (4H built internally)")
     
     pairs_1h = PAIRS
-    pairs_4h = PAIRS
     
     chunks_1h = list(chunk_pairs(pairs_1h, MAX_PAIRS_PER_STREAM))
-    chunks_4h = list(chunk_pairs(pairs_4h, MAX_PAIRS_PER_STREAM))
     
     logger.info(f"")
     logger.info(f"📦 WebSocket chunks:")
-    logger.info(f"   • 1H: {len(chunks_1h)} chunks")
-    logger.info(f"   • 4H: {len(chunks_4h)} chunks")
-    logger.info(f"   • Total: {len(chunks_1h) + len(chunks_4h)} connections")
+    logger.info(f"   • 1H: {len(chunks_1h)} chunks (optimized)")
+    logger.info(f"   • Total: {len(chunks_1h)} connections (efficient)")
     
     logger.info(f"")
-    logger.info(f"🚀 Starting all WebSocket connections...")
+    logger.info(f"🚀 Starting WebSocket connections...")
     logger.info(f"=" * 50)
     
     tasks = []
     
     for i, chunk in enumerate(chunks_1h):
         tasks.append(asyncio.create_task(handle_stream(chunk, "1h")))
-        logger.info(f"   📡 Queued 1H chunk {i+1}/{len(chunks_1h)} ({len(chunk)} pairs)")
-        await asyncio.sleep(0.3)
-    
-    for i, chunk in enumerate(chunks_4h):
-        tasks.append(asyncio.create_task(handle_stream(chunk, "4h")))
-        logger.info(f"   📡 Queued 4H chunk {i+1}/{len(chunks_4h)} ({len(chunk)} pairs)")
+        logger.info(f"   📡 Queued chunk {i+1}/{len(chunks_1h)} ({len(chunk)} pairs)")
         await asyncio.sleep(0.3)
     
     logger.info(f"")
-    logger.info(f"✅ All {len(tasks)} WebSocket tasks started!")
+    logger.info(f"✅ All {len(tasks)} WebSocket connections started!")
     logger.info(f"=" * 50)
     
     await asyncio.gather(*tasks)
