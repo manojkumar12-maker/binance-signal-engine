@@ -2,29 +2,26 @@ import asyncio
 import json
 import logging
 import websockets
-from datetime import datetime
-from app.core.config import BINANCE_WS_URL, PAIRS, TIMEFRAMES, MAX_CANDLES
+from app.core.config import MAX_PAIRS_PER_STREAM, TIMEFRAMES, MAX_CANDLES
+from app.core.config import PAIRS, chunk_pairs
 from app.core.redis_client import get_data, set_data
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def build_streams():
-    streams = []
-    for pair in PAIRS:
-        for tf in TIMEFRAMES:
-            streams.append(f"{pair.lower()}@kline_{tf}")
-    return "/".join(streams)
+def build_stream_url(pairs_chunk, timeframe="1h"):
+    streams = [f"{p.lower()}@kline_{timeframe}" for p in pairs_chunk]
+    return f"wss://fstream.binance.com/stream?streams={'/'.join(streams)}"
 
 
-async def connect_websocket():
-    url = f"{BINANCE_WS_URL}?streams={build_streams()}"
+async def handle_stream(pairs_chunk, timeframe="1h"):
+    url = build_stream_url(pairs_chunk, timeframe)
     
     while True:
         try:
-            async with websockets.connect(url, ping_timeout=30) as ws:
-                logger.info("WebSocket connected")
+            async with websockets.connect(url, ping_interval=20, ping_timeout=10) as ws:
+                logger.info(f"Connected: {len(pairs_chunk)} pairs - {timeframe}")
                 
                 while True:
                     try:
@@ -35,10 +32,10 @@ async def connect_websocket():
                     except asyncio.TimeoutError:
                         continue
                     except Exception as e:
-                        logger.error(f"Error processing: {e}")
+                        logger.error(f"Stream error: {e}")
                         break
         except Exception as e:
-            logger.error(f"WebSocket error: {e}")
+            logger.error(f"Reconnecting {len(pairs_chunk)} pairs: {e}")
             await asyncio.sleep(5)
 
 
@@ -64,14 +61,36 @@ def process_kline(data):
     candles = candles[-MAX_CANDLES:]
     
     set_data(key, candles)
+
+
+async def start_all_streams():
+    logger.info(f"Starting streams for {len(PAIRS)} pairs...")
     
-    if is_closed:
-        logger.info(f"Closed candle: {symbol} {timeframe}")
+    pairs_1h = PAIRS
+    pairs_4h = PAIRS
+    
+    chunks_1h = list(chunk_pairs(pairs_1h, MAX_PAIRS_PER_STREAM))
+    chunks_4h = list(chunk_pairs(pairs_4h, MAX_PAIRS_PER_STREAM))
+    
+    logger.info(f"Created {len(chunks_1h)} chunks for 1H")
+    logger.info(f"Created {len(chunks_4h)} chunks for 4H")
+    
+    tasks = []
+    
+    for i, chunk in enumerate(chunks_1h):
+        tasks.append(asyncio.create_task(handle_stream(chunk, "1h")))
+        await asyncio.sleep(0.5)
+    
+    for i, chunk in enumerate(chunks_4h):
+        tasks.append(asyncio.create_task(handle_stream(chunk, "4h")))
+        await asyncio.sleep(0.5)
+    
+    await asyncio.gather(*tasks)
 
 
 async def stream():
     logger.info("Starting WebSocket stream...")
-    await connect_websocket()
+    await start_all_streams()
 
 
 if __name__ == "__main__":
