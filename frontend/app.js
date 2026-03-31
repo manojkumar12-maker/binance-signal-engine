@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://your-backend.up.railway.app/api';
+const API_BASE_URL = 'https://binance-signal-engine-production.up.railway.app/api';
 
 let currentSignal = null;
 let autoRefreshInterval = null;
