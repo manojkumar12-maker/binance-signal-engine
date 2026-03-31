@@ -3,12 +3,12 @@ import logging
 import os
 import sys
 
-app_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, app_dir)
+current = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current)
 
-from app.core.websocket_manager import stream
-from app.core.scheduler import run_scanner, run_monitoring
-from app.data.oi_fetcher import run_oi_fetcher
+from core.websocket_manager import stream
+from core.scheduler import run_scanner, run_monitoring
+from data.oi_fetcher import run_oi_fetcher
 
 logging.basicConfig(
     level=logging.INFO,

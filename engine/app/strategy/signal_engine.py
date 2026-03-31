@@ -1,10 +1,10 @@
 from typing import Dict, List, Optional
 from datetime import datetime
-from app.core.config import (
+from core.config import (
     PAIRS, SL_PERCENT, TP1_PERCENT, TP2_PERCENT, TP3_PERCENT, MIN_CONFIDENCE
 )
-from app.core.redis_client import get_data
-from app.data.candle_builder import build_4h
+from core.redis_client import get_data
+from data.candle_builder import build_4h
 import logging
 
 logger = logging.getLogger(__name__)

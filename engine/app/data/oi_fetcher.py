@@ -1,8 +1,8 @@
 import requests
 import time
 import logging
-from app.core.config import BINANCE_FUTURES_URL, PAIRS, OI_FETCH_INTERVAL
-from app.core.redis_client import set_data
+from core.config import BINANCE_FUTURES_URL, PAIRS, OI_FETCH_INTERVAL
+from core.redis_client import set_data, get_data
 
 logger = logging.getLogger(__name__)
 

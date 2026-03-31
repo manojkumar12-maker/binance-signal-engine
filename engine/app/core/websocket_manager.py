@@ -2,9 +2,9 @@ import asyncio
 import json
 import logging
 import websockets
-from app.core.config import MAX_PAIRS_PER_STREAM, TIMEFRAMES, MAX_CANDLES
-from app.core.config import PAIRS, chunk_pairs
-from app.core.redis_client import get_data, set_data
+from core.config import MAX_PAIRS_PER_STREAM, TIMEFRAMES, MAX_CANDLES
+from core.config import PAIRS, chunk_pairs
+from core.redis_client import get_data, set_data
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
