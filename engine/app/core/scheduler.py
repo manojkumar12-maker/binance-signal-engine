@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from typing import Dict
 from app.core.config import SCAN_INTERVAL, PAIRS
 from app.strategy.signal_engine import scan_all_pairs, process_pair
 from app.alerts.telegram import send_alert
