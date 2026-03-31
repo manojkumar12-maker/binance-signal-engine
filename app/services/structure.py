@@ -26,3 +26,17 @@ def detect_trend(candles: List[Dict]) -> str:
             return "DOWNTREND"
     
     return "RANGE"
+
+
+def candle_strength(candle: Dict) -> int:
+    body = abs(candle['close'] - candle['open'])
+    range_ = candle['high'] - candle['low']
+    
+    if range_ == 0:
+        return 0
+    
+    return int((body / range_) * 20)
+
+
+def detect_htf_trend(candles_4h: List[Dict]) -> str:
+    return detect_trend(candles_4h)
