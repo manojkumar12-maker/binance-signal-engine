@@ -7,7 +7,7 @@ router = APIRouter()
 @router.get("/signal/{pair}")
 def get_signal(
     pair: str,
-    timeframe: str = Query("1h", regex="^(15m|1h|4h)$")
+    timeframe: str = Query("1h", pattern="^(15m|1h|4h)$")
 ):
     return generate_signal(pair.upper(), timeframe)
 
