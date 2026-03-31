@@ -9,4 +9,4 @@ COPY . .
 
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "-m", "app.main"]
+CMD ["python", "app/main.py"]
