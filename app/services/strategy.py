@@ -1,12 +1,7 @@
 from typing import Dict, Optional
 from datetime import datetime
-
-try:
-    import config
-    from services import market, structure, liquidity, volume, scoring
-except ImportError:
-    import app.config as config
-    from app.services import market, structure, liquidity, volume, scoring
+import app.config as config
+from app.services import market, structure, liquidity, volume, scoring
 
 
 def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
