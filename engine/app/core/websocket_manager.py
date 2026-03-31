@@ -6,8 +6,14 @@ from core.config import MAX_PAIRS_PER_STREAM, TIMEFRAMES, MAX_CANDLES
 from core.config import PAIRS, chunk_pairs
 from core.redis_client import get_data, set_data
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+WS_CONNECTIONS = 0
+MESSAGES_RECEIVED = 0
 
 
 def build_stream_url(pairs_chunk, timeframe="1h"):
@@ -16,26 +22,37 @@ def build_stream_url(pairs_chunk, timeframe="1h"):
 
 
 async def handle_stream(pairs_chunk, timeframe="1h"):
+    global WS_CONNECTIONS, MESSAGES_RECEIVED
+    
     url = build_stream_url(pairs_chunk, timeframe)
     
     while True:
         try:
             async with websockets.connect(url, ping_interval=20, ping_timeout=10) as ws:
-                logger.info(f"Connected: {len(pairs_chunk)} pairs - {timeframe}")
+                WS_CONNECTIONS += 1
+                conn_id = WS_CONNECTIONS
+                
+                logger.info(f"")
+                logger.info(f"🔌 WebSocket #{conn_id} CONNECTED")
+                logger.info(f"   📊 Pairs: {len(pairs_chunk)}")
+                logger.info(f"   ⏱️ Timeframe: {timeframe}")
+                logger.info(f"   🌐 URL: {url[:60]}...")
                 
                 while True:
                     try:
                         msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                        MESSAGES_RECEIVED += 1
                         data = json.loads(msg)
                         if 'data' in data:
                             process_kline(data['data'])
                     except asyncio.TimeoutError:
                         continue
                     except Exception as e:
-                        logger.error(f"Stream error: {e}")
+                        logger.error(f"Stream error #{conn_id}: {e}")
                         break
+                        
         except Exception as e:
-            logger.error(f"Reconnecting {len(pairs_chunk)} pairs: {e}")
+            logger.warning(f"⚠️ Reconnecting WebSocket ({len(pairs_chunk)} pairs {timeframe}): {e}")
             await asyncio.sleep(5)
 
 
@@ -64,7 +81,17 @@ def process_kline(data):
 
 
 async def start_all_streams():
-    logger.info(f"Starting streams for {len(PAIRS)} pairs...")
+    global WS_CONNECTIONS
+    
+    logger.info(f"")
+    logger.info(f"╔" + "═" * 58 + "╗")
+    logger.info(f"║" + " " * 10 + "WEBSOCKET MANAGER STARTING" + " " * 13 + "║")
+    logger.info(f"╚" + "═" * 58 + "╝")
+    
+    logger.info(f"")
+    logger.info(f"📊 Total pairs to monitor: {len(PAIRS)}")
+    logger.info(f"🔢 Pairs per WebSocket: {MAX_PAIRS_PER_STREAM}")
+    logger.info(f"⏱️ Timeframes: {TIMEFRAMES}")
     
     pairs_1h = PAIRS
     pairs_4h = PAIRS
@@ -72,18 +99,31 @@ async def start_all_streams():
     chunks_1h = list(chunk_pairs(pairs_1h, MAX_PAIRS_PER_STREAM))
     chunks_4h = list(chunk_pairs(pairs_4h, MAX_PAIRS_PER_STREAM))
     
-    logger.info(f"Created {len(chunks_1h)} chunks for 1H")
-    logger.info(f"Created {len(chunks_4h)} chunks for 4H")
+    logger.info(f"")
+    logger.info(f"📦 WebSocket chunks:")
+    logger.info(f"   • 1H: {len(chunks_1h)} chunks")
+    logger.info(f"   • 4H: {len(chunks_4h)} chunks")
+    logger.info(f"   • Total: {len(chunks_1h) + len(chunks_4h)} connections")
+    
+    logger.info(f"")
+    logger.info(f"🚀 Starting all WebSocket connections...")
+    logger.info(f"=" * 50)
     
     tasks = []
     
     for i, chunk in enumerate(chunks_1h):
         tasks.append(asyncio.create_task(handle_stream(chunk, "1h")))
-        await asyncio.sleep(0.5)
+        logger.info(f"   📡 Queued 1H chunk {i+1}/{len(chunks_1h)} ({len(chunk)} pairs)")
+        await asyncio.sleep(0.3)
     
     for i, chunk in enumerate(chunks_4h):
         tasks.append(asyncio.create_task(handle_stream(chunk, "4h")))
-        await asyncio.sleep(0.5)
+        logger.info(f"   📡 Queued 4H chunk {i+1}/{len(chunks_4h)} ({len(chunk)} pairs)")
+        await asyncio.sleep(0.3)
+    
+    logger.info(f"")
+    logger.info(f"✅ All {len(tasks)} WebSocket tasks started!")
+    logger.info(f"=" * 50)
     
     await asyncio.gather(*tasks)
 

@@ -34,12 +34,19 @@ def get_cached_oi(symbol: str) -> float:
 
 
 async def run_oi_fetcher():
-    logger.info("Starting OI fetcher...")
+    logger.info(f"")
+    logger.info(f"📊 OI (Open Interest) FETCHER STARTED")
+    logger.info(f"   ⏱️ Fetch interval: {OI_FETCH_INTERVAL} seconds")
+    logger.info(f"   📌 Pairs to fetch: {len(PAIRS)}")
+    
     while True:
         try:
+            logger.info(f"📊 Fetching OI data for {len(PAIRS)} pairs...")
             fetch_all_oi()
+            logger.info(f"✅ OI data refreshed for all pairs")
         except Exception as e:
-            logger.error(f"OI fetch error: {e}")
+            logger.error(f"❌ OI fetch error: {e}")
+        
         await asyncio.sleep(OI_FETCH_INTERVAL)
 
 
