@@ -4,6 +4,7 @@ import os
 import sys
 sys.path.insert(0, 'app')
 
+import config
 from app.services.strategy import generate_signal
 from app.services import tracker
 
@@ -17,6 +18,9 @@ TRADING_PAIRS = [
     "LINKUSDT", "ATOMUSDT", "UNIUSDT", "LTCUSDT", "ETCUSDT"
 ]
 
+def get_pairs_with_oi_limit(pairs, limit):
+    return pairs[:limit]
+
 @app.route('/')
 def root():
     return jsonify({"status": "online", "app": "Binance Signal Engine"})
@@ -28,7 +32,8 @@ def health():
 @app.route('/api/signal/<pair>')
 def get_signal(pair):
     timeframe = request.args.get('timeframe', '1h')
-    return jsonify(generate_signal(pair.upper(), timeframe))
+    fetch_oi = request.args.get('fetch_oi', 'true').lower() == 'true'
+    return jsonify(generate_signal(pair.upper(), timeframe, fetch_oi))
 
 @app.route('/api/pairs')
 def get_pairs():
@@ -40,8 +45,12 @@ def get_all_signals():
     min_confidence = int(request.args.get('min_confidence', 60))
     
     signals = []
-    for pair in TRADING_PAIRS:
-        result = generate_signal(pair, timeframe)
+    oi_limit = int(request.args.get('oi_limit', config.OI_PAIRS_LIMIT))
+    pairs_with_oi = get_pairs_with_oi_limit(TRADING_PAIRS, oi_limit)
+    
+    for i, pair in enumerate(TRADING_PAIRS):
+        fetch_oi = pair in pairs_with_oi
+        result = generate_signal(pair, timeframe, fetch_oi)
         if result.get("signal") != "NO TRADE" and result.get("confidence", 0) >= min_confidence:
             signals.append(result)
     
@@ -59,8 +68,12 @@ def get_top_signals():
     min_confidence = int(request.args.get('min_confidence', 60))
     
     signals = []
+    oi_limit = int(request.args.get('oi_limit', config.OI_PAIRS_LIMIT))
+    pairs_with_oi = get_pairs_with_oi_limit(TRADING_PAIRS, oi_limit)
+    
     for pair in TRADING_PAIRS:
-        result = generate_signal(pair, timeframe)
+        fetch_oi = pair in pairs_with_oi
+        result = generate_signal(pair, timeframe, fetch_oi)
         if result.get("signal") != "NO TRADE" and result.get("confidence", 0) >= min_confidence:
             signals.append(result)
     

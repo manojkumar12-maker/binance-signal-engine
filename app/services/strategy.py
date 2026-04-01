@@ -45,7 +45,7 @@ def check_volatility_filter(candles: list, current_price: float) -> Tuple[bool, 
     return True, round(atr_ratio, 6)
 
 
-def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
+def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True) -> Dict:
     try:
         candles = market.get_klines(pair, timeframe, config.CANDLE_LIMIT)
         htf_candles = market.get_klines(pair, "4h", config.CANDLE_LIMIT)
@@ -81,7 +81,7 @@ def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
     
     try:
         current_price = candles[-1]["close"]
-        oi_data = market.get_open_interest(pair)
+        oi_data = [] if not fetch_oi else market.get_open_interest(pair)
         
         trend = structure.detect_trend(candles)
         htf_trend = structure.detect_htf_trend(htf_candles) if htf_candles else "RANGE"
