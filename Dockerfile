@@ -2,9 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY engine/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY engine/app ./app
+COPY . .
 
-CMD ["python", "app/main.py"]
+CMD ["python", "main.py"]
