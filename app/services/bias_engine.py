@@ -129,6 +129,7 @@ def apply_bias_filter(signal: str, market_bias: Dict) -> tuple[bool, Optional[st
         return False, "LOW_VOLATILITY"
     
     bias = market_bias.get("bias", "NEUTRAL")
+    score = market_bias.get("score", 0)
     
     if bias == "BULLISH" and signal == "SELL":
         return False, "BIAS_MISMATCH_SELL"
@@ -139,17 +140,22 @@ def apply_bias_filter(signal: str, market_bias: Dict) -> tuple[bool, Optional[st
     return True, None
 
 
-def apply_bias_boost(confidence: int, signal: str, market_bias: Dict) -> int:
-    bias = market_bias.get("bias", "NEUTRAL")
-    score = market_bias.get("score", 0)
+def apply_bias_soft_penalty(confidence: int, signal: str, market_bias: Dict) -> int:
+    if not market_bias:
+        return confidence
     
-    boost = 0
+    bias = market_bias.get("bias", "NEUTRAL")
+    
+    if bias == "BULLISH" and signal == "SELL":
+        return max(0, confidence - 10)
+    
+    if bias == "BEARISH" and signal == "BUY":
+        return max(0, confidence - 10)
     
     if bias == "BULLISH" and signal == "BUY":
-        boost = min(10, score // 10)
-    elif bias == "BEARISH" and signal == "SELL":
-        boost = min(10, abs(score) // 10)
-    elif bias == "NEUTRAL" and confidence >= 70:
-        boost = 0
+        return confidence + 10
     
-    return confidence + boost
+    if bias == "BEARISH" and signal == "SELL":
+        return confidence + 10
+    
+    return confidence

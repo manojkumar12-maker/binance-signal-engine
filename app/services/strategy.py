@@ -100,38 +100,6 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         volatility_pass, atr_ratio = check_volatility_filter(candles, current_price)
         
-        if not volatility_pass:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": round(current_price, 2),
-                "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": f"Low volatility (ATR ratio: {atr_ratio})"
-            }
-        
-        if trend == "RANGE":
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": round(current_price, 2),
-                "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "Market in Range"
-            }
-        
         htf_aligned = htf_trend == "RANGE" or htf_trend == trend
         
         is_reversal = scoring.detect_reversal(candles, sweep)
@@ -143,7 +111,10 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             is_reversal=is_reversal
         )
         
-        if trend == "RANGE":
+        if not volatility_pass:
+            confidence -= 10
+        
+        if trend == "RANGE" and not is_reversal:
             return {
                 "pair": pair,
                 "signal": "NO TRADE",
@@ -155,65 +126,14 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "liquidity": sweep,
                 "volume": volume_confirmed,
                 "atr_ratio": atr_ratio,
-                "is_reversal": is_reversal,
                 "timestamp": datetime.utcnow().isoformat(),
                 "reason": "Market in Range"
             }
         
+        if trend == "RANGE" and is_reversal:
+            confidence += 15
+        
         market_bias = None
-        
-        if use_bias and pair != "BTCUSDT":
-            try:
-                btc_1h = market.get_klines("BTCUSDT", "1h", config.CANDLE_LIMIT)
-                btc_4h = market.get_klines("BTCUSDT", "4h", config.CANDLE_LIMIT)
-                market_bias = bias_engine.get_market_bias(btc_1h, btc_4h)
-                
-                signal_for_check = "BUY" if trend == "UPTREND" else "SELL"
-                bias_passed, bias_reason = bias_engine.apply_bias_filter(signal_for_check, market_bias)
-                
-                if not bias_passed:
-                    return {
-                        "pair": pair,
-                        "signal": "NO TRADE",
-                        "entry_primary": round(current_price, 2),
-                        "entry_limit": 0,
-                        "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                        "confidence": confidence,
-                        "trend": f"{trend} ({htf_trend})",
-                        "liquidity": sweep,
-                        "volume": volume_confirmed,
-                        "atr_ratio": atr_ratio,
-                        "market_bias": market_bias,
-                        "is_reversal": is_reversal,
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "reason": f"Market bias: {bias_reason}"
-                    }
-                
-                confidence = scoring.calculate_confidence(
-                    trend, sweep, volume_confirmed, total_strength, volume_spike,
-                    htf_aligned=htf_aligned,
-                    market_bias=market_bias,
-                    is_reversal=is_reversal
-                )
-            except Exception:
-                pass
-        
-        if confidence < config.MIN_CONFIDENCE:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": round(current_price, 2),
-                "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "is_reversal": is_reversal,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": f"Below minimum confidence threshold ({config.MIN_CONFIDENCE})"
-            }
         
         signal_type = "BUY" if trend == "UPTREND" else "SELL"
         
