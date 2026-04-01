@@ -8,7 +8,7 @@ from strategy.signal_engine import scan_all_pairs, process_pair
 from alerts.telegram import send_alert
 from core.redis_client import get_data, set_data
 from data.rest_fetcher import sync_all_data
-from data.validator import select_active_pairs
+from data.oi_fetcher import get_active_pairs_for_oi
 
 logger = setup_logger("scheduler", logging.INFO)
 
@@ -76,7 +76,7 @@ async def run_scanner():
                 if candles:
                     cache[pair] = candles
             
-            active_pairs = select_active_pairs(PAIRS, cache, min_move_pct=0.003)
+            active_pairs = get_active_pairs_for_oi(PAIRS, cache, min_move_pct=0.003)
             logger.info(f"📊 Active pairs (>0.3% move): {len(active_pairs)}")
             
             signals = scan_all_pairs(max_signals=5)
