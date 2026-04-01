@@ -53,7 +53,7 @@ def get_market_bias():
 @app.route('/api/signals')
 def get_all_signals():
     timeframe = request.args.get('timeframe', '1h')
-    min_confidence = int(request.args.get('min_confidence', 60))
+    min_confidence = int(request.args.get('min_confidence', config.MIN_CONFIDENCE))
     
     signals = []
     oi_limit = int(request.args.get('oi_limit', config.OI_PAIRS_LIMIT))
@@ -76,7 +76,7 @@ def get_all_signals():
 def get_top_signals():
     timeframe = request.args.get('timeframe', '1h')
     limit = int(request.args.get('limit', 5))
-    min_confidence = int(request.args.get('min_confidence', 60))
+    min_confidence = int(request.args.get('min_confidence', config.MIN_CONFIDENCE))
     
     signals = []
     oi_limit = int(request.args.get('oi_limit', config.OI_PAIRS_LIMIT))
