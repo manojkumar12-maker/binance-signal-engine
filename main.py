@@ -12,6 +12,49 @@ logger = logging.getLogger(__name__)
 import config
 from app.services.strategy import generate_signal
 from app.services import tracker, market, bias_engine
+import threading
+import time
+
+SIGNALS_CACHE = []
+SCANNER_RUNNING = False
+SCANNER_ERROR_COUNT = 0
+
+def scanner_loop():
+    global SIGNALS_CACHE, SCANNER_RUNNING, SCANNER_ERROR_COUNT
+    
+    logger.info(">>> BACKGROUND SCANNER: Started")
+    SCANNER_RUNNING = True
+    
+    while True:
+        try:
+            results = []
+            
+            oi_limit = config.OI_PAIRS_LIMIT
+            pairs_with_oi = TRADING_PAIRS[:oi_limit]
+            
+            for pair in TRADING_PAIRS:
+                try:
+                    fetch_oi = pair in pairs_with_oi
+                    signal = generate_signal(pair, "1h", fetch_oi, True)
+                    
+                    if signal.get("signal") != "NO TRADE" and signal.get("confidence", 0) >= config.MIN_CONFIDENCE:
+                        results.append(signal)
+                except Exception as e:
+                    SCANNER_ERROR_COUNT += 1
+            
+            SIGNALS_CACHE = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)[:10]
+            
+            logger.info(f">>> SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
+            
+            if SIGNALS_CACHE:
+                for i, s in enumerate(SIGNALS_CACHE[:3]):
+                    logger.info(f">>> TOP {i+1}: {s.get('pair')} {s.get('signal')} Conf:{s.get('confidence')} Entry:{s.get('entry_primary')}")
+            
+        except Exception as e:
+            logger.error(f">>> SCANNER ERROR: {e}")
+        
+        time.sleep(60)
+
 
 app = Flask(__name__)
 CORS(app)
@@ -65,6 +108,10 @@ def get_all_usdt_pairs():
 TRADING_PAIRS = get_all_usdt_pairs()
 logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}...")
 
+scanner_thread = threading.Thread(target=scanner_loop, daemon=True)
+scanner_thread.start()
+time.sleep(2)
+
 def get_pairs_with_oi_limit(pairs, limit):
     return pairs[:limit]
 
@@ -106,76 +153,32 @@ def get_market_bias():
 
 @app.route('/api/signals')
 def get_all_signals():
-    logger.info("[API] /api/signals")
-    timeframe = request.args.get('timeframe', '1h')
+    logger.info("[API] /api/signals - using cache")
     min_confidence = int(request.args.get('min_confidence', config.MIN_CONFIDENCE))
     
-    signals = []
-    oi_limit = int(request.args.get('oi_limit', config.OI_PAIRS_LIMIT))
-    pairs_with_oi = get_pairs_with_oi_limit(TRADING_PAIRS, oi_limit)
-    
-    for i, pair in enumerate(TRADING_PAIRS):
-        fetch_oi = pair in pairs_with_oi
-        result = generate_signal(pair, timeframe, fetch_oi, True)
-        if result.get("signal") != "NO TRADE" and result.get("confidence", 0) >= min_confidence:
-            signals.append(result)
-            logger.info(f"[SIGNAL] {pair}: {result.get('signal')} Conf:{result.get('confidence')} Risk:{result.get('risk_pct')}%")
-    
-    signals.sort(key=lambda x: x.get("confidence", 0), reverse=True)
-    logger.info(f"[API] Returning {len(signals)} signals")
+    filtered = [s for s in SIGNALS_CACHE if s.get("confidence", 0) >= min_confidence]
+    filtered = filtered[:10]
     
     return jsonify({
-        "signals": signals[:10],
-        "count": len(signals)
+        "signals": filtered,
+        "count": len(filtered)
     })
 
 @app.route('/api/top-signals')
 def get_top_signals():
-    logger.info("=" * 60)
-    logger.info(">>> SCANNER: Starting market scan for ALL pairs")
-    logger.info("=" * 60)
+    logger.info(">>> API: Returning cached signals")
     
-    timeframe = request.args.get('timeframe', '1h')
     limit = int(request.args.get('limit', 5))
     min_confidence = int(request.args.get('min_confidence', config.MIN_CONFIDENCE))
     
-    signals = []
-    oi_limit = int(request.args.get('oi_limit', config.OI_PAIRS_LIMIT))
-    pairs_with_oi = get_pairs_with_oi_limit(TRADING_PAIRS, oi_limit)
+    filtered = [s for s in SIGNALS_CACHE if s.get("confidence", 0) >= min_confidence]
+    filtered = filtered[:limit]
     
-    logger.info(f">>> Scanning {len(TRADING_PAIRS)} pairs... (min_confidence={min_confidence})")
-    
-    signal_count = 0
-    no_trade_count = 0
-    
-    for pair in TRADING_PAIRS:
-        fetch_oi = pair in pairs_with_oi
-        result = generate_signal(pair, timeframe, fetch_oi, True)
-        
-        if result.get("signal") != "NO TRADE" and result.get("confidence", 0) >= min_confidence:
-            signals.append(result)
-            signal_count += 1
-            logger.info(f">>> SIGNAL: {pair:12} | {result.get('signal'):4} | Entry: {result.get('entry_primary')} | SL: {result.get('sl')} | TP1: {result.get('tp1')} | Conf: {result.get('confidence')} | Risk: {result.get('risk_pct')}% | Trend: {result.get('trend')} | Liq: {result.get('liquidity')}")
-        else:
-            no_trade_count += 1
-            if no_trade_count <= 5:
-                reason = result.get('reason', 'filtered')
-                logger.info(f">>> NO_SIGNAL: {pair:12} | {result.get('signal'):8} | Conf: {result.get('confidence')} | Reason: {reason}")
-    
-    signals.sort(key=lambda x: x.get("confidence", 0), reverse=True)
-    
-    logger.info("=" * 60)
-    logger.info(f">>> SCAN COMPLETE: {signal_count} signals found out of {len(TRADING_PAIRS)} pairs")
-    logger.info("=" * 60)
-    
-    if signals:
-        logger.info(f">>> TOP SIGNALS:")
-        for i, s in enumerate(signals[:limit]):
-            logger.info(f"    #{i+1} {s.get('pair')} {s.get('signal')} Conf:{s.get('confidence')} Entry:{s.get('entry_primary')} SL:{s.get('sl')}")
+    logger.info(f">>> API: Returning {len(filtered)} signals from cache")
     
     return jsonify({
-        "signals": signals[:limit],
-        "count": len(signals)
+        "signals": filtered,
+        "count": len(filtered)
     })
 
 @app.route('/api/trades', methods=['GET'])

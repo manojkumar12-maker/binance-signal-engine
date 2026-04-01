@@ -109,20 +109,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         fake_breakout = scoring.detect_fake_breakout(candles)
         market_mode = scoring.get_market_mode(atr_ratio)
         
-        if not scoring.validate_liquidity(trend, sweep):
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": 0, "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "Liquidity not aligned with trend"
-            }
+        liquidity_aligned = scoring.validate_liquidity(trend, sweep)
         
         if total_strength < 5:
             return {
@@ -148,6 +135,11 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         confidence = scoring.apply_fake_breakout_bonus(confidence, fake_breakout, "BUY" if trend == "UPTREND" else "SELL")
         confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
+        
+        if not liquidity_aligned:
+            confidence = max(0, confidence - 15)
+        else:
+            confidence += 10
         
         if not volatility_pass:
             confidence -= 10
