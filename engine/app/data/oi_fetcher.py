@@ -23,11 +23,17 @@ def fetch_oi(symbol: str) -> float:
     try:
         url = f"{BINANCE_FUTURES_URL}/fapi/v1/openInterest?symbol={symbol}"
         response = requests.get(url, timeout=10)
+        
+        if response.status_code == 429:
+            logger.warning(f"Rate limited on {symbol}, returning cached")
+            cached = get_data(f"{symbol}:oi") or 0
+            return cached
+        
         data = response.json()
         return float(data.get('openInterest', 0))
     except Exception as e:
-        logger.error(f"Error fetching OI for {symbol}: {e}")
-        return 0
+        cached = get_data(f"{symbol}:oi") or 0
+        return cached
 
 
 def get_active_pairs_for_oi(pairs: list, cache: dict, min_move_pct: float = 0.003) -> list:
@@ -79,6 +85,7 @@ async def run_oi_fetcher():
     logger.info(f"📊 OI (Open Interest) FETCHER STARTED")
     logger.info(f"   ⏱️ Fetch interval: {OI_FETCH_INTERVAL} seconds")
     logger.info(f"   📌 Mode: Active pairs only (filtered by movement)")
+    logger.info(f"   📌 Max pairs: {OI_FETCH_LIMIT}")
     
     while True:
         try:
@@ -92,12 +99,16 @@ async def run_oi_fetcher():
             logger.info(f"📊 Fetching OI for {len(oi_pairs)} active pairs...")
             
             fetched = 0
-            for pair in oi_pairs:
+            for i, pair in enumerate(oi_pairs):
+                if i > 0 and i % 10 == 0:
+                    await asyncio.sleep(1)
+                
                 oi = fetch_oi(pair)
                 if oi > 0:
                     set_data(f"{pair}:oi", oi)
                     fetched += 1
-                await asyncio.sleep(0.02)
+                
+                await asyncio.sleep(0.05)
             
             logger.info(f"✅ OI refreshed: {fetched} pairs")
         except Exception as e:

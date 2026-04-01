@@ -106,7 +106,24 @@ def check_volume(oi: float, oi_history: List[float], candles: List[Dict]) -> boo
     range_ = last.get('high', 0) - last.get('low', 0)
     absorption = body < range_ * 0.3 if range_ > 0 else False
     
-    return oi_spike or absorption
+    return True
+
+
+def get_volume_score(oi: float, oi_history: List[float], candles: List[Dict]) -> int:
+    if len(oi_history) < 5 or not candles:
+        return 5
+    
+    avg_oi = sum(oi_history[-5:]) / 5
+    oi_spike = oi > avg_oi * 1.4
+    
+    last = candles[-1]
+    body = abs(last.get('close', 0) - last.get('open', 0))
+    range_ = last.get('high', 0) - last.get('low', 0)
+    absorption = body < range_ * 0.3 if range_ > 0 else False
+    
+    if oi_spike or absorption:
+        return 20
+    return 5
 
 
 def calculate_confidence(trend: str, sweep: Optional[str], volume: bool, strength: int = 0, 
