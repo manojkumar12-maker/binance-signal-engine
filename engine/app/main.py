@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import signal
 from datetime import datetime
 
 current = os.path.dirname(os.path.abspath(__file__))
@@ -10,22 +11,35 @@ sys.path.insert(0, current)
 LOCK_FILE = "/tmp/binance_signal_engine.lock"
 
 def acquire_lock():
-    if os.path.exists(LOCK_FILE):
-        try:
-            with open(LOCK_FILE, 'r') as f:
-                old_pid = f.read().strip()
-                try:
+    try:
+        if os.path.exists(LOCK_FILE):
+            try:
+                with open(LOCK_FILE, 'r') as f:
+                    old_pid = f.read().strip()
+                if old_pid and old_pid.isdigit():
                     os.kill(int(old_pid), 0)
-                    print(f"Process {old_pid} is already running. Exiting...")
-                    sys.exit(0)
-                except (ProcessLookupError, ValueError):
-                    pass
-        except:
-            pass
-    
-    with open(LOCK_FILE, 'w') as f:
-        f.write(str(os.getpid()))
-    return True
+                    print(f"FATAL: Process {old_pid} is already running. Exiting...")
+                    sys.exit(1)
+            except (ProcessLookupError, ValueError, PermissionError):
+                pass
+        
+        with open(LOCK_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+        
+        def cleanup(signum, frame):
+            try:
+                os.remove(LOCK_FILE)
+            except:
+                pass
+            sys.exit(0)
+        
+        signal.signal(signal.SIGTERM, cleanup)
+        signal.signal(signal.SIGINT, cleanup)
+        
+        return True
+    except Exception as e:
+        print(f"WARNING: Lock check failed: {e}")
+        return True
 
 acquire_lock()
 
