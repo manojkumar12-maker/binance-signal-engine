@@ -134,15 +134,14 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         htf_aligned = htf_trend == "RANGE" or htf_trend == trend
         
-        confidence = scoring.calculate_confidence(trend, sweep, volume_confirmed, total_strength, volume_spike)
+        is_reversal = scoring.detect_reversal(candles, sweep)
         
-        if htf_aligned:
-            confidence += 15
-        else:
-            if sweep and "REJECTION" in sweep:
-                confidence += 5
-            else:
-                confidence -= 10
+        confidence = scoring.calculate_confidence(
+            trend, sweep, volume_confirmed, total_strength, volume_spike,
+            htf_aligned=htf_aligned,
+            market_bias=None,
+            is_reversal=is_reversal
+        )
         
         if trend == "RANGE":
             return {
@@ -156,6 +155,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "liquidity": sweep,
                 "volume": volume_confirmed,
                 "atr_ratio": atr_ratio,
+                "is_reversal": is_reversal,
                 "timestamp": datetime.utcnow().isoformat(),
                 "reason": "Market in Range"
             }
@@ -184,11 +184,17 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                         "volume": volume_confirmed,
                         "atr_ratio": atr_ratio,
                         "market_bias": market_bias,
+                        "is_reversal": is_reversal,
                         "timestamp": datetime.utcnow().isoformat(),
                         "reason": f"Market bias: {bias_reason}"
                     }
                 
-                confidence = bias_engine.apply_bias_boost(confidence, signal_for_check, market_bias)
+                confidence = scoring.calculate_confidence(
+                    trend, sweep, volume_confirmed, total_strength, volume_spike,
+                    htf_aligned=htf_aligned,
+                    market_bias=market_bias,
+                    is_reversal=is_reversal
+                )
             except Exception:
                 pass
         
@@ -204,6 +210,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "liquidity": sweep,
                 "volume": volume_confirmed,
                 "atr_ratio": atr_ratio,
+                "is_reversal": is_reversal,
                 "timestamp": datetime.utcnow().isoformat(),
                 "reason": f"Below minimum confidence threshold ({config.MIN_CONFIDENCE})"
             }
@@ -239,6 +246,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "atr_ratio": atr_ratio,
             "risk_pct": risk_pct,
             "market_bias": market_bias,
+            "is_reversal": is_reversal,
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
@@ -253,6 +261,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "volume": False,
             "atr_ratio": 0,
             "market_bias": None,
+            "is_reversal": False,
             "timestamp": datetime.utcnow().isoformat(),
             "reason": f"Processing error: {str(e)}"
         }
