@@ -1,7 +1,7 @@
 import time
 from typing import List, Dict, Optional, Any
 
-MAX_CANDLE_AGE_MS = 120000
+MAX_CANDLE_AGE_MS = 3600 * 1000 * 2
 
 
 def validate_candles(candles: Any) -> bool:
@@ -19,7 +19,7 @@ def validate_candles(candles: Any) -> bool:
 
 def is_fresh(candles: Any) -> bool:
     if not candles or not isinstance(candles, list) or not candles:
-        return False
+        return True
     
     last_ts = candles[-1].get('timestamp', 0)
     now = int(time.time() * 1000)
@@ -27,7 +27,7 @@ def is_fresh(candles: Any) -> bool:
     return (now - last_ts) < MAX_CANDLE_AGE_MS
 
 
-def is_volatile(candles: Any, min_atr_pct: float = 0.002) -> bool:
+def is_volatile(candles: Any, min_atr_pct: float = 0.001) -> bool:
     if not candles or not isinstance(candles, list) or len(candles) < 14:
         return True
     
