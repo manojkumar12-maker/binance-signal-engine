@@ -273,7 +273,7 @@ def open_trade():
         entry_limit=data.get('entry_limit')
     )
     tracker.add_trade(trade)
-    logger.info(f"[TRADE] Opened: {trade.pair} {trade.type} @ {trade.entry}")
+    logger.info(f"[TRADE] Opened: {trade['pair']} {trade['type']} @ {trade['entry']}")
     return jsonify({"success": True, "trade": trade})
 
 @app.route('/api/trade/<trade_id>', methods=['PUT'])
@@ -301,7 +301,7 @@ def close_trade(trade_id):
         close_price=float(data.get('close_price', 0))
     )
     if result:
-        logger.info(f"[TRADE] Closed: {result.pair} {result.type} | PnL: {result.pnl_pct}% | {result.remarks}")
+        logger.info(f"[TRADE] Closed: {result['pair']} {result['type']} | PnL: {result['pnl_pct']}% | {result['remarks']}")
         return jsonify({"success": True, "trade": result})
     return jsonify({"success": False, "error": "Trade not found"}), 404
 
