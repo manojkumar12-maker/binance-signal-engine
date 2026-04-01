@@ -115,20 +115,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             confidence -= 10
         
         if trend == "RANGE" and not is_reversal:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": round(current_price, 2),
-                "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "Market in Range"
-            }
+            confidence = max(0, confidence - 20)  # Soft penalty instead of block
         
         if trend == "RANGE" and is_reversal:
             confidence += 15
