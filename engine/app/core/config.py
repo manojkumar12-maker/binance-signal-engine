@@ -12,6 +12,10 @@ SCAN_INTERVAL = 60
 REST_SCAN_INTERVAL = 60
 OI_FETCH_INTERVAL = 180
 
+MAX_PAIRS = 200
+INITIAL_FETCH_LIMIT = 150
+OI_FETCH_LIMIT = 100
+
 SL_PERCENT = 0.005
 TP1_PERCENT = 0.01
 TP2_PERCENT = 0.02
@@ -55,6 +59,8 @@ def get_all_usdt_pairs():
                 symbol.get('symbol') not in BLACKLIST
             ):
                 pairs.append(symbol.get('symbol'))
+        
+        pairs = pairs[:MAX_PAIRS]
         
         return pairs
     except Exception as e:

@@ -84,15 +84,15 @@ def select_active_pairs(pairs: List[str], cache: dict, min_move_pct: float = 0.0
         if move > min_move_pct:
             selected.append(p)
     
-    return selected[:100]
+    from core.config import OI_FETCH_LIMIT
+    return selected[:OI_FETCH_LIMIT]
 
 
 def get_pair_cache() -> dict:
     from core.redis_client import get_data
-    
-    cache = {}
     from core.config import PAIRS
     
+    cache = {}
     for pair in PAIRS:
         candles = get_data(f"{pair}:1h")
         if candles:

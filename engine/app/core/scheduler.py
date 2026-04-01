@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Dict
-from core.config import SCAN_INTERVAL, PAIRS, WARMUP_SECONDS
+from core.config import SCAN_INTERVAL, PAIRS, WARMUP_SECONDS, INITIAL_FETCH_LIMIT
 from core.logging_utils import setup_logger
 from strategy.signal_engine import scan_all_pairs, process_pair
 from alerts.telegram import send_alert
@@ -45,9 +45,10 @@ async def run_scanner():
     logger.info(f"=" * 50)
     
     logger.info(f"")
-    logger.info(f"📥 INITIAL DATA FETCH - Fetching candles for all pairs...")
+    logger.info(f"📥 INITIAL DATA FETCH - Fetching candles for {INITIAL_FETCH_LIMIT} pairs...")
     
-    sync_result = await sync_all_data(PAIRS, "1h")
+    initial_pairs = PAIRS[:INITIAL_FETCH_LIMIT]
+    sync_result = await sync_all_data(initial_pairs, "1h")
     logger.info(f"✅ Initial fetch complete - {sync_result['candles_updated']} pairs loaded")
     
     logger.info(f"")
