@@ -8,7 +8,7 @@ def calculate_atr(candles: list, period: int = 14) -> float:
     return volume.calculate_atr(candles, period)
 
 
-def calculate_atr_based_sl(entry: float, candles: list, signal_type: str) -> Tuple[float, float]:
+def calculate_atr_based_sl(entry: float, candles: list, signal_type: str, pair: str = "BTCUSDT") -> Tuple[float, float]:
     atr = calculate_atr(candles)
     sl_distance = atr * config.ATR_MULTIPLIER
     
@@ -17,27 +17,23 @@ def calculate_atr_based_sl(entry: float, candles: list, signal_type: str) -> Tup
     else:
         sl = entry + sl_distance
     
-    sl = config.round_to_tick("BTCUSDT", sl)
     risk_pct = round(abs(entry - sl) / entry * 100, 2)
     
     return sl, risk_pct
 
 
-def refine_entry(candles: list, trend: str) -> Tuple[float, float]:
+def refine_entry(candles: list, trend: str, pair: str = "BTCUSDT") -> Tuple[float, float]:
     last = candles[-1]
     current_price = last['close']
     
     if trend == "UPTREND":
         pullback = (last['high'] - last['low']) * 0.3
-        entry_limit = config.round_to_tick("BTCUSDT", last['low'] + pullback)
+        entry_limit = last['low'] + pullback
     elif trend == "DOWNTREND":
         pullback = (last['high'] - last['low']) * 0.3
-        entry_limit = config.round_to_tick("BTCUSDT", last['high'] - pullback)
+        entry_limit = last['high'] - pullback
     else:
         entry_limit = current_price
-    
-    current_price = config.round_to_tick("BTCUSDT", current_price)
-    entry_limit = config.round_to_tick("BTCUSDT", entry_limit)
     
     return current_price, entry_limit
 
@@ -113,6 +109,21 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         fake_breakout = scoring.detect_fake_breakout(candles)
         market_mode = scoring.get_market_mode(atr_ratio)
         
+        if not scoring.validate_liquidity(trend, sweep):
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": 0, "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "Liquidity not aligned with trend"
+            }
+        
         confidence = scoring.calculate_confidence(
             trend, sweep, volume_confirmed, total_strength, volume_spike,
             htf_aligned=htf_aligned,
@@ -136,9 +147,9 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         signal_type = "BUY" if trend == "UPTREND" else "SELL"
         
-        entry_primary, entry_limit = refine_entry(candles, trend)
+        entry_primary, entry_limit = refine_entry(candles, trend, pair)
         
-        sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type)
+        sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
         
         if not config.validate_trade(entry_primary, sl):
             return {

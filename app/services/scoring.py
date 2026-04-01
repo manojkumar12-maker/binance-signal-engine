@@ -1,5 +1,6 @@
 from typing import Optional, Dict, List
 import logging
+import config
 
 logger = logging.getLogger("scoring_debug")
 
@@ -159,6 +160,76 @@ def apply_fake_breakout_bonus(
         return score + 20
     elif fakeout == "FAKE_BREAKOUT_HIGH" and signal == "SELL":
         return score + 20
+    return score
+
+
+def validate_liquidity(trend: str, sweep: Optional[str]) -> bool:
+    if not sweep:
+        return False
+    
+    if trend == "UPTREND":
+        return sweep in ["SWEEP_LOW", "SWEEP_LOW_REJECTION", "SWEEP_HIGH_REJECTION"]
+    
+    if trend == "DOWNTREND":
+        return sweep in ["SWEEP_HIGH", "SWEEP_HIGH_REJECTION", "SWEEP_LOW_REJECTION"]
+    
+    return False
+
+
+def final_validation(signal: Dict) -> bool:
+    entry = signal.get("entry_primary", 0)
+    sl = signal.get("sl", 0)
+    tp1 = signal.get("tp1", 0)
+    trend = signal.get("trend", "")
+    liquidity = signal.get("liquidity")
+    
+    if entry <= 0:
+        return False
+    
+    if not config.min_price_filter(entry):
+        return False
+    
+    if sl == entry:
+        return False
+    
+    if tp1 == entry:
+        return False
+    
+    if "RANGE" in trend and "REVERSAL" not in trend:
+        return False
+    
+    if liquidity is None:
+        return False
+    
+    risk_pct = abs(entry - sl) / entry
+    if risk_pct < 0.002 or risk_pct > 0.02:
+        return False
+    
+    return True
+
+
+def calculate_score(trend: str, sweep: Optional[str], volume_confirmed: bool, candle_strength: int) -> int:
+    score = 0
+    
+    if trend == "RANGE":
+        return 0
+    score += 25
+    
+    if not sweep:
+        return 0
+    
+    if "REJECTION" in sweep:
+        score += 30
+    else:
+        score += 20
+    
+    if volume_confirmed:
+        score += 25
+    else:
+        score += 5
+    
+    score += min(20, candle_strength)
+    
     return score
 
 

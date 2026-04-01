@@ -20,6 +20,13 @@ ATR_MULTIPLIER = 1.5
 OI_PAIRS_LIMIT = 60
 
 
+def get_precision_from_tick(tick_size: float) -> int:
+    tick_str = f"{tick_size:.10f}".rstrip('0')
+    if '.' in tick_str:
+        return len(tick_str.split('.')[1])
+    return 0
+
+
 def load_precision_map():
     try:
         data = requests.get(BINANCE_FUTURES_INFO_URL, timeout=10).json()
@@ -29,11 +36,7 @@ def load_precision_map():
             for f in symbol.get("filters", []):
                 if f.get("filterType") == "PRICE_FILTER":
                     tick_size = float(f.get("tickSize", 0))
-                    if tick_size == 0:
-                        precision = 2
-                    else:
-                        precision = int(abs(math.log10(tick_size)))
-                    precision_map[pair] = precision
+                    precision_map[pair] = get_precision_from_tick(tick_size)
                     break
         return precision_map
     except Exception:
@@ -52,6 +55,10 @@ def round_to_tick(pair: str, price: float) -> float:
     precision = PRICE_PRECISION.get(pair, 4)
     tick = 10 ** (-precision)
     return round(round(price / tick) * tick, precision)
+
+
+def min_price_filter(entry: float) -> bool:
+    return entry >= 0.0001
 
 
 def validate_trade(entry: float, sl: float) -> bool:
