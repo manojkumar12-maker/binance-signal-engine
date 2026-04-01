@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 import os
 
 import sys
@@ -9,6 +10,7 @@ from app.services.strategy import generate_signal
 from app.services import tracker, market, bias_engine
 
 app = Flask(__name__)
+CORS(app)
 
 port = int(os.environ.get("PORT", 8000))
 
