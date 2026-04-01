@@ -63,25 +63,9 @@ def print_banner():
         return
     LOG_PRINTED = True
     
-    banner = f"""
+    banner = """
 ╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║   ██████╗ ███████╗███████╗██╗     ██╗███╗   ██╗██████╗ ███████╗ ║
-║   ██╔══██╗██╔════╝██╔════╝██║     ██║████╗  ██║██╔══██╗██╔════╝ ║
-║   ██████╔╝█████╗  █████╗  ██║     ██║██╔██╗ ██║██████╔╝█████╗   ║
-║   ██╔══██╗██╔══╝  ██╔══╝  ██║     ██║██║╚██╗██║██╔══██╗██╔══╝   ║
-║   ██║  ██║███████╗███████╗███████╗██║██║ ╚████║██║  ██║███████╗ ║
-║   ╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝ ║
-║                                                               ║
-║              ██████╗ ██████╗ ███╗   ██╗███████╗ ██████╗ ███╗  ██╗║
-║              ██╔══██╗██╔══██╗████╗  ██║██╔════╝██╔═══██╗████╗ ██║║
-║              ██████╔╝██████╔╝██╔██╗ ██║█████╗  ██║   ██║██╔██╗██║║
-║              ██╔══██╗██╔══██╗██║╚██╗██║██╔══╝  ██║   ██║██║╚████║║
-║              ██████╔╝██║  ██║██║ ╚████║██║     ╚██████╔╝██║ ╚███║║
-║              ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝      ╚═════╝ ╚═╝  ╚══╝║
-║                                                               ║
-║                  ⚡ SCALABLE SIGNAL ENGINE ⚡                  ║
-║                                                               ║
+║           ⚡ BINANCE SIGNAL ENGINE - RUNNING ⚡                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 """
     logger.info(banner)
@@ -92,16 +76,10 @@ async def main():
     
     start_time = datetime.now()
     
-    logger.info(f"")
-    logger.info(f"╔" + "═" * 58 + "╗")
-    logger.info(f"║" + " " * 15 + "SYSTEM INITIALIZATION" + " " * 20 + "║")
-    logger.info(f"╚" + "═" * 58 + "╝")
-    logger.info(f"")
-    logger.info(f"⏰ Started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info(f"📍 Working Directory: {current}")
-    logger.info(f"")
-    logger.info(f"🚀 Starting services (REST polling mode)...")
-    logger.info(f"")
+    logger.info("=== SYSTEM INITIALIZATION ===")
+    logger.info(f"Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Mode: REST polling")
+    logger.info("")
     
     tasks = [
         run_scanner(),
