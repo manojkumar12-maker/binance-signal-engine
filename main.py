@@ -131,7 +131,10 @@ def get_all_signals():
 
 @app.route('/api/top-signals')
 def get_top_signals():
-    logger.info("[API] /api/top-signals")
+    logger.info("=" * 60)
+    logger.info(">>> SCANNER: Starting market scan for ALL pairs")
+    logger.info("=" * 60)
+    
     timeframe = request.args.get('timeframe', '1h')
     limit = int(request.args.get('limit', 5))
     min_confidence = int(request.args.get('min_confidence', config.MIN_CONFIDENCE))
@@ -140,14 +143,35 @@ def get_top_signals():
     oi_limit = int(request.args.get('oi_limit', config.OI_PAIRS_LIMIT))
     pairs_with_oi = get_pairs_with_oi_limit(TRADING_PAIRS, oi_limit)
     
+    logger.info(f">>> Scanning {len(TRADING_PAIRS)} pairs... (min_confidence={min_confidence})")
+    
+    signal_count = 0
+    no_trade_count = 0
+    
     for pair in TRADING_PAIRS:
         fetch_oi = pair in pairs_with_oi
         result = generate_signal(pair, timeframe, fetch_oi, True)
+        
         if result.get("signal") != "NO TRADE" and result.get("confidence", 0) >= min_confidence:
             signals.append(result)
+            signal_count += 1
+            logger.info(f">>> SIGNAL: {pair:12} | {result.get('signal'):4} | Entry: {result.get('entry_primary')} | SL: {result.get('sl')} | TP1: {result.get('tp1')} | Conf: {result.get('confidence')} | Risk: {result.get('risk_pct')}% | Trend: {result.get('trend')} | Liq: {result.get('liquidity')}")
+        else:
+            no_trade_count += 1
+            if no_trade_count <= 5:
+                reason = result.get('reason', 'filtered')
+                logger.info(f">>> NO_SIGNAL: {pair:12} | {result.get('signal'):8} | Conf: {result.get('confidence')} | Reason: {reason}")
     
     signals.sort(key=lambda x: x.get("confidence", 0), reverse=True)
-    logger.info(f"[API] Returning top {len(signals)} signals")
+    
+    logger.info("=" * 60)
+    logger.info(f">>> SCAN COMPLETE: {signal_count} signals found out of {len(TRADING_PAIRS)} pairs")
+    logger.info("=" * 60)
+    
+    if signals:
+        logger.info(f">>> TOP SIGNALS:")
+        for i, s in enumerate(signals[:limit]):
+            logger.info(f"    #{i+1} {s.get('pair')} {s.get('signal')} Conf:{s.get('confidence')} Entry:{s.get('entry_primary')} SL:{s.get('sl')}")
     
     return jsonify({
         "signals": signals[:limit],
