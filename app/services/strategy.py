@@ -150,6 +150,8 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         if trend == "RANGE" and is_reversal:
             confidence += 15
         
+        confidence = max(0, min(confidence, 100))
+        
         market_bias = None
         
         signal_type = "BUY" if trend == "UPTREND" else "SELL"
