@@ -7,10 +7,10 @@ from datetime import datetime
 current = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current)
 
-from core.websocket_manager import stream
 from core.scheduler import run_scanner, run_monitoring
 from data.oi_fetcher import run_oi_fetcher
 from core.logging_utils import setup_logger
+from core.config import ENABLE_WS_FOR_TOP_PAIRS, TOP_PAIRS_COUNT
 
 logger = setup_logger("main", logging.INFO)
 
@@ -53,16 +53,22 @@ async def main():
     logger.info(f"⏰ Started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"📍 Working Directory: {current}")
     logger.info(f"")
-    logger.info(f"🚀 Starting all services...")
+    logger.info(f"🚀 Starting services (REST polling mode)...")
     logger.info(f"")
     
+    tasks = [
+        run_scanner(),
+        run_monitoring(),
+        run_oi_fetcher()
+    ]
+    
+    if ENABLE_WS_FOR_TOP_PAIRS:
+        from core.websocket_manager import stream_top_pairs
+        logger.info(f"📡 Adding WebSocket for top {TOP_PAIRS_COUNT} pairs (optional)")
+        tasks.append(stream_top_pairs())
+    
     try:
-        await asyncio.gather(
-            stream(),
-            run_scanner(),
-            run_monitoring(),
-            run_oi_fetcher()
-        )
+        await asyncio.gather(*tasks)
     except KeyboardInterrupt:
         logger.info(f"")
         logger.info(f"⚠️ Shutting down...")

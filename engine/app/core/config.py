@@ -5,10 +5,11 @@ BINANCE_WS_URL = "wss://fstream.binance.com/stream"
 BINANCE_REST_URL = "https://api.binance.com"
 BINANCE_FUTURES_URL = "https://fapi.binance.com"
 
-TIMEFRAMES = ["1h"]  # Only 1H - build 4H internally
+TIMEFRAMES = ["1h"]
 
 MAX_CANDLES = 100
-SCAN_INTERVAL = 20  # Increased to reduce CPU load
+SCAN_INTERVAL = 60
+REST_SCAN_INTERVAL = 60
 OI_FETCH_INTERVAL = 180
 
 SL_PERCENT = 0.005
@@ -17,9 +18,12 @@ TP2_PERCENT = 0.02
 TP3_PERCENT = 0.03
 
 MIN_CONFIDENCE = 65
-MAX_PAIRS_PER_STREAM = 100  # Optimized for fewer connections
+MAX_PAIRS_PER_STREAM = 100
 
-WARMUP_SECONDS = 60  # Wait for data before scanning
+ENABLE_WS_FOR_TOP_PAIRS = os.environ.get("ENABLE_WS_FOR_TOP_PAIRS", "false").lower() == "true"
+TOP_PAIRS_COUNT = int(os.environ.get("TOP_PAIRS_COUNT", "30"))
+
+WARMUP_SECONDS = 60
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")

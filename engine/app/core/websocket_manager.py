@@ -1,9 +1,10 @@
 import asyncio
 import json
 import logging
+import aiohttp
 import websockets
 from core.config import MAX_PAIRS_PER_STREAM, TIMEFRAMES, MAX_CANDLES
-from core.config import PAIRS, chunk_pairs
+from core.config import PAIRS, chunk_pairs, TOP_PAIRS_COUNT
 from core.redis_client import get_data, set_data
 from core.logging_utils import setup_logger
 
@@ -25,7 +26,7 @@ async def handle_stream(pairs_chunk, timeframe="1h"):
     
     while True:
         try:
-            async with websockets.connect(url, ping_interval=20, ping_timeout=10) as ws:
+            async with websockets.connect(url, ping_interval=20, ping_timeout=10, open_timeout=10, close_timeout=5) as ws:
                 WS_CONNECTIONS += 1
                 conn_id = WS_CONNECTIONS
                 
@@ -33,7 +34,6 @@ async def handle_stream(pairs_chunk, timeframe="1h"):
                 logger.info(f"🔌 WebSocket #{conn_id} CONNECTED")
                 logger.info(f"   📊 Pairs: {len(pairs_chunk)}")
                 logger.info(f"   ⏱️ Timeframe: {timeframe}")
-                logger.info(f"   🌐 URL: {url[:60]}...")
                 
                 while True:
                     try:
@@ -75,6 +75,28 @@ def process_kline(data):
     candles = candles[-MAX_CANDLES:]
     
     set_data(key, candles)
+
+
+async def stream_top_pairs():
+    import aiohttp
+    
+    logger.info(f"")
+    logger.info(f"📡 Starting WebSocket for top {TOP_PAIRS_COUNT} pairs only...")
+    
+    async with aiohttp.ClientSession() as session:
+        from data.rest_fetcher import fetch_top_pairs_async
+        top_pairs = await fetch_top_pairs_async(session, TOP_PAIRS_COUNT)
+    
+    if not top_pairs:
+        logger.warning("⚠️ Could not fetch top pairs, falling back to top 30")
+        top_pairs = PAIRS[:30]
+    
+    logger.info(f"📊 Streaming {len(top_pairs)} top pairs via WebSocket")
+    
+    chunks = list(chunk_pairs(top_pairs, MAX_PAIRS_PER_STREAM))
+    tasks = [asyncio.create_task(handle_stream(chunk, "1h")) for chunk in chunks]
+    
+    await asyncio.gather(*tasks)
 
 
 async def start_all_streams():

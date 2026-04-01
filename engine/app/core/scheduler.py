@@ -7,12 +7,15 @@ from core.logging_utils import setup_logger
 from strategy.signal_engine import scan_all_pairs, process_pair
 from alerts.telegram import send_alert
 from core.redis_client import get_data, set_data
+from data.rest_fetcher import sync_all_data
+from data.validator import select_active_pairs
 
 logger = setup_logger("scheduler", logging.INFO)
 
 SENT_SIGNALS = {}
 SIGNAL_COUNT = 0
 SCAN_COUNT = 0
+LAST_REST_ERROR = None
 
 
 def is_duplicate(signal: Dict) -> bool:
@@ -32,19 +35,23 @@ def mark_sent(signal: Dict):
 
 
 async def run_scanner():
-    global SCAN_COUNT
+    global SCAN_COUNT, LAST_REST_ERROR
     
     logger.info(f"=" * 50)
     logger.info(f"🚀 SCANNER STARTED - Monitoring {len(PAIRS)} pairs")
     logger.info(f"⏱️ Scan interval: {SCAN_INTERVAL} seconds")
+    logger.info(f"📡 Data mode: REST polling (hybrid model)")
     logger.info(f"📊 Telegram alerts: {'Enabled' if hasattr(send_alert, '__call__') else 'Not configured'}")
-    logger.info(f"⏳ Warmup period: {WARMUP_SECONDS} seconds (waiting for data)")
     logger.info(f"=" * 50)
     
     logger.info(f"")
-    logger.info(f"⏳ WARMING UP - Waiting {WARMUP_SECONDS}s for candle data...")
-    await asyncio.sleep(WARMUP_SECONDS)
-    logger.info(f"✅ Warmup complete - Starting market scans!")
+    logger.info(f"📥 INITIAL DATA FETCH - Fetching candles for all pairs...")
+    
+    sync_result = await sync_all_data(PAIRS, "1h")
+    logger.info(f"✅ Initial fetch complete - {sync_result['candles_updated']} pairs loaded")
+    
+    logger.info(f"")
+    logger.info(f"⏳ WARMUP COMPLETE - Starting market scans!")
     
     while True:
         try:
@@ -52,9 +59,26 @@ async def run_scanner():
             
             logger.info(f"")
             logger.info(f"━" * 50)
-            logger.info(f"🔍 SCAN #{SCAN_COUNT} - Scanning {len(PAIRS)} pairs...")
+            logger.info(f"🔍 SCAN #{SCAN_COUNT} - Syncing + Scanning {len(PAIRS)} pairs...")
             
-            signals = scan_all_pairs()
+            try:
+                sync_result = await sync_all_data(PAIRS, "1h")
+                LAST_REST_ERROR = None
+            except Exception as rest_err:
+                LAST_REST_ERROR = rest_err
+                logger.error(f"❌ REST fetch failed: {rest_err}")
+                logger.info(f"⏭️ Using cached data from previous cycle")
+            
+            cache = {}
+            for pair in PAIRS:
+                candles = get_data(f"{pair}:1h")
+                if candles:
+                    cache[pair] = candles
+            
+            active_pairs = select_active_pairs(PAIRS, cache, min_move_pct=0.003)
+            logger.info(f"📊 Active pairs (>0.3% move): {len(active_pairs)}")
+            
+            signals = scan_all_pairs(max_signals=5)
             
             logger.info(f"📈 Analysis complete - Found {len(signals)} signals")
             

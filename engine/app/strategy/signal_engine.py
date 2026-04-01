@@ -6,9 +6,21 @@ from core.config import (
 from core.redis_client import get_data
 from data.candle_builder import build_4h
 from data.oi_fetcher import register_active_pair
+from data.validator import validate_candles, is_fresh, is_volatile
 import logging
 
 logger = logging.getLogger(__name__)
+
+LAST_SIGNALS = {}
+
+
+def is_new_signal(signal: Dict) -> bool:
+    key = signal['pair']
+    if key in LAST_SIGNALS:
+        if LAST_SIGNALS[key] == signal['signal']:
+            return False
+    LAST_SIGNALS[key] = signal['signal']
+    return True
 
 
 def detect_trend(candles: List[Dict]) -> str:
@@ -147,7 +159,13 @@ def process_pair(pair: str) -> Optional[Dict]:
     oi = get_data(f"{pair}:oi") or 0
     oi_history = get_data(f"{pair}:oi_history") or []
     
-    if not candles_1h or len(candles_1h) < 20:
+    if not validate_candles(candles_1h):
+        return None
+    
+    if not is_fresh(candles_1h):
+        return None
+    
+    if not is_volatile(candles_1h):
         return None
     
     if not candles_4h_data:
@@ -195,13 +213,18 @@ def process_pair(pair: str) -> Optional[Dict]:
     }
 
 
-def scan_all_pairs() -> List[Dict]:
-    signals = []
+def scan_all_pairs(max_signals: int = 5) -> List[Dict]:
+    all_signals = []
     for pair in PAIRS:
         try:
             signal = process_pair(pair)
             if signal:
-                signals.append(signal)
+                all_signals.append(signal)
         except Exception as e:
             logger.error(f"Error processing {pair}: {e}")
-    return signals
+    
+    all_signals = sorted(all_signals, key=lambda x: x['confidence'], reverse=True)
+    
+    valid_signals = [s for s in all_signals if is_new_signal(s)]
+    
+    return valid_signals[:max_signals]
