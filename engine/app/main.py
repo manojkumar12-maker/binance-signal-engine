@@ -7,6 +7,28 @@ from datetime import datetime
 current = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current)
 
+LOCK_FILE = "/tmp/binance_signal_engine.lock"
+
+def acquire_lock():
+    if os.path.exists(LOCK_FILE):
+        try:
+            with open(LOCK_FILE, 'r') as f:
+                old_pid = f.read().strip()
+                try:
+                    os.kill(int(old_pid), 0)
+                    print(f"Process {old_pid} is already running. Exiting...")
+                    sys.exit(0)
+                except (ProcessLookupError, ValueError):
+                    pass
+        except:
+            pass
+    
+    with open(LOCK_FILE, 'w') as f:
+        f.write(str(os.getpid()))
+    return True
+
+acquire_lock()
+
 from core.scheduler import run_scanner, run_monitoring
 from data.oi_fetcher import run_oi_fetcher
 from core.logging_utils import setup_logger
