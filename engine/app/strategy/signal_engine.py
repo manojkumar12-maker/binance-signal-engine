@@ -27,17 +27,25 @@ def detect_trend(candles: List[Dict]) -> str:
     if len(candles) < 5:
         return "RANGE"
     
-    recent = candles[-5:]
-    highs = [c["high"] for c in recent]
-    lows = [c["low"] for c in recent]
+    try:
+        recent = candles[-5:]
+        highs = [c["high"] for c in recent]
+        lows = [c["low"] for c in recent]
+        
+        ch = highs[-1]
+        ph = highs[-2]
+        sph = highs[-3]
+        cl = lows[-1]
+        pl = lows[-2]
+        spl = lows[-3]
+        
+        if ch > ph and ch > sph and cl > pl and cl > spl:
+            return "UPTREND"
+        if ch < ph and ch < sph and cl < pl and cl < spl:
+            return "DOWNTREND"
+    except Exception as e:
+        logger.error(f"Trend detection error: {e}")
     
-    ch = highs[-1], ph = highs[-2], sph = highs[-3]
-    cl = lows[-1], pl = lows[-2], spl = lows[-3]
-    
-    if ch > ph and ch > sph and cl > pl and cl > spl:
-        return "UPTREND"
-    if ch < ph and ch < sph and cl < pl and cl < spl:
-        return "DOWNTREND"
     return "RANGE"
 
 
@@ -242,43 +250,47 @@ def process_pair(pair: str) -> Optional[Dict]:
     if not is_volatile(candles_1h):
         return None
     
-    if not candles_4h_data:
-        candles_4h = build_4h(candles_1h)
-    else:
-        candles_4h = candles_4h_data
-    
-    trend = detect_trend(candles_1h)
-    htf_trend = detect_trend(candles_4h) if candles_4h else "RANGE"
-    sweep = detect_sweep(candles_1h)
-    volume = check_volume(oi, oi_history, candles_1h)
-    strength = candle_strength(candles_1h[-1]) if candles_1h else 0
-    
-    htf_aligned = htf_trend == "RANGE" or htf_trend == trend
-    is_reversal = detect_reversal(candles_1h, sweep)
-    
-    confidence = calculate_confidence(trend, sweep, volume, strength, htf_aligned, is_reversal)
-    
-    if confidence < MIN_CONFIDENCE:
+    try:
+        if not candles_4h_data:
+            candles_4h = build_4h(candles_1h)
+        else:
+            candles_4h = candles_4h_data
+        
+        trend = detect_trend(candles_1h)
+        htf_trend = detect_trend(candles_4h) if candles_4h else "RANGE"
+        sweep = detect_sweep(candles_1h)
+        volume = check_volume(oi, oi_history, candles_1h)
+        strength = candle_strength(candles_1h[-1]) if candles_1h else 0
+        
+        htf_aligned = htf_trend == "RANGE" or htf_trend == trend
+        is_reversal = detect_reversal(candles_1h, sweep)
+        
+        confidence = calculate_confidence(trend, sweep, volume, strength, htf_aligned, is_reversal)
+        
+        if confidence < MIN_CONFIDENCE:
+            return None
+        
+        signal_type = "BUY" if trend == "UPTREND" else "SELL"
+        entry = refine_entry(candles_1h, trend)
+        levels = build_trade_levels(entry, trend)
+        risk_pct = round(abs(entry - levels["sl"]) / entry * 100, 2) if entry > 0 else 0
+        
+        register_active_pair(pair)
+        
+        return {
+            "pair": pair,
+            "signal": signal_type,
+            "confidence": confidence,
+            "trend": f"{trend} ({htf_trend})",
+            "liquidity": sweep,
+            "volume": volume,
+            "timestamp": datetime.utcnow().isoformat(),
+            **levels,
+            "risk_pct": risk_pct
+        }
+    except Exception as e:
+        logger.error(f"Strategy error for {pair}: {e}")
         return None
-    
-    signal_type = "BUY" if trend == "UPTREND" else "SELL"
-    entry = refine_entry(candles_1h, trend)
-    levels = build_trade_levels(entry, trend)
-    risk_pct = round(abs(entry - levels["sl"]) / entry * 100, 2)
-    
-    register_active_pair(pair)
-    
-    return {
-        "pair": pair,
-        "signal": signal_type,
-        "confidence": confidence,
-        "trend": f"{trend} ({htf_trend})",
-        "liquidity": sweep,
-        "volume": volume,
-        "timestamp": datetime.utcnow().isoformat(),
-        **levels,
-        "risk_pct": risk_pct
-    }
 
 
 def scan_all_pairs(max_signals: int = 5) -> List[Dict]:
