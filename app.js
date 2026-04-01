@@ -6,8 +6,55 @@ let monitoringInterval = null;
 
 const pairs = [
     'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-    'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT'
+    'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT',
+    'LINKUSDT', 'ATOMUSDT', 'UNIUSDT', 'LTCUSDT', 'ETCUSDT'
 ];
+
+async function fetchTopSignals() {
+    updateStatus('scanning');
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/top-signals?limit=10&min_confidence=60&timeframe=1h`);
+        const data = await response.json();
+        
+        const newSignals = data.signals || [];
+        
+        const currentPrices = {};
+        for (const signal of newSignals) {
+            try {
+                const priceRes = await fetch(`${API_BASE_URL}/signal/${signal.pair}?timeframe=1h`);
+                const priceData = await priceRes.json();
+                currentPrices[signal.pair] = priceData.entry_primary || priceData.entry;
+            } catch (e) {
+                currentPrices[signal.pair] = signal.entry_primary;
+            }
+        }
+        
+        for (const signal of newSignals) {
+            const existingIndex = activeSignals.findIndex(s => s.pair === signal.pair);
+            const currentPrice = currentPrices[signal.pair] || signal.entry_primary;
+            
+            if (existingIndex < 0) {
+                activeSignals.push({
+                    ...signal,
+                    currentPrice: currentPrice,
+                    id: Date.now() + Math.random(),
+                    createdAt: new Date().toISOString()
+                });
+            } else {
+                activeSignals[existingIndex].currentPrice = currentPrice;
+                activeSignals[existingIndex].confidence = signal.confidence;
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching top signals:', error);
+    }
+    
+    saveSignals();
+    renderActiveSignals();
+    updateStatus('connected');
+    updateLastUpdate();
+}
 
 async function scanAllPairs() {
     updateStatus('scanning');
@@ -22,6 +69,7 @@ async function scanAllPairs() {
                 if (existingIndex < 0) {
                     const newSignal = {
                         ...data,
+                        currentPrice: data.entry_primary || data.entry,
                         id: Date.now() + Math.random(),
                         createdAt: new Date().toISOString()
                     };
@@ -70,7 +118,7 @@ async function monitorSignals() {
             const response = await fetch(`${API_BASE_URL}/signal/${signal.pair}?timeframe=1h`);
             const data = await response.json();
             
-            const currentPrice = data.entry;
+            const currentPrice = data.entry_primary || data.entry;
             let closed = false;
             let remarks = '';
             let closedPrice = currentPrice;
@@ -127,20 +175,23 @@ function renderActiveSignals() {
     tbody.innerHTML = '';
     
     if (activeSignals.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">No active signals. Scanning...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">No active signals. Scanning...</td></tr>';
         return;
     }
     
     activeSignals.forEach(signal => {
+        const entry = signal.entry_primary || signal.entry;
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${signal.pair}</td>
             <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
-            <td>${formatPrice(signal.entry)}</td>
+            <td>${formatPrice(signal.currentPrice || entry)}</td>
+            <td>${formatPrice(signal.entry_limit || '--')}</td>
             <td>${formatPrice(signal.tp1)}</td>
             <td>${formatPrice(signal.tp2)}</td>
             <td>${formatPrice(signal.tp3)}</td>
             <td>${formatPrice(signal.sl)}</td>
+            <td>${signal.risk_pct || '--'}%</td>
             <td>${signal.confidence}%</td>
             <td>
                 <button class="close-btn" onclick="closeSignalManual(${signal.id})">Close</button>
@@ -161,9 +212,10 @@ function renderClosedSignals() {
     }
     
     closedSignals.forEach(signal => {
+        const entry = signal.entry_primary || signal.entry;
         const pl = signal.signal === 'BUY' 
-            ? ((signal.closedPrice - signal.entry) / signal.entry * 100).toFixed(2)
-            : ((signal.entry - signal.closedPrice) / signal.entry * 100).toFixed(2);
+            ? ((signal.closedPrice - entry) / entry * 100).toFixed(2)
+            : ((entry - signal.closedPrice) / entry * 100).toFixed(2);
         
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -185,12 +237,14 @@ async function closeSignalManual(id) {
     const remarks = prompt('Enter closing remarks (e.g., Manual Close, TP Hit, SL Hit):', 'Manual Close');
     if (remarks === null) return;
     
+    const entry = signal.entry_primary || signal.entry;
+    
     try {
         const response = await fetch(`${API_BASE_URL}/signal/${signal.pair}?timeframe=1h`);
         const data = await response.json();
-        closeSignal(id, remarks, data.entry);
+        closeSignal(id, remarks, data.entry_primary || data.entry);
     } catch (error) {
-        closeSignal(id, remarks, signal.entry);
+        closeSignal(id, remarks, signal.currentPrice || entry);
     }
 }
 
@@ -254,10 +308,10 @@ function init() {
     renderActiveSignals();
     renderClosedSignals();
     
-    scanAllPairs();
+    fetchTopSignals();
     
     monitoringInterval = setInterval(() => {
-        scanAllPairs();
+        fetchTopSignals();
         monitorSignals();
     }, 30000);
 }

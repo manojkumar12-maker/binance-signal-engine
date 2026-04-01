@@ -1,22 +1,48 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from datetime import datetime
 import config
 from app.services import market, structure, liquidity, volume, scoring
 
 
-def refine_entry(candles: list, trend: str) -> float:
+def calculate_atr(candles: list, period: int = 14) -> float:
+    return volume.calculate_atr(candles, period)
+
+
+def calculate_atr_based_sl(entry: float, candles: list, signal_type: str) -> Tuple[float, float]:
+    atr = calculate_atr(candles)
+    sl_distance = atr * config.ATR_MULTIPLIER
+    
+    if signal_type == "BUY":
+        sl = entry - sl_distance
+    else:
+        sl = entry + sl_distance
+    
+    return round(sl, 2), round(sl_distance / entry * 100, 2)
+
+
+def refine_entry(candles: list, trend: str) -> Tuple[float, float]:
     last = candles[-1]
-    prev = candles[-2]
+    current_price = last['close']
     
     if trend == "UPTREND":
         pullback = (last['high'] - last['low']) * 0.3
-        return round(last['low'] + pullback, 2)
-    
+        entry_limit = round(last['low'] + pullback, 2)
     elif trend == "DOWNTREND":
         pullback = (last['high'] - last['low']) * 0.3
-        return round(last['high'] - pullback, 2)
+        entry_limit = round(last['high'] - pullback, 2)
+    else:
+        entry_limit = current_price
     
-    return last['close']
+    return round(current_price, 2), entry_limit
+
+
+def check_volatility_filter(candles: list, current_price: float) -> Tuple[bool, float]:
+    atr_ratio = volume.get_atr_ratio(candles, current_price)
+    
+    if atr_ratio < config.MIN_ATR_RATIO:
+        return False, round(atr_ratio, 6)
+    
+    return True, round(atr_ratio, 6)
 
 
 def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
@@ -27,11 +53,13 @@ def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
         return {
             "pair": pair,
             "signal": "NO TRADE",
-            "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+            "entry_primary": 0, "entry_limit": 0,
+            "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
             "confidence": 0,
             "trend": "UNKNOWN",
             "liquidity": None,
             "volume": False,
+            "atr_ratio": 0,
             "timestamp": datetime.utcnow().isoformat(),
             "reason": f"Error fetching data: {str(e)}"
         }
@@ -40,11 +68,13 @@ def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
         return {
             "pair": pair,
             "signal": "NO TRADE",
-            "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+            "entry_primary": 0, "entry_limit": 0,
+            "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
             "confidence": 0,
             "trend": "UNKNOWN",
             "liquidity": None,
             "volume": False,
+            "atr_ratio": 0,
             "timestamp": datetime.utcnow().isoformat(),
             "reason": "Insufficient market data"
         }
@@ -56,75 +86,131 @@ def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
         trend = structure.detect_trend(candles)
         htf_trend = structure.detect_htf_trend(htf_candles) if htf_candles else "RANGE"
         sweep = liquidity.detect_sweep(candles)
-        volume_confirmed = volume.check_volume_confirmation(oi_data, candles)
+        volume_result = volume.check_volume_confirmation(oi_data, candles)
+        
+        if isinstance(volume_result, tuple):
+            volume_confirmed, volume_spike = volume_result
+        else:
+            volume_confirmed = volume_result
+            volume_spike = False
         
         strength = structure.candle_strength(candles[-1])
         volume_strength = volume.get_volume_strength(oi_data)
         total_strength = strength + volume_strength
         
+        volatility_pass, atr_ratio = check_volatility_filter(candles, current_price)
+        
+        if not volatility_pass:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": round(current_price, 2),
+                "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": f"Low volatility (ATR ratio: {atr_ratio})"
+            }
+        
         if trend == "RANGE":
             return {
                 "pair": pair,
                 "signal": "NO TRADE",
-                "entry": current_price, "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "entry_primary": round(current_price, 2),
+                "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
                 "confidence": 0,
                 "trend": f"{trend} ({htf_trend})",
                 "liquidity": sweep,
                 "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
                 "timestamp": datetime.utcnow().isoformat(),
                 "reason": "Market in Range"
             }
         
-        if htf_trend != "RANGE" and htf_trend != trend:
+        htf_aligned = htf_trend == "RANGE" or htf_trend == trend
+        
+        if not htf_aligned:
+            confidence = scoring.calculate_confidence(trend, sweep, volume_confirmed, total_strength, volume_spike)
+            if confidence < config.MIN_CONFIDENCE:
+                return {
+                    "pair": pair,
+                    "signal": "NO TRADE",
+                    "entry_primary": round(current_price, 2),
+                    "entry_limit": 0,
+                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                    "confidence": confidence,
+                    "trend": f"{trend} ({htf_trend})",
+                    "liquidity": sweep,
+                    "volume": volume_confirmed,
+                    "atr_ratio": atr_ratio,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "reason": f"HTF/LTF trend mismatch (confidence: {confidence})"
+                }
+        
+        liquidity_aligned = liquidity.align_sweep_with_trend(trend, sweep)
+        
+        if not liquidity_aligned:
+            confidence = scoring.calculate_confidence(trend, sweep, volume_confirmed, total_strength, volume_spike)
+            if confidence < config.MIN_CONFIDENCE:
+                return {
+                    "pair": pair,
+                    "signal": "NO TRADE",
+                    "entry_primary": round(current_price, 2),
+                    "entry_limit": 0,
+                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                    "confidence": confidence,
+                    "trend": f"{trend} ({htf_trend})",
+                    "liquidity": sweep,
+                    "volume": volume_confirmed,
+                    "atr_ratio": atr_ratio,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "reason": f"Sweep not aligned with trend (confidence: {confidence})"
+                }
+        
+        confidence = scoring.calculate_confidence(trend, sweep, volume_confirmed, total_strength, volume_spike)
+        
+        if confidence < config.MIN_CONFIDENCE:
             return {
                 "pair": pair,
                 "signal": "NO TRADE",
-                "entry": current_price, "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
+                "entry_primary": round(current_price, 2),
+                "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": confidence,
                 "trend": f"{trend} ({htf_trend})",
                 "liquidity": sweep,
                 "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
                 "timestamp": datetime.utcnow().isoformat(),
-                "reason": "HTF/LTF trend mismatch"
+                "reason": f"Below minimum confidence threshold ({config.MIN_CONFIDENCE})"
             }
-        
-        if not liquidity.align_sweep_with_trend(trend, sweep):
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry": current_price, "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "Sweep not aligned with trend"
-            }
-        
-        confidence = scoring.calculate_confidence(trend, sweep, volume_confirmed, total_strength)
         
         signal_type = "BUY" if trend == "UPTREND" else "SELL"
         
-        entry = refine_entry(candles, trend)
+        entry_primary, entry_limit = refine_entry(candles, trend)
+        
+        sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type)
         
         if signal_type == "BUY":
-            sl = entry * (1 - config.SL_PERCENT)
-            tp1 = entry * (1 + config.TP1_PERCENT)
-            tp2 = entry * (1 + config.TP2_PERCENT)
-            tp3 = entry * (1 + config.TP3_PERCENT)
+            tp1 = entry_primary * (1 + config.TP1_PERCENT)
+            tp2 = entry_primary * (1 + config.TP2_PERCENT)
+            tp3 = entry_primary * (1 + config.TP3_PERCENT)
         else:
-            sl = entry * (1 + config.SL_PERCENT)
-            tp1 = entry * (1 - config.TP1_PERCENT)
-            tp2 = entry * (1 - config.TP2_PERCENT)
-            tp3 = entry * (1 - config.TP3_PERCENT)
-        
-        risk_pct = round((entry - sl) / entry * 100, 2) if entry > 0 else 0
+            tp1 = entry_primary * (1 - config.TP1_PERCENT)
+            tp2 = entry_primary * (1 - config.TP2_PERCENT)
+            tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
         return {
             "pair": pair,
             "signal": signal_type,
-            "entry": round(entry, 2),
-            "sl": round(sl, 2),
+            "entry_primary": entry_primary,
+            "entry_limit": entry_limit,
+            "sl": sl,
             "tp1": round(tp1, 2),
             "tp2": round(tp2, 2),
             "tp3": round(tp3, 2),
@@ -132,6 +218,7 @@ def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
             "trend": f"{trend} ({htf_trend})",
             "liquidity": sweep,
             "volume": volume_confirmed,
+            "atr_ratio": atr_ratio,
             "risk_pct": risk_pct,
             "timestamp": datetime.utcnow().isoformat()
         }
@@ -139,11 +226,13 @@ def generate_signal(pair: str, timeframe: str = "1h") -> Dict:
         return {
             "pair": pair,
             "signal": "NO TRADE",
-            "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+            "entry_primary": 0, "entry_limit": 0,
+            "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
             "confidence": 0,
             "trend": "ERROR",
             "liquidity": None,
             "volume": False,
+            "atr_ratio": 0,
             "timestamp": datetime.utcnow().isoformat(),
             "reason": f"Processing error: {str(e)}"
         }
