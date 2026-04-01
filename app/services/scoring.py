@@ -95,6 +95,73 @@ def detect_reversal(candles: List[Dict], sweep_type: Optional[str]) -> bool:
     return True
 
 
+def detect_fake_breakout(candles: List[Dict]) -> Optional[str]:
+    if len(candles) < 2:
+        return None
+    
+    last = candles[-1]
+    prev = candles[-2]
+    
+    high = last["high"]
+    low = last["low"]
+    close = last["close"]
+    open_ = last["open"]
+    
+    prev_high = prev["high"]
+    prev_low = prev["low"]
+    
+    body = abs(close - open_)
+    range_ = high - low
+    
+    if range_ == 0:
+        return None
+    
+    body_ratio = body / range_
+    
+    if high > prev_high and close < prev_high and body_ratio < 0.4:
+        return "FAKE_BREAKOUT_HIGH"
+    
+    if low < prev_low and close > prev_low and body_ratio < 0.4:
+        return "FAKE_BREAKOUT_LOW"
+    
+    return None
+
+
+def get_market_mode(atr_ratio: float) -> str:
+    if atr_ratio > 0.01:
+        return "TRENDING"
+    elif atr_ratio < 0.003:
+        return "RANGING"
+    return "NORMAL"
+
+
+def apply_adaptive_scoring(
+    score: int,
+    market_mode: str,
+    liquidity: Optional[str],
+    signal: str
+) -> int:
+    if market_mode == "TRENDING":
+        score += 10
+    elif market_mode == "RANGING":
+        if liquidity is not None:
+            score += 10
+    
+    return score
+
+
+def apply_fake_breakout_bonus(
+    score: int,
+    fakeout: Optional[str],
+    signal: str
+) -> int:
+    if fakeout == "FAKE_BREAKOUT_LOW" and signal == "BUY":
+        return score + 20
+    elif fakeout == "FAKE_BREAKOUT_HIGH" and signal == "SELL":
+        return score + 20
+    return score
+
+
 def get_signal_quality(score: int) -> str:
     if score >= 65:
         return "STRONG"

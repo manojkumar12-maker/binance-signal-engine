@@ -17,7 +17,10 @@ def calculate_atr_based_sl(entry: float, candles: list, signal_type: str) -> Tup
     else:
         sl = entry + sl_distance
     
-    return round(sl, 2), round(sl_distance / entry * 100, 2)
+    sl = config.round_to_tick("BTCUSDT", sl)
+    risk_pct = round(abs(entry - sl) / entry * 100, 2)
+    
+    return sl, risk_pct
 
 
 def refine_entry(candles: list, trend: str) -> Tuple[float, float]:
@@ -26,14 +29,17 @@ def refine_entry(candles: list, trend: str) -> Tuple[float, float]:
     
     if trend == "UPTREND":
         pullback = (last['high'] - last['low']) * 0.3
-        entry_limit = round(last['low'] + pullback, 2)
+        entry_limit = config.round_to_tick("BTCUSDT", last['low'] + pullback)
     elif trend == "DOWNTREND":
         pullback = (last['high'] - last['low']) * 0.3
-        entry_limit = round(last['high'] - pullback, 2)
+        entry_limit = config.round_to_tick("BTCUSDT", last['high'] - pullback)
     else:
         entry_limit = current_price
     
-    return round(current_price, 2), entry_limit
+    current_price = config.round_to_tick("BTCUSDT", current_price)
+    entry_limit = config.round_to_tick("BTCUSDT", entry_limit)
+    
+    return current_price, entry_limit
 
 
 def check_volatility_filter(candles: list, current_price: float) -> Tuple[bool, float]:
@@ -104,6 +110,9 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         is_reversal = scoring.detect_reversal(candles, sweep)
         
+        fake_breakout = scoring.detect_fake_breakout(candles)
+        market_mode = scoring.get_market_mode(atr_ratio)
+        
         confidence = scoring.calculate_confidence(
             trend, sweep, volume_confirmed, total_strength, volume_spike,
             htf_aligned=htf_aligned,
@@ -111,11 +120,14 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             is_reversal=is_reversal
         )
         
+        confidence = scoring.apply_fake_breakout_bonus(confidence, fake_breakout, "BUY" if trend == "UPTREND" else "SELL")
+        confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
+        
         if not volatility_pass:
             confidence -= 10
         
         if trend == "RANGE" and not is_reversal:
-            confidence = max(0, confidence - 20)  # Soft penalty instead of block
+            confidence = max(0, confidence - 20)
         
         if trend == "RANGE" and is_reversal:
             confidence += 15
@@ -128,6 +140,28 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type)
         
+        if not config.validate_trade(entry_primary, sl):
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "market_bias": market_bias,
+                "is_reversal": is_reversal,
+                "market_mode": market_mode,
+                "fake_breakout": fake_breakout,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "Invalid trade parameters"
+            }
+        
         if signal_type == "BUY":
             tp1 = entry_primary * (1 + config.TP1_PERCENT)
             tp2 = entry_primary * (1 + config.TP2_PERCENT)
@@ -137,15 +171,22 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             tp2 = entry_primary * (1 - config.TP2_PERCENT)
             tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
+        entry_primary = config.round_to_tick(pair, entry_primary)
+        entry_limit = config.round_to_tick(pair, entry_limit)
+        sl = config.round_to_tick(pair, sl)
+        tp1 = config.round_to_tick(pair, tp1)
+        tp2 = config.round_to_tick(pair, tp2)
+        tp3 = config.round_to_tick(pair, tp3)
+        
         return {
             "pair": pair,
             "signal": signal_type,
             "entry_primary": entry_primary,
             "entry_limit": entry_limit,
             "sl": sl,
-            "tp1": round(tp1, 2),
-            "tp2": round(tp2, 2),
-            "tp3": round(tp3, 2),
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp3": tp3,
             "confidence": confidence,
             "trend": f"{trend} ({htf_trend})",
             "liquidity": sweep,
@@ -154,6 +195,8 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "risk_pct": risk_pct,
             "market_bias": market_bias,
             "is_reversal": is_reversal,
+            "market_mode": market_mode,
+            "fake_breakout": fake_breakout,
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
