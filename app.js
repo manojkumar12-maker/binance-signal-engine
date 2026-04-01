@@ -2,6 +2,7 @@ const API_BASE_URL = 'https://binance-signal-engine-production.up.railway.app/ap
 
 let activeTrades = [];
 let closedTrades = [];
+let signalsData = [];
 let monitoringInterval = null;
 let analyticsData = null;
 
@@ -13,6 +14,46 @@ async function fetchAnalytics() {
     } catch (error) {
         console.error('Error fetching analytics:', error);
     }
+}
+
+async function fetchSignals() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/top-signals?limit=10&min_confidence=60`);
+        const data = await response.json();
+        signalsData = data.signals || [];
+        renderSignals();
+    } catch (error) {
+        console.error('Error fetching signals:', error);
+    }
+}
+
+function renderSignals() {
+    const tbody = document.getElementById('signalsBody');
+    tbody.innerHTML = '';
+    
+    if (signalsData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">No signals. Market scanning...</td></tr>';
+        return;
+    }
+    
+    signalsData.forEach(signal => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${signal.pair}</td>
+            <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
+            <td>${formatPrice(signal.entry_primary)}</td>
+            <td>${formatPrice(signal.sl)}</td>
+            <td>${formatPrice(signal.tp1)}</td>
+            <td>${formatPrice(signal.tp2)}</td>
+            <td>${formatPrice(signal.tp3)}</td>
+            <td>${signal.confidence}%</td>
+            <td>${signal.risk_pct}%</td>
+            <td>
+                <button class="trade-btn" onclick="openTradeFromSignal('${signal.pair}')">+</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
 }
 
 function renderAnalytics() {
@@ -375,7 +416,11 @@ function updateLastUpdate() {
 function init() {
     syncWithBackend();
     fetchAnalytics();
-    fetchTopSignals();
+    fetchSignals();
+    
+    setInterval(() => {
+        fetchSignals();
+    }, 30000);
     
     monitoringInterval = setInterval(() => {
         monitorTrades();
