@@ -219,6 +219,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "fake_breakout": fake_breakout,
             "timestamp": datetime.utcnow().isoformat()
         }
+
     except Exception as e:
         return {
             "pair": pair,
@@ -234,4 +235,105 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "is_reversal": False,
             "timestamp": datetime.utcnow().isoformat(),
             "reason": f"Processing error: {str(e)}"
+        }
+
+
+def generate_signal_from_candles(pair: str, candles: list) -> Dict:
+    """Generate signal from pre-fetched candles (for async scanner)"""
+    try:
+        if not candles or len(candles) < 20:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "confidence": 0,
+                "reason": "Insufficient data"
+            }
+        
+        current_price = candles[-1]["close"]
+        
+        trend = structure.detect_trend(candles)
+        sweep = liquidity.detect_sweep(candles)
+        
+        volatility_pass, atr_ratio = check_volatility_filter(candles, current_price)
+        
+        strength = structure.candle_strength(candles[-1])
+        total_strength = strength
+        
+        liquidity_aligned = scoring.validate_liquidity(trend, sweep)
+        
+        is_reversal = scoring.detect_reversal(candles, sweep)
+        fake_breakout = scoring.detect_fake_breakout(candles)
+        market_mode = scoring.get_market_mode(atr_ratio)
+        
+        confidence = scoring.calculate_confidence(
+            trend, sweep, False, total_strength, False,
+            htf_aligned=True,
+            market_bias=None,
+            is_reversal=is_reversal
+        )
+        
+        confidence = scoring.apply_fake_breakout_bonus(confidence, fake_breakout, "BUY" if trend == "UPTREND" else "SELL")
+        confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
+        
+        if not liquidity_aligned:
+            confidence = max(0, confidence - 15)
+        else:
+            confidence += 10
+        
+        if not volatility_pass:
+            confidence -= 10
+        
+        if trend == "RANGE" and not is_reversal:
+            confidence = max(0, confidence - 20)
+        
+        if trend == "RANGE" and is_reversal:
+            confidence += 15
+        
+        confidence = max(0, min(confidence, 100))
+        
+        signal_type = "BUY" if trend == "UPTREND" else "SELL"
+        
+        entry_primary, entry_limit = refine_entry(candles, trend, pair)
+        sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
+        
+        if not config.validate_trade(entry_primary, sl):
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "confidence": confidence,
+                "reason": "Invalid trade params"
+            }
+        
+        if signal_type == "BUY":
+            tp1 = entry_primary * (1 + config.TP1_PERCENT)
+            tp2 = entry_primary * (1 + config.TP2_PERCENT)
+            tp3 = entry_primary * (1 + config.TP3_PERCENT)
+        else:
+            tp1 = entry_primary * (1 - config.TP1_PERCENT)
+            tp2 = entry_primary * (1 - config.TP2_PERCENT)
+            tp3 = entry_primary * (1 - config.TP3_PERCENT)
+        
+        return {
+            "pair": pair,
+            "signal": signal_type,
+            "entry_primary": config.round_to_tick(pair, entry_primary),
+            "entry_limit": config.round_to_tick(pair, entry_limit),
+            "sl": config.round_to_tick(pair, sl),
+            "tp1": config.round_to_tick(pair, tp1),
+            "tp2": config.round_to_tick(pair, tp2),
+            "tp3": config.round_to_tick(pair, tp3),
+            "confidence": confidence,
+            "trend": trend,
+            "liquidity": sweep,
+            "atr_ratio": atr_ratio,
+            "risk_pct": risk_pct,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        return {
+            "pair": pair,
+            "signal": "NO TRADE",
+            "confidence": 0,
+            "reason": f"Error: {str(e)}"
         }

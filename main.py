@@ -12,48 +12,81 @@ logger = logging.getLogger(__name__)
 import config
 from app.services.strategy import generate_signal
 from app.services import tracker, market, bias_engine
+from app.services.redis_client import set_cache, get_cache
 import threading
 import time
+import asyncio
+import aiohttp
 
 SIGNALS_CACHE = []
 SCANNER_RUNNING = False
 SCANNER_ERROR_COUNT = 0
 
-def scanner_loop():
+async def fetch_klines_async(session, symbol, interval="1h", limit=100):
+    url = f"{config.FUTURES_API_URL}/fapi/v1/klines"
+    params = {"symbol": symbol, "interval": interval, "limit": limit}
+    try:
+        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            return await resp.json()
+    except:
+        return None
+
+
+async def scanner_async_loop():
     global SIGNALS_CACHE, SCANNER_RUNNING, SCANNER_ERROR_COUNT
     
-    logger.info(">>> BACKGROUND SCANNER: Started")
+    logger.info(">>> ASYNC SCANNER: Started")
     SCANNER_RUNNING = True
     
     while True:
         try:
             results = []
-            
             oi_limit = config.OI_PAIRS_LIMIT
             pairs_with_oi = TRADING_PAIRS[:oi_limit]
             
-            for pair in TRADING_PAIRS:
-                try:
-                    fetch_oi = pair in pairs_with_oi
-                    signal = generate_signal(pair, "1h", fetch_oi, True)
-                    
-                    if signal.get("signal") != "NO TRADE" and signal.get("confidence", 0) >= config.MIN_CONFIDENCE:
-                        results.append(signal)
-                except Exception as e:
-                    SCANNER_ERROR_COUNT += 1
+            async with aiohttp.ClientSession() as session:
+                tasks = []
+                for pair in TRADING_PAIRS:
+                    task = fetch_klines_async(session, pair, "1h", config.CANDLE_LIMIT)
+                    tasks.append((pair, task))
+                
+                for pair, task in tasks:
+                    try:
+                        klines = await task
+                        if klines and len(klines) >= 20:
+                            from app.services import market as market_service
+                            candles = market_service.parse_klines(klines)
+                            from app.services.strategy import generate_signal_from_candles
+                            signal = generate_signal_from_candles(pair, candles)
+                            
+                            if signal and signal.get("signal") != "NO TRADE" and signal.get("confidence", 0) >= config.MIN_CONFIDENCE:
+                                results.append(signal)
+                        else:
+                            SCANNER_ERROR_COUNT += 1
+                    except Exception as e:
+                        SCANNER_ERROR_COUNT += 1
             
             SIGNALS_CACHE = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)[:10]
+            set_cache("top_signals", SIGNALS_CACHE, ttl=60)
             
-            logger.info(f">>> SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
+            logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
             if SIGNALS_CACHE:
                 for i, s in enumerate(SIGNALS_CACHE[:3]):
                     logger.info(f">>> TOP {i+1}: {s.get('pair')} {s.get('signal')} Conf:{s.get('confidence')} Entry:{s.get('entry_primary')}")
             
         except Exception as e:
-            logger.error(f">>> SCANNER ERROR: {e}")
+            logger.error(f">>> ASYNC SCANNER ERROR: {e}")
         
-        time.sleep(60)
+        await asyncio.sleep(60)
+
+
+def start_async_scanner():
+    asyncio.run(scanner_async_loop())
+
+
+def get_pairs_with_oi_limit(pairs, limit):
+    return pairs[:limit]
 
 
 app = Flask(__name__)
@@ -69,6 +102,7 @@ logger.info("- market.get_klines, market.get_open_interest")
 logger.info("- bias_engine.get_market_bias")
 logger.info("- tracker (trade management)")
 logger.info("- scoring (fake breakout, liquidity validation)")
+logger.info("- async scanner with Redis cache")
 logger.info("=== READY ===")
 
 port = int(os.environ.get("PORT", 8000))
@@ -108,12 +142,10 @@ def get_all_usdt_pairs():
 TRADING_PAIRS = get_all_usdt_pairs()
 logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}...")
 
-scanner_thread = threading.Thread(target=scanner_loop, daemon=True)
+scanner_thread = threading.Thread(target=start_async_scanner, daemon=True)
 scanner_thread.start()
 time.sleep(2)
 
-def get_pairs_with_oi_limit(pairs, limit):
-    return pairs[:limit]
 
 @app.route('/')
 def root():
@@ -167,6 +199,10 @@ def get_all_signals():
 @app.route('/api/top-signals')
 def get_top_signals():
     logger.info(">>> API: Returning cached signals")
+    
+    cached = get_cache("top_signals")
+    if cached:
+        SIGNALS_CACHE = cached
     
     limit = int(request.args.get('limit', 5))
     min_confidence = int(request.args.get('min_confidence', config.MIN_CONFIDENCE))

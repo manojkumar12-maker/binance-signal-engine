@@ -56,3 +56,22 @@ def get_open_interest(symbol: str) -> List[float]:
         return [float(data.get("openInterest", 0))]
     except Exception:
         return []
+
+
+def parse_klines(klines_data) -> List[Dict]:
+    """Parse klines data from Binance API for async scanner"""
+    candles = []
+    for kline in klines_data:
+        if isinstance(kline, list):
+            candles.append({
+                "open_time": kline[0],
+                "open": float(kline[1]),
+                "high": float(kline[2]),
+                "low": float(kline[3]),
+                "close": float(kline[4]),
+                "volume": float(kline[5]),
+                "close_time": kline[6]
+            })
+        else:
+            candles.append(kline)
+    return candles
