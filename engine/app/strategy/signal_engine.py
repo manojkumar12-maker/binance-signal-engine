@@ -220,10 +220,18 @@ def build_trade_levels(entry: float, trend: str) -> Dict:
 
 
 def process_pair(pair: str) -> Optional[Dict]:
-    candles_1h = get_data(f"{pair}:1h")
-    candles_4h_data = get_data(f"{pair}:4h")
-    oi = get_data(f"{pair}:oi") or 0
-    oi_history = get_data(f"{pair}:oi_history") or []
+    try:
+        candles_1h = get_data(f"{pair}:1h")
+        candles_4h_data = get_data(f"{pair}:4h")
+        
+        oi_raw = get_data(f"{pair}:oi")
+        oi = float(oi_raw) if oi_raw and isinstance(oi_raw, (int, float)) else 0
+        
+        oi_history_raw = get_data(f"{pair}:oi_history")
+        oi_history = oi_history_raw if isinstance(oi_history_raw, list) else []
+    except Exception as e:
+        logger.error(f"Data fetch error for {pair}: {e}")
+        return None
     
     if not validate_candles(candles_1h):
         return None
