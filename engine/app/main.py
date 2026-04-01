@@ -8,7 +8,7 @@ from datetime import datetime
 current = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current)
 
-LOCK_FILE = "/tmp/binance_signal_engine.lock"
+LOCK_FILE = os.environ.get("LOCK_FILE", "/tmp/binance_signal_engine.lock")
 
 def acquire_lock():
     try:
@@ -17,10 +17,13 @@ def acquire_lock():
                 with open(LOCK_FILE, 'r') as f:
                     old_pid = f.read().strip()
                 if old_pid and old_pid.isdigit():
-                    os.kill(int(old_pid), 0)
-                    print(f"FATAL: Process {old_pid} is already running. Exiting...")
-                    sys.exit(1)
-            except (ProcessLookupError, ValueError, PermissionError):
+                    try:
+                        os.kill(int(old_pid), 0)
+                        print(f"FATAL: Process {old_pid} is already running. Exiting...")
+                        sys.exit(1)
+                    except (ProcessLookupError, ValueError, PermissionError):
+                        pass
+            except:
                 pass
         
         with open(LOCK_FILE, 'w') as f:
@@ -41,7 +44,9 @@ def acquire_lock():
         print(f"WARNING: Lock check failed: {e}")
         return True
 
-acquire_lock()
+if not acquire_lock():
+    print("Failed to acquire lock, exiting...")
+    sys.exit(1)
 
 from core.scheduler import run_scanner, run_monitoring
 from data.oi_fetcher import run_oi_fetcher
@@ -50,8 +55,14 @@ from core.config import ENABLE_WS_FOR_TOP_PAIRS, TOP_PAIRS_COUNT
 
 logger = setup_logger("main", logging.INFO)
 
+LOG_PRINTED = False
 
 def print_banner():
+    global LOG_PRINTED
+    if LOG_PRINTED:
+        return
+    LOG_PRINTED = True
+    
     banner = f"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
