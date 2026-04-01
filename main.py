@@ -57,10 +57,39 @@ async def scanner_async_loop():
                             from app.services import market as market_service
                             candles = market_service.parse_klines(klines)
                             from app.services.strategy import generate_signal_from_candles
+                            from app.services import bias_engine
+                            
                             signal = generate_signal_from_candles(pair, candles)
                             
                             if signal and signal.get("signal") != "NO TRADE" and signal.get("confidence", 0) >= config.MIN_CONFIDENCE:
-                                results.append(signal)
+                                btc_1h = await fetch_klines_async(session, "BTCUSDT", "1h", 20)
+                                if btc_1h:
+                                    btc_candles = market_service.parse_klines(btc_1h)
+                                    bias = bias_engine.get_market_bias(btc_candles, [])
+                                    
+                                    signal_direction = signal.get("signal")
+                                    market_bias = bias.get("bias", "NEUTRAL")
+                                    
+                                    if market_bias == "BEARISH" and signal_direction == "BUY":
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
+                                    elif market_bias == "BULLISH" and signal_direction == "SELL":
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
+                                    elif market_bias == signal_direction:
+                                        signal["confidence"] = min(100, signal.get("confidence", 0) + 10)
+                                    
+                                    signal["market_bias"] = market_bias
+                                    
+                                    pair_key = f"signal:{pair}"
+                                    if not get_cache(pair_key):
+                                        results.append(signal)
+                                        set_cache(pair_key, True, ttl=300)
+                                    else:
+                                        logger.info(f">>> SKIPPED (cooldown): {pair}")
+                                else:
+                                    pair_key = f"signal:{pair}"
+                                    if not get_cache(pair_key):
+                                        results.append(signal)
+                                        set_cache(pair_key, True, ttl=300)
                         else:
                             SCANNER_ERROR_COUNT += 1
                     except Exception as e:

@@ -137,18 +137,20 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
         
         if not liquidity_aligned:
-            confidence = max(0, confidence - 15)
+            confidence = max(0, confidence - 20)
         else:
-            confidence += 10
+            confidence += 5
         
         if not volatility_pass:
             confidence -= 10
+        elif atr_ratio > 0.01:
+            confidence += 5
         
         if trend == "RANGE" and not is_reversal:
-            confidence = max(0, confidence - 20)
+            confidence = max(0, confidence - 25)
         
         if trend == "RANGE" and is_reversal:
-            confidence += 15
+            confidence += 10
         
         confidence = max(0, min(confidence, 100))
         
@@ -276,18 +278,20 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
         
         if not liquidity_aligned:
-            confidence = max(0, confidence - 15)
+            confidence = max(0, confidence - 20)
         else:
-            confidence += 10
+            confidence += 5
         
         if not volatility_pass:
             confidence -= 10
+        elif atr_ratio > 0.01:
+            confidence += 5
         
         if trend == "RANGE" and not is_reversal:
-            confidence = max(0, confidence - 20)
+            confidence = max(0, confidence - 25)
         
         if trend == "RANGE" and is_reversal:
-            confidence += 15
+            confidence += 10
         
         confidence = max(0, min(confidence, 100))
         
