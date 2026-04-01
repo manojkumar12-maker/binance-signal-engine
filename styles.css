@@ -405,6 +405,47 @@ body {
     padding: 16px;
 }
 
+.analytics-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+
+.stat-card {
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: center;
+}
+
+.stat-card.wide {
+    grid-column: span 2;
+}
+
+.stat-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.stat-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
 .panel-title {
     font-family: 'Orbitron', sans-serif;
     font-size: 16px;
@@ -488,6 +529,23 @@ body {
 
 .signals-table .close-btn:hover {
     background: var(--accent-red);
+    color: #fff;
+}
+
+.signals-table .trade-btn {
+    padding: 4px 8px;
+    background: rgba(0, 192, 135, 0.2);
+    border: 1px solid var(--accent-green);
+    border-radius: 4px;
+    color: var(--accent-green);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-right: 4px;
+}
+
+.signals-table .trade-btn:hover {
+    background: var(--accent-green);
     color: #fff;
 }
 

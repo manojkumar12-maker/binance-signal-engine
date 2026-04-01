@@ -1,14 +1,164 @@
 const API_BASE_URL = 'https://binance-signal-engine-production.up.railway.app/api';
 
-let activeSignals = [];
-let closedSignals = [];
+let activeTrades = [];
+let closedTrades = [];
 let monitoringInterval = null;
+let analyticsData = null;
 
-const pairs = [
-    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-    'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT',
-    'LINKUSDT', 'ATOMUSDT', 'UNIUSDT', 'LTCUSDT', 'ETCUSDT'
-];
+async function fetchAnalytics() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/analytics`);
+        analyticsData = await response.json();
+        renderAnalytics();
+    } catch (error) {
+        console.error('Error fetching analytics:', error);
+    }
+}
+
+function renderAnalytics() {
+    if (!analyticsData) return;
+    
+    const container = document.getElementById('analyticsPanel');
+    if (container) {
+        const { total_trades, wins, losses, win_rate, avg_win, avg_loss, tp1_hits, tp2_hits, tp3_hits, sl_hits, avg_rr, total_pnl, open_trades } = analyticsData;
+        
+        container.innerHTML = `
+            <div class="analytics-grid">
+                <div class="stat-card">
+                    <span class="stat-label">Total Trades</span>
+                    <span class="stat-value">${total_trades}</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Win Rate</span>
+                    <span class="stat-value ${win_rate >= 50 ? 'profit' : 'loss'}">${win_rate}%</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Wins / Losses</span>
+                    <span class="stat-value">${wins} / ${losses}</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Avg Win</span>
+                    <span class="stat-value profit">+${avg_win}%</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Avg Loss</span>
+                    <span class="stat-value loss">-${avg_loss}%</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Avg RR</span>
+                    <span class="stat-value">${avg_rr}</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">TP1 Hits</span>
+                    <span class="stat-value">${tp1_hits}</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">TP2 Hits</span>
+                    <span class="stat-value">${tp2_hits}</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">TP3 Hits</span>
+                    <span class="stat-value">${tp3_hits}</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">SL Hits</span>
+                    <span class="stat-value">${sl_hits}</span>
+                </div>
+                <div class="stat-card wide">
+                    <span class="stat-label">Total P&L</span>
+                    <span class="stat-value ${total_pnl >= 0 ? 'profit' : 'loss'}">${total_pnl >= 0 ? '+' : ''}${total_pnl}%</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Open Trades</span>
+                    <span class="stat-value">${open_trades}</span>
+                </div>
+            </div>
+        `;
+    }
+}
+
+async function openTrade(signal) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/trade/open`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                pair: signal.pair,
+                type: signal.signal,
+                entry: signal.entry_primary,
+                entry_limit: signal.entry_limit,
+                sl: signal.sl,
+                tp1: signal.tp1,
+                tp2: signal.tp2,
+                tp3: signal.tp3,
+                confidence: signal.confidence
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            activeTrades.push(data.trade);
+            renderActiveTrades();
+            fetchAnalytics();
+        }
+    } catch (error) {
+        console.error('Error opening trade:', error);
+    }
+}
+
+async function closeTrade(tradeId, remarks, closePrice) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/trade/${tradeId}/close`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ remarks, close_price: closePrice })
+        });
+        const data = await response.json();
+        if (data.success) {
+            const index = activeTrades.findIndex(t => t.id === tradeId);
+            if (index >= 0) {
+                const trade = activeTrades.splice(index, 1)[0];
+                trade.status = data.trade.status;
+                trade.pnl_pct = data.trade.pnl_pct;
+                trade.closed_at = data.trade.closed_at;
+                trade.remarks = remarks;
+                closedTrades.unshift(trade);
+            }
+            renderActiveTrades();
+            renderClosedTrades();
+            fetchAnalytics();
+        }
+    } catch (error) {
+        console.error('Error closing trade:', error);
+    }
+}
+
+async function removeTrade(tradeId) {
+    try {
+        await fetch(`${API_BASE_URL}/trade/${tradeId}`, { method: 'DELETE' });
+        activeTrades = activeTrades.filter(t => t.id !== tradeId);
+        renderActiveTrades();
+        fetchAnalytics();
+    } catch (error) {
+        console.error('Error removing trade:', error);
+    }
+}
+
+async function syncWithBackend() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/trades?status=open`);
+        const data = await response.json();
+        activeTrades = data.trades || [];
+        
+        const closedResponse = await fetch(`${API_BASE_URL}/trades?status=closed`);
+        const closedData = await closedResponse.json();
+        closedTrades = closedData.trades || [];
+        
+        renderActiveTrades();
+        renderClosedTrades();
+    } catch (error) {
+        console.error('Error syncing with backend:', error);
+    }
+}
 
 async function fetchTopSignals() {
     updateStatus('scanning');
@@ -31,237 +181,156 @@ async function fetchTopSignals() {
         }
         
         for (const signal of newSignals) {
-            const existingIndex = activeSignals.findIndex(s => s.pair === signal.pair);
+            const existingIndex = activeTrades.findIndex(t => t.pair === signal.pair && t.status === 'OPEN');
             const currentPrice = currentPrices[signal.pair] || signal.entry_primary;
             
             if (existingIndex < 0) {
-                activeSignals.push({
-                    ...signal,
-                    currentPrice: currentPrice,
-                    id: Date.now() + Math.random(),
-                    createdAt: new Date().toISOString()
-                });
+                signal.currentPrice = currentPrice;
+                signal.entry = signal.entry_primary;
+                signal.signal_type = signal.signal;
             } else {
-                activeSignals[existingIndex].currentPrice = currentPrice;
-                activeSignals[existingIndex].confidence = signal.confidence;
+                activeTrades[existingIndex].currentPrice = currentPrice;
+                activeTrades[existingIndex].confidence = signal.confidence;
             }
         }
     } catch (error) {
         console.error('Error fetching top signals:', error);
     }
     
-    saveSignals();
-    renderActiveSignals();
+    renderActiveTrades();
     updateStatus('connected');
     updateLastUpdate();
 }
 
-async function scanAllPairs() {
-    updateStatus('scanning');
-    
-    for (const pair of pairs) {
+async function monitorTrades() {
+    for (const trade of activeTrades) {
         try {
-            const response = await fetch(`${API_BASE_URL}/signal/${pair}?timeframe=1h`);
-            const data = await response.json();
-            
-            if ((data.signal === 'BUY' || data.signal === 'SELL') && data.confidence >= 60) {
-                const existingIndex = activeSignals.findIndex(s => s.pair === data.pair);
-                if (existingIndex < 0) {
-                    const newSignal = {
-                        ...data,
-                        currentPrice: data.entry_primary || data.entry,
-                        id: Date.now() + Math.random(),
-                        createdAt: new Date().toISOString()
-                    };
-                    activeSignals.push(newSignal);
-                }
-            }
-        } catch (error) {
-            console.error('Error scanning:', pair, error);
-        }
-    }
-    
-    saveSignals();
-    renderActiveSignals();
-    updateStatus('connected');
-    updateLastUpdate();
-}
-
-function removeSignal(id) {
-    activeSignals = activeSignals.filter(s => s.id !== id);
-    saveSignals();
-    renderActiveSignals();
-}
-
-function closeSignal(id, remarks, closedPrice) {
-    const signal = activeSignals.find(s => s.id === id);
-    if (!signal) return;
-    
-    const closedSignal = {
-        ...signal,
-        closedAt: new Date().toISOString(),
-        closedPrice: closedPrice,
-        remarks: remarks
-    };
-    
-    closedSignals.unshift(closedSignal);
-    activeSignals = activeSignals.filter(s => s.id !== id);
-    
-    saveSignals();
-    renderActiveSignals();
-    renderClosedSignals();
-}
-
-async function monitorSignals() {
-    for (const signal of activeSignals) {
-        try {
-            const response = await fetch(`${API_BASE_URL}/signal/${signal.pair}?timeframe=1h`);
+            const response = await fetch(`${API_BASE_URL}/signal/${trade.pair}?timeframe=1h`);
             const data = await response.json();
             
             const currentPrice = data.entry_primary || data.entry;
-            let closed = false;
-            let remarks = '';
-            let closedPrice = currentPrice;
             
-            if (signal.signal === 'BUY') {
-                if (currentPrice <= signal.sl) {
-                    closed = true;
-                    remarks = 'SL Hit';
-                    closedPrice = signal.sl;
-                } else if (currentPrice >= signal.tp3) {
-                    closed = true;
-                    remarks = 'TP3 Hit';
-                    closedPrice = signal.tp3;
-                } else if (currentPrice >= signal.tp2) {
-                    closed = true;
-                    remarks = 'TP2 Hit';
-                    closedPrice = signal.tp2;
-                } else if (currentPrice >= signal.tp1) {
-                    closed = true;
-                    remarks = 'TP1 Hit';
-                    closedPrice = signal.tp1;
-                }
-            } else if (signal.signal === 'SELL') {
-                if (currentPrice >= signal.sl) {
-                    closed = true;
-                    remarks = 'SL Hit';
-                    closedPrice = signal.sl;
-                } else if (currentPrice <= signal.tp3) {
-                    closed = true;
-                    remarks = 'TP3 Hit';
-                    closedPrice = signal.tp3;
-                } else if (currentPrice <= signal.tp2) {
-                    closed = true;
-                    remarks = 'TP2 Hit';
-                    closedPrice = signal.tp2;
-                } else if (currentPrice <= signal.tp1) {
-                    closed = true;
-                    remarks = 'TP1 Hit';
-                    closedPrice = signal.tp1;
-                }
-            }
+            const result = await fetch(`${API_BASE_URL}/trade/${trade.id}?price=${currentPrice}`, {
+                method: 'PUT'
+            });
+            const updateResult = await result.json();
             
-            if (closed) {
-                closeSignal(signal.id, remarks, closedPrice);
+            if (updateResult.trade && updateResult.trade.status !== 'OPEN') {
+                const index = activeTrades.findIndex(t => t.id === trade.id);
+                if (index >= 0) {
+                    const closedTrade = activeTrades.splice(index, 1)[0];
+                    closedTrade.status = updateResult.trade.status;
+                    closedTrade.pnl_pct = updateResult.trade.pnl_pct;
+                    closedTrade.closed_at = updateResult.trade.closed_at;
+                    closedTrade.remarks = updateResult.trade.remarks;
+                    closedTrades.unshift(closedTrade);
+                }
+                renderActiveTrades();
+                renderClosedTrades();
+                fetchAnalytics();
+            } else {
+                trade.currentPrice = currentPrice;
             }
         } catch (error) {
-            console.error('Error monitoring signal:', signal.pair, error);
+            console.error('Error monitoring trade:', trade.pair, error);
         }
     }
 }
 
-function renderActiveSignals() {
+function renderActiveTrades() {
     const tbody = document.getElementById('activeSignalsBody');
     tbody.innerHTML = '';
     
-    if (activeSignals.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">No active signals. Scanning...</td></tr>';
+    if (activeTrades.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary)">No active trades. Scanning...</td></tr>';
         return;
     }
     
-    activeSignals.forEach(signal => {
-        const entry = signal.entry_primary || signal.entry;
+    activeTrades.forEach(trade => {
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>${signal.pair}</td>
-            <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
-            <td>${formatPrice(signal.currentPrice || entry)}</td>
-            <td>${formatPrice(signal.entry_limit || '--')}</td>
-            <td>${formatPrice(signal.tp1)}</td>
-            <td>${formatPrice(signal.tp2)}</td>
-            <td>${formatPrice(signal.tp3)}</td>
-            <td>${formatPrice(signal.sl)}</td>
-            <td>${signal.risk_pct || '--'}%</td>
-            <td>${signal.confidence}%</td>
+            <td>${trade.pair}</td>
+            <td class="${trade.type === 'BUY' ? 'signal-buy' : 'signal-sell'}">${trade.type}</td>
+            <td>${formatPrice(trade.currentPrice || trade.entry)}</td>
+            <td>${formatPrice(trade.entry_limit || '--')}</td>
+            <td>${formatPrice(trade.tp1)}</td>
+            <td>${formatPrice(trade.tp2)}</td>
+            <td>${formatPrice(trade.tp3)}</td>
+            <td>${formatPrice(trade.sl)}</td>
+            <td>${trade.confidence}%</td>
+            <td>${trade.updates || 0}</td>
             <td>
-                <button class="close-btn" onclick="closeSignalManual(${signal.id})">Close</button>
-                <button class="action-btn" onclick="removeSignal(${signal.id})">Remove</button>
+                <button class="trade-btn" onclick="openTradeFromSignal('${trade.pair}')">+</button>
+                <button class="close-btn" onclick="closeTradeManual('${trade.id}')">Close</button>
+                <button class="action-btn" onclick="removeTrade('${trade.id}')">Remove</button>
             </td>
         `;
         tbody.appendChild(row);
     });
 }
 
-function renderClosedSignals() {
+function renderClosedTrades() {
     const tbody = document.getElementById('closedSignalsBody');
     tbody.innerHTML = '';
     
-    if (closedSignals.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary)">No closed signals yet</td></tr>';
+    if (closedTrades.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary)">No closed trades yet</td></tr>';
         return;
     }
     
-    closedSignals.forEach(signal => {
-        const entry = signal.entry_primary || signal.entry;
-        const pl = signal.signal === 'BUY' 
-            ? ((signal.closedPrice - entry) / entry * 100).toFixed(2)
-            : ((entry - signal.closedPrice) / entry * 100).toFixed(2);
-        
+    closedTrades.forEach(trade => {
+        const pl = trade.pnl_pct || 0;
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>${signal.pair}</td>
-            <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
-            <td>${formatPrice(signal.entry)}</td>
-            <td>${formatPrice(signal.closedPrice)}</td>
-            <td>${signal.remarks}</td>
-            <td class="${parseFloat(pl) >= 0 ? 'profit' : 'loss'}">${pl}%</td>
+            <td>${trade.pair}</td>
+            <td class="${trade.type === 'BUY' ? 'signal-buy' : 'signal-sell'}">${trade.type}</td>
+            <td>${formatPrice(trade.entry)}</td>
+            <td>${trade.status}</td>
+            <td>${trade.remarks || '-'}</td>
+            <td class="${pl >= 0 ? 'profit' : 'loss'}">${pl >= 0 ? '+' : ''}${pl}%</td>
         `;
         tbody.appendChild(row);
     });
 }
 
-async function closeSignalManual(id) {
-    const signal = activeSignals.find(s => s.id === id);
-    if (!signal) return;
+async function openTradeFromSignal(pair) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/signal/${pair}?timeframe=1h`);
+        const data = await response.json();
+        
+        if (data.signal === 'BUY' || data.signal === 'SELL') {
+            await openTrade({
+                pair: data.pair,
+                signal: data.signal,
+                entry_primary: data.entry_primary,
+                entry_limit: data.entry_limit,
+                sl: data.sl,
+                tp1: data.tp1,
+                tp2: data.tp2,
+                tp3: data.tp3,
+                confidence: data.confidence
+            });
+        }
+    } catch (error) {
+        console.error('Error opening trade from signal:', error);
+    }
+}
+
+async function closeTradeManual(tradeId) {
+    const trade = activeTrades.find(t => t.id === tradeId);
+    if (!trade) return;
     
     const remarks = prompt('Enter closing remarks (e.g., Manual Close, TP Hit, SL Hit):', 'Manual Close');
     if (remarks === null) return;
     
-    const entry = signal.entry_primary || signal.entry;
-    
     try {
-        const response = await fetch(`${API_BASE_URL}/signal/${signal.pair}?timeframe=1h`);
+        const response = await fetch(`${API_BASE_URL}/signal/${trade.pair}?timeframe=1h`);
         const data = await response.json();
-        closeSignal(id, remarks, data.entry_primary || data.entry);
+        const closePrice = data.entry_primary || data.entry;
+        await closeTrade(tradeId, remarks, closePrice);
     } catch (error) {
-        closeSignal(id, remarks, signal.currentPrice || entry);
-    }
-}
-
-function saveSignals() {
-    localStorage.setItem('activeSignals', JSON.stringify(activeSignals));
-    localStorage.setItem('closedSignals', JSON.stringify(closedSignals));
-}
-
-function loadSignals() {
-    try {
-        const active = localStorage.getItem('activeSignals');
-        const closed = localStorage.getItem('closedSignals');
-        
-        if (active) activeSignals = JSON.parse(active);
-        if (closed) closedSignals = JSON.parse(closed);
-    } catch (e) {
-        console.error('Error loading signals:', e);
+        const closePrice = trade.currentPrice || trade.entry;
+        await closeTrade(tradeId, remarks, closePrice);
     }
 }
 
@@ -304,15 +373,12 @@ function updateLastUpdate() {
 }
 
 function init() {
-    loadSignals();
-    renderActiveSignals();
-    renderClosedSignals();
-    
+    syncWithBackend();
+    fetchAnalytics();
     fetchTopSignals();
     
     monitoringInterval = setInterval(() => {
-        fetchTopSignals();
-        monitorSignals();
+        monitorTrades();
     }, 30000);
 }
 

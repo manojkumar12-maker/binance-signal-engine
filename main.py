@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, 'app')
 
 from app.services.strategy import generate_signal
+from app.services import tracker
 
 app = Flask(__name__)
 
@@ -69,6 +70,63 @@ def get_top_signals():
         "signals": signals[:limit],
         "count": len(signals)
     })
+
+@app.route('/api/trades', methods=['GET'])
+def get_trades():
+    status = request.args.get('status', 'all')
+    if status == 'open':
+        return jsonify({"trades": tracker.get_open_trades(), "count": len(tracker.get_open_trades())})
+    elif status == 'closed':
+        return jsonify({"trades": tracker.get_closed_trades(), "count": len(tracker.get_closed_trades())})
+    else:
+        all_trades = tracker.load_trades()
+        return jsonify({"trades": all_trades, "count": len(all_trades)})
+
+@app.route('/api/trade/open', methods=['POST'])
+def open_trade():
+    data = request.json
+    trade = tracker.create_trade(
+        pair=data.get('pair'),
+        signal_type=data.get('type'),
+        entry=data.get('entry'),
+        sl=data.get('sl'),
+        tp1=data.get('tp1'),
+        tp2=data.get('tp2'),
+        tp3=data.get('tp3'),
+        confidence=data.get('confidence', 0),
+        entry_limit=data.get('entry_limit')
+    )
+    tracker.add_trade(trade)
+    return jsonify({"success": True, "trade": trade})
+
+@app.route('/api/trade/<trade_id>', methods=['PUT'])
+def update_trade(trade_id):
+    current_price = float(request.args.get('price', 0))
+    if current_price > 0:
+        result = tracker.update_trade(trade_id, current_price)
+        return jsonify({"success": True, "trade": result})
+    return jsonify({"success": False, "error": "Price required"}), 400
+
+@app.route('/api/trade/<trade_id>', methods=['DELETE'])
+def delete_trade(trade_id):
+    tracker.remove_trade(trade_id)
+    return jsonify({"success": True})
+
+@app.route('/api/trade/<trade_id>/close', methods=['POST'])
+def close_trade(trade_id):
+    data = request.json
+    result = tracker.close_trade_manually(
+        trade_id=trade_id,
+        remarks=data.get('remarks', 'Manual Close'),
+        close_price=float(data.get('close_price', 0))
+    )
+    if result:
+        return jsonify({"success": True, "trade": result})
+    return jsonify({"success": False, "error": "Trade not found"}), 404
+
+@app.route('/api/analytics')
+def get_analytics():
+    return jsonify(tracker.get_analytics())
 
 if __name__ == '__main__':
     print(f"Starting on port {port}...")

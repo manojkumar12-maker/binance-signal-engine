@@ -23,23 +23,27 @@
         </header>
 
         <main class="main-content">
+            <div class="panel analytics-panel" id="analyticsPanel">
+                <h2 class="panel-title">📈 Analytics</h2>
+            </div>
+            
             <div class="panels-container">
                 <div class="panel active-signals-panel">
-                    <h2 class="panel-title">📊 Active Signals</h2>
+                    <h2 class="panel-title">📊 Active Trades</h2>
                     <div class="table-container">
                         <table class="signals-table" id="activeSignalsTable">
                             <thead>
                                 <tr>
                                     <th>Pair</th>
-                                    <th>Signal</th>
+                                    <th>Type</th>
                                     <th>Current</th>
                                     <th>Limit</th>
                                     <th>TP1</th>
                                     <th>TP2</th>
                                     <th>TP3</th>
                                     <th>SL</th>
-                                    <th>Risk%</th>
                                     <th>Conf%</th>
+                                    <th>Updates</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -50,15 +54,15 @@
                 </div>
 
                 <div class="panel closed-signals-panel">
-                    <h2 class="panel-title">🔒 Closed Signals</h2>
+                    <h2 class="panel-title">🔒 Closed Trades</h2>
                     <div class="table-container">
                         <table class="signals-table" id="closedSignalsTable">
                             <thead>
                                 <tr>
                                     <th>Pair</th>
-                                    <th>Signal</th>
+                                    <th>Type</th>
                                     <th>Entry</th>
-                                    <th>Closed</th>
+                                    <th>Status</th>
                                     <th>Remarks</th>
                                     <th>P/L</th>
                                 </tr>
