@@ -139,17 +139,14 @@ def calculate_confidence(trend: str, sweep: Optional[str], volume: bool, strengt
     score = 50
     
     if trend != "RANGE":
-        score += 20
-    else:
-        score -= 5
-    
-    if htf_aligned:
         score += 15
     else:
-        if sweep and "REJECTION" in sweep:
-            score += 5
-        else:
-            score -= 5
+        score -= 15
+    
+    if htf_aligned:
+        score += 10
+    else:
+        score -= 10
     
     if sweep:
         if "REJECTION" in sweep:
@@ -157,7 +154,19 @@ def calculate_confidence(trend: str, sweep: Optional[str], volume: bool, strengt
         else:
             score += 15
     else:
-        score -= 5
+        score -= 10
+    
+    if volume:
+        score += 15
+    else:
+        score += 5
+    
+    score += min(15, strength)
+    
+    if is_reversal:
+        score += 15
+    
+    return max(0, min(100, score))
     
     if volume:
         score += 20
@@ -275,13 +284,16 @@ def process_pair(pair: str) -> Optional[Dict]:
         levels = build_trade_levels(entry, trend)
         risk_pct = round(abs(entry - levels["sl"]) / entry * 100, 2) if entry > 0 else 0
         
+        if risk_pct < 0.2 or risk_pct > 2.0:
+            return None
+        
         register_active_pair(pair)
         
         return {
             "pair": pair,
             "signal": signal_type,
             "confidence": confidence,
-            "trend": f"{trend} ({htf_trend})",
+            "trend": f"{trend}/{htf_trend}",
             "liquidity": sweep,
             "volume": volume,
             "timestamp": datetime.utcnow().isoformat(),
