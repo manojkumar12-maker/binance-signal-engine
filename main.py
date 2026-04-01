@@ -3,6 +3,7 @@ from flask_cors import CORS
 import os
 import logging
 import sys
+import requests
 sys.path.insert(0, 'app')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -29,11 +30,40 @@ logger.info("=== READY ===")
 
 port = int(os.environ.get("PORT", 8000))
 
-TRADING_PAIRS = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT",
-    "LINKUSDT", "ATOMUSDT", "UNIUSDT", "LTCUSDT", "ETCUSDT"
+BLACKLIST = [
+    "LUNA2USDT", "USTCUSDT", "BTTUSDT", "HOTUSDT", "WAVESUSDT",
+    "1INCHUSDT", "CHZUSDT", "ENJUSDT", "MANAUSDT", "SANDUSDT",
+    "GALAUSDT", "AXSUSDT", "APEUSDT", "FTMUSDT", "OPUSDT"
 ]
+
+def get_all_usdt_pairs():
+    try:
+        url = f"{config.FUTURES_API_URL}/fapi/v1/exchangeInfo"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        pairs = []
+        for symbol in data.get('symbols', []):
+            if (
+                symbol.get('status') == 'TRADING' and
+                symbol.get('quoteAsset') == 'USDT' and
+                symbol.get('contractType') == 'PERPETUAL' and
+                symbol.get('marginAsset') == 'USDT' and
+                symbol.get('symbol') not in BLACKLIST
+            ):
+                pairs.append(symbol.get('symbol'))
+        
+        logger.info(f"[CONFIG] Found {len(pairs)} USDT pairs from Binance")
+        return pairs[:200]
+    except Exception as e:
+        logger.error(f"[CONFIG] Error fetching pairs: {e}")
+        return [
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+            "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"
+        ]
+
+TRADING_PAIRS = get_all_usdt_pairs()
+logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}...")
 
 def get_pairs_with_oi_limit(pairs, limit):
     return pairs[:limit]
