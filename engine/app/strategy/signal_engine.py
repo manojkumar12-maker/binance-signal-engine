@@ -276,22 +276,47 @@ def process_pair(pair: str) -> Optional[Dict]:
 def scan_all_pairs(max_signals: int = 5) -> List[Dict]:
     all_signals = []
     debug_scores = []
+    error_count = 0
     
     for pair in PAIRS:
         try:
-            signal, score_info = process_pair_debug(pair)
-            debug_scores.append((pair, score_info))
+            result = process_pair_debug(pair)
+            
+            if result is None:
+                debug_scores.append((pair, {'score': 0, 'trend': 'NO_DATA', 'sweep': None, 'volume': False}))
+                continue
+            
+            if not isinstance(result, tuple):
+                logger.error(f"{pair}: process_pair_debug returned {type(result).__name__}: {result}")
+                debug_scores.append((pair, {'score': 0, 'trend': 'FUNC_ERROR', 'sweep': None, 'volume': False}))
+                error_count += 1
+                continue
+            
+            signal, score_info = result
+            
+            if score_info:
+                debug_scores.append((pair, score_info))
+            else:
+                debug_scores.append((pair, {'score': 0, 'trend': 'NO_INFO', 'sweep': None, 'volume': False}))
+            
             if signal:
                 all_signals.append(signal)
         except Exception as e:
             logger.error(f"Error processing {pair}: {e}")
+            debug_scores.append((pair, {'score': 0, 'trend': 'EXCEPTION', 'sweep': None, 'volume': False}))
+            error_count += 1
     
-    debug_scores.sort(key=lambda x: x[1]['score'] if x[1] else 0, reverse=True)
+    if error_count > 0:
+        logger.warning(f"⚠️ Errors this scan: {error_count}")
+    
+    debug_scores.sort(key=lambda x: x[1]['score'] if x[1] and isinstance(x[1], dict) else 0, reverse=True)
     
     logger.info(f"=== TOP 10 SCORES ===")
     for pair, info in debug_scores[:10]:
-        if info:
-            logger.info(f"{pair}: score={info['score']}, trend={info['trend']}, sweep={info['sweep']}, vol={info['volume']}")
+        if info and isinstance(info, dict):
+            logger.info(f"{pair}: score={info.get('score', 0)}, trend={info.get('trend', '?')}, sweep={info.get('sweep')}, vol={info.get('volume')}")
+        else:
+            logger.info(f"{pair}: score=0, info={info}")
     
     all_signals = sorted(all_signals, key=lambda x: x['confidence'], reverse=True)
     
