@@ -134,45 +134,31 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         htf_aligned = htf_trend == "RANGE" or htf_trend == trend
         
-        if not htf_aligned:
-            confidence = scoring.calculate_confidence(trend, sweep, volume_confirmed, total_strength, volume_spike)
-            if confidence < config.MIN_CONFIDENCE:
-                return {
-                    "pair": pair,
-                    "signal": "NO TRADE",
-                    "entry_primary": round(current_price, 2),
-                    "entry_limit": 0,
-                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                    "confidence": confidence,
-                    "trend": f"{trend} ({htf_trend})",
-                    "liquidity": sweep,
-                    "volume": volume_confirmed,
-                    "atr_ratio": atr_ratio,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "reason": f"HTF/LTF trend mismatch (confidence: {confidence})"
-                }
-        
-        liquidity_aligned = liquidity.align_sweep_with_trend(trend, sweep)
-        
-        if not liquidity_aligned:
-            confidence = scoring.calculate_confidence(trend, sweep, volume_confirmed, total_strength, volume_spike)
-            if confidence < config.MIN_CONFIDENCE:
-                return {
-                    "pair": pair,
-                    "signal": "NO TRADE",
-                    "entry_primary": round(current_price, 2),
-                    "entry_limit": 0,
-                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                    "confidence": confidence,
-                    "trend": f"{trend} ({htf_trend})",
-                    "liquidity": sweep,
-                    "volume": volume_confirmed,
-                    "atr_ratio": atr_ratio,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "reason": f"Sweep not aligned with trend (confidence: {confidence})"
-                }
-        
         confidence = scoring.calculate_confidence(trend, sweep, volume_confirmed, total_strength, volume_spike)
+        
+        if htf_aligned:
+            confidence += 15
+        else:
+            if sweep and "REJECTION" in sweep:
+                confidence += 5
+            else:
+                confidence -= 10
+        
+        if trend == "RANGE":
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": round(current_price, 2),
+                "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "Market in Range"
+            }
         
         market_bias = None
         
