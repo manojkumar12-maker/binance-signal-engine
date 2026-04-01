@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict
 from core.config import SCAN_INTERVAL, PAIRS, WARMUP_SECONDS, INITIAL_FETCH_LIMIT
 from core.logging_utils import setup_logger
-from strategy.signal_engine import scan_all_pairs, process_pair
+from strategy.signal_engine import scan_all_pairs, process_pair, process_pair_debug
 from alerts.telegram import send_alert
 from core.redis_client import get_data, set_data
 from data.rest_fetcher import sync_all_data
@@ -132,9 +132,17 @@ async def run_monitoring():
                 logger.info(f"📋 Monitoring {len(active_signals)} active trades")
                 
                 for signal in active_signals:
-                    current = process_pair(signal['pair'])
-                    if current:
-                        logger.info(f"   📌 {signal['pair']}: {current['entry']} (Target: {signal['tp3']})")
+                    try:
+                        result = process_pair(signal['pair'])
+                        if isinstance(result, tuple):
+                            current = result[0]
+                        else:
+                            current = result
+                        
+                        if current and isinstance(current, dict):
+                            logger.info(f"   📌 {signal['pair']}: {current.get('entry', 'N/A')} (Target: {signal.get('tp3', 'N/A')})")
+                    except Exception as e:
+                        logger.error(f"Monitor error for {signal.get('pair', 'unknown')}: {e}")
             
         except Exception as e:
             logger.error(f"Monitor error: {e}")
