@@ -230,13 +230,12 @@ def get_top_signals():
     logger.info(">>> API: Returning cached signals")
     
     cached = get_cache("top_signals")
-    if cached:
-        SIGNALS_CACHE = cached
+    cache_to_use = cached if cached else SIGNALS_CACHE
     
     limit = int(request.args.get('limit', 5))
     min_confidence = int(request.args.get('min_confidence', config.MIN_CONFIDENCE))
     
-    filtered = [s for s in SIGNALS_CACHE if s.get("confidence", 0) >= min_confidence]
+    filtered = [s for s in cache_to_use if s.get("confidence", 0) >= min_confidence]
     filtered = filtered[:limit]
     
     logger.info(f">>> API: Returning {len(filtered)} signals from cache")
