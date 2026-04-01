@@ -1,4 +1,7 @@
 from typing import Optional, Dict, List
+import logging
+
+logger = logging.getLogger("scoring_debug")
 
 
 def calculate_confidence(
@@ -9,22 +12,27 @@ def calculate_confidence(
     volume_spike: bool = False,
     htf_aligned: bool = True,
     market_bias: Optional[Dict] = None,
-    is_reversal: bool = False
+    is_reversal: bool = False,
+    debug: bool = False
 ) -> int:
-    score = 50  # Base score instead of starting at 0
+    score = 50
+    reasons = []
     
     if trend != "RANGE":
         score += 20
     else:
-        score -= 5  # Smaller penalty for range
+        reasons.append("RANGE_TREND")
+        score -= 5
     
     if htf_aligned:
         score += 15
     else:
         if liquidity and "REJECTION" in liquidity:
             score += 5
+            reasons.append("HTF_MISMATCH_REVERSAL")
         else:
-            score -= 5  # Reduced penalty
+            score -= 5
+            reasons.append("HTF_MISMATCH")
     
     if liquidity is not None:
         if "REJECTION" in liquidity:
@@ -32,7 +40,8 @@ def calculate_confidence(
         else:
             score += 15
     else:
-        score -= 5  # No liquidity detected
+        score -= 5
+        reasons.append("NO_LIQUIDITY")
     
     if volume_spike:
         score += 20
@@ -43,6 +52,7 @@ def calculate_confidence(
     
     if is_reversal:
         score += 15
+        reasons.append("REVERSAL")
     
     if market_bias:
         bias = market_bias.get("bias", "NEUTRAL")
@@ -54,6 +64,10 @@ def calculate_confidence(
             score += 10
         elif bias in ["BULLISH", "BEARISH"]:
             score -= 5
+            reasons.append("BIAS_MISMATCH")
+    
+    if debug:
+        logger.info(f"SCORE={score} | REASONS={reasons}")
     
     return max(0, min(score, 100))
 
@@ -63,7 +77,7 @@ def detect_reversal(candles: List[Dict], sweep_type: Optional[str]) -> bool:
         if len(candles) >= 2:
             last = candles[-1]
             prev = candles[-2]
-            if abs(last['close'] - prev['close']) / prev['close'] > 0.01:
+            if abs(last['close'] - prev['close']) / prev['close'] > 0.008:
                 return True
         return False
     

@@ -109,16 +109,65 @@ def check_volume(oi: float, oi_history: List[float], candles: List[Dict]) -> boo
     return oi_spike or absorption
 
 
-def calculate_confidence(trend: str, sweep: Optional[str], volume: bool, strength: int = 0) -> int:
-    score = 0
+def calculate_confidence(trend: str, sweep: Optional[str], volume: bool, strength: int = 0, 
+                        htf_aligned: bool = True, is_reversal: bool = False) -> int:
+    score = 50
+    
     if trend != "RANGE":
-        score += 25
+        score += 20
+    else:
+        score -= 5
+    
+    if htf_aligned:
+        score += 15
+    else:
+        if sweep and "REJECTION" in sweep:
+            score += 5
+        else:
+            score -= 5
+    
     if sweep:
-        score += 25
+        if "REJECTION" in sweep:
+            score += 25
+        else:
+            score += 15
+    else:
+        score -= 5
+    
     if volume:
-        score += 30
-    score += min(strength, 20)
-    return min(score, 100)
+        score += 20
+    else:
+        score += 5
+    
+    score += min(strength, 15)
+    
+    if is_reversal:
+        score += 15
+    
+    return max(0, min(score, 100))
+
+
+def detect_reversal(candles: List[Dict], sweep_type: Optional[str]) -> bool:
+    if not sweep_type or "REJECTION" not in sweep_type:
+        if len(candles) >= 2:
+            last = candles[-1]
+            prev = candles[-2]
+            if abs(last['close'] - prev['close']) / prev['close'] > 0.008:
+                return True
+        return False
+    
+    if len(candles) < 2:
+        return True
+    
+    last = candles[-1]
+    prev = candles[-2]
+    
+    if sweep_type == "SWEEP_LOW_REJECTION":
+        return last['close'] > prev['close']
+    elif sweep_type == "SWEEP_HIGH_REJECTION":
+        return last['close'] < prev['close']
+    
+    return True
 
 
 def refine_entry(candles: List[Dict], trend: str) -> float:
@@ -179,16 +228,10 @@ def process_pair(pair: str) -> Optional[Dict]:
     volume = check_volume(oi, oi_history, candles_1h)
     strength = candle_strength(candles_1h[-1]) if candles_1h else 0
     
-    if trend == "RANGE":
-        return None
+    htf_aligned = htf_trend == "RANGE" or htf_trend == trend
+    is_reversal = detect_reversal(candles_1h, sweep)
     
-    if htf_trend != "RANGE" and htf_trend != trend:
-        return None
-    
-    if not align_sweep(trend, sweep):
-        return None
-    
-    confidence = calculate_confidence(trend, sweep, volume, strength)
+    confidence = calculate_confidence(trend, sweep, volume, strength, htf_aligned, is_reversal)
     
     if confidence < MIN_CONFIDENCE:
         return None
@@ -215,16 +258,89 @@ def process_pair(pair: str) -> Optional[Dict]:
 
 def scan_all_pairs(max_signals: int = 5) -> List[Dict]:
     all_signals = []
+    debug_scores = []
+    
     for pair in PAIRS:
         try:
-            signal = process_pair(pair)
+            signal, score_info = process_pair_debug(pair)
+            debug_scores.append((pair, score_info))
             if signal:
                 all_signals.append(signal)
         except Exception as e:
             logger.error(f"Error processing {pair}: {e}")
+    
+    debug_scores.sort(key=lambda x: x[1]['score'] if x[1] else 0, reverse=True)
+    
+    logger.info(f"=== TOP 10 SCORES ===")
+    for pair, info in debug_scores[:10]:
+        if info:
+            logger.info(f"{pair}: score={info['score']}, trend={info['trend']}, sweep={info['sweep']}, vol={info['volume']}")
     
     all_signals = sorted(all_signals, key=lambda x: x['confidence'], reverse=True)
     
     valid_signals = [s for s in all_signals if is_new_signal(s)]
     
     return valid_signals[:max_signals]
+
+
+def process_pair_debug(pair: str) -> tuple:
+    candles_1h = get_data(f"{pair}:1h")
+    candles_4h_data = get_data(f"{pair}:4h")
+    oi = get_data(f"{pair}:oi") or 0
+    oi_history = get_data(f"{pair}:oi_history") or []
+    
+    if not validate_candles(candles_1h):
+        return None, None
+    
+    if not is_fresh(candles_1h):
+        return None, {'score': 0, 'trend': 'NOT_FRESH', 'sweep': None, 'volume': False}
+    
+    if not is_volatile(candles_1h):
+        return None, {'score': 0, 'trend': 'NOT_VOLATILE', 'sweep': None, 'volume': False}
+    
+    if not candles_4h_data:
+        candles_4h = build_4h(candles_1h)
+    else:
+        candles_4h = candles_4h_data
+    
+    trend = detect_trend(candles_1h)
+    htf_trend = detect_trend(candles_4h) if candles_4h else "RANGE"
+    sweep = detect_sweep(candles_1h)
+    volume = check_volume(oi, oi_history, candles_1h)
+    strength = candle_strength(candles_1h[-1]) if candles_1h else 0
+    
+    htf_aligned = htf_trend == "RANGE" or htf_trend == trend
+    is_rev = detect_reversal(candles_1h, sweep)
+    
+    confidence = calculate_confidence(trend, sweep, volume, strength, htf_aligned, is_rev)
+    
+    score_info = {
+        'score': confidence,
+        'trend': trend,
+        'htf': htf_trend,
+        'sweep': sweep,
+        'volume': volume,
+        'is_reversal': is_rev
+    }
+    
+    if confidence < MIN_CONFIDENCE:
+        return None, score_info
+    
+    signal_type = "BUY" if trend == "UPTREND" else "SELL"
+    entry = refine_entry(candles_1h, trend)
+    levels = build_trade_levels(entry, trend)
+    risk_pct = round(abs(entry - levels["sl"]) / entry * 100, 2) if entry > 0 else 0
+    
+    register_active_pair(pair)
+    
+    return {
+        "pair": pair,
+        "signal": signal_type,
+        "confidence": confidence,
+        "trend": f"{trend} ({htf_trend})",
+        "liquidity": sweep,
+        "volume": volume,
+        "timestamp": datetime.utcnow().isoformat(),
+        **levels,
+        "risk_pct": risk_pct
+    }, score_info
