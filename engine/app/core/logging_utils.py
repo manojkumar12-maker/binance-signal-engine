@@ -1,6 +1,8 @@
 import logging
 import sys
 
+_loggers_initialized = set()
+
 class ColoredFormatter(logging.Formatter):
     COLORS = {
         'DEBUG': '\033[36m',
@@ -29,20 +31,31 @@ class ColoredFormatter(logging.Formatter):
 
 
 def setup_logger(name: str = None, level: int = logging.INFO) -> logging.Logger:
+    if name is None:
+        name = "root"
+    
+    if name in _loggers_initialized:
+        return logging.getLogger(name)
+    
     logger = logging.getLogger(name)
     logger.setLevel(level)
+    logger.propagate = False
     
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(ColoredFormatter())
-        logger.addHandler(handler)
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(ColoredFormatter())
+    logger.addHandler(handler)
+    
+    _loggers_initialized.add(name)
     
     return logger
 
 
 def log_section(title: str, logger: logging.Logger = None):
     if logger is None:
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger("root")
     
     logger.info("")
     logger.info("=" * 60)
@@ -52,7 +65,7 @@ def log_section(title: str, logger: logging.Logger = None):
 
 def log_subsection(title: str, logger: logging.Logger = None):
     if logger is None:
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger("root")
     
     logger.info("")
     logger.info("-" * 50)
@@ -62,7 +75,7 @@ def log_subsection(title: str, logger: logging.Logger = None):
 
 def log_progress(current: int, total: int, prefix: str = "", logger: logging.Logger = None):
     if logger is None:
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger("root")
     
     pct = int(current / total * 20)
     bar = "█" * pct + "░" * (20 - pct)
@@ -71,7 +84,7 @@ def log_progress(current: int, total: int, prefix: str = "", logger: logging.Log
 
 def log_stats(stats: dict, logger: logging.Logger = None):
     if logger is None:
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger("root")
     
     logger.info("")
     logger.info("┌" + "─" * 40 + "┐")
@@ -84,4 +97,4 @@ def log_stats(stats: dict, logger: logging.Logger = None):
     logger.info("└" + "─" * 40 + "┘")
 
 
-DEFAULT_LOGGER = setup_logger()
+DEFAULT_LOGGER = setup_logger("root")
