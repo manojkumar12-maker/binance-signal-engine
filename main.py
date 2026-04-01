@@ -6,7 +6,7 @@ sys.path.insert(0, 'app')
 
 import config
 from app.services.strategy import generate_signal
-from app.services import tracker
+from app.services import tracker, market, bias_engine
 
 app = Flask(__name__)
 
@@ -33,11 +33,22 @@ def health():
 def get_signal(pair):
     timeframe = request.args.get('timeframe', '1h')
     fetch_oi = request.args.get('fetch_oi', 'true').lower() == 'true'
-    return jsonify(generate_signal(pair.upper(), timeframe, fetch_oi))
+    use_bias = request.args.get('use_bias', 'true').lower() == 'true'
+    return jsonify(generate_signal(pair.upper(), timeframe, fetch_oi, use_bias))
 
 @app.route('/api/pairs')
 def get_pairs():
     return jsonify({"pairs": TRADING_PAIRS})
+
+@app.route('/api/market-bias')
+def get_market_bias():
+    try:
+        btc_1h = market.get_klines("BTCUSDT", "1h", config.CANDLE_LIMIT)
+        btc_4h = market.get_klines("BTCUSDT", "4h", config.CANDLE_LIMIT)
+        bias = bias_engine.get_market_bias(btc_1h, btc_4h)
+        return jsonify(bias)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/signals')
 def get_all_signals():
@@ -50,7 +61,7 @@ def get_all_signals():
     
     for i, pair in enumerate(TRADING_PAIRS):
         fetch_oi = pair in pairs_with_oi
-        result = generate_signal(pair, timeframe, fetch_oi)
+        result = generate_signal(pair, timeframe, fetch_oi, True)
         if result.get("signal") != "NO TRADE" and result.get("confidence", 0) >= min_confidence:
             signals.append(result)
     
@@ -73,7 +84,7 @@ def get_top_signals():
     
     for pair in TRADING_PAIRS:
         fetch_oi = pair in pairs_with_oi
-        result = generate_signal(pair, timeframe, fetch_oi)
+        result = generate_signal(pair, timeframe, fetch_oi, True)
         if result.get("signal") != "NO TRADE" and result.get("confidence", 0) >= min_confidence:
             signals.append(result)
     
