@@ -124,6 +124,21 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "reason": "Liquidity not aligned with trend"
             }
         
+        if total_strength < 5:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": 0, "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "Weak candle strength"
+            }
+        
         confidence = scoring.calculate_confidence(
             trend, sweep, volume_confirmed, total_strength, volume_spike,
             htf_aligned=htf_aligned,
