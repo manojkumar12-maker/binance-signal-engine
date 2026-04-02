@@ -6,14 +6,12 @@ let signalsData = [];
 let monitoringInterval = null;
 let analyticsData = null;
 let sniperMode = false;
-let autoTrade = false;
 
 async function fetchConfig() {
     try {
         const response = await fetch(`${API_BASE_URL}/config`);
         const data = await response.json();
         sniperMode = data.sniper_mode || false;
-        autoTrade = data.auto_trade || false;
         updateToggleUI();
     } catch (error) {
         console.error('Error fetching config:', error);
@@ -34,33 +32,13 @@ async function toggleSniperMode() {
     }
 }
 
-async function toggleAutoTrade() {
-    autoTrade = !autoTrade;
-    try {
-        await fetch(`${API_BASE_URL}/config`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ auto_trade: autoTrade })
-        });
-        updateToggleUI();
-    } catch (error) {
-        console.error('Error toggling auto trade:', error);
-    }
-}
-
 function updateToggleUI() {
     const sniperToggle = document.getElementById('sniperToggle');
     const sniperLabel = document.getElementById('modeLabel');
-    const autoToggle = document.getElementById('autoTradeToggle');
-    const autoLabel = document.getElementById('autoTradeLabel');
     
     if (sniperToggle) sniperToggle.checked = sniperMode;
     if (sniperLabel) sniperLabel.textContent = sniperMode ? '🎯 SNIPER' : 'NORMAL';
     if (sniperLabel) sniperLabel.style.color = sniperMode ? '#ff6b6b' : 'var(--text-primary)';
-    
-    if (autoToggle) autoToggle.checked = autoTrade;
-    if (autoLabel) autoLabel.textContent = autoTrade ? 'AUTO: ON' : 'AUTO: OFF';
-    if (autoLabel) autoLabel.style.color = autoTrade ? '#00c087' : 'var(--text-primary)';
 }
 
 async function fetchAnalytics() {
@@ -461,11 +439,6 @@ function init() {
     const sniperToggle = document.getElementById('sniperToggle');
     if (sniperToggle) {
         sniperToggle.addEventListener('change', toggleSniperMode);
-    }
-    
-    const autoToggle = document.getElementById('autoTradeToggle');
-    if (autoToggle) {
-        autoToggle.addEventListener('change', toggleAutoTrade);
     }
     
     syncWithBackend();

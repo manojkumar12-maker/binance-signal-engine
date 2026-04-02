@@ -139,7 +139,7 @@ async def scanner_async_loop():
             
             cooldown_manager.cleanup_expired()
             
-            if config.AUTO_TRADE and SIGNALS_CACHE:
+            if SIGNALS_CACHE:
                 from app.services import tracker
                 for signal in SIGNALS_CACHE[:2]:
                     pair = signal.get("pair")
