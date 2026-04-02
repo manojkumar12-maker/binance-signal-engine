@@ -1,7 +1,7 @@
 from typing import Dict, Optional, Tuple
 from datetime import datetime
 import config
-from app.services import market, structure, liquidity, volume, scoring, bias_engine
+from app.services import market, structure, liquidity, volume, scoring, bias_engine, regime, validation
 
 
 def calculate_atr(candles: list, period: int = 14) -> float:
@@ -11,6 +11,10 @@ def calculate_atr(candles: list, period: int = 14) -> float:
 def calculate_atr_based_sl(entry: float, candles: list, signal_type: str, pair: str = "BTCUSDT") -> Tuple[float, float]:
     atr = calculate_atr(candles)
     sl_distance = atr * config.ATR_MULTIPLIER
+    
+    min_sl_distance = entry * 0.003
+    if sl_distance < min_sl_distance:
+        sl_distance = min_sl_distance
     
     if signal_type == "BUY":
         sl = entry - sl_distance
@@ -193,12 +197,73 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             tp2 = entry_primary * (1 - config.TP2_PERCENT)
             tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
+        trend_strength = structure.detect_trend_strength(candles)
+        detected_regime = regime.detect_market_regime(atr_ratio, trend, trend_strength)
+        regime_config = regime.get_regime_config(detected_regime)
+        
+        signal_type = "BUY" if trend == "UPTREND" else "SELL"
+        
+        if detected_regime == "LOW_VOL":
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "regime": detected_regime,
+                "signal_type": "CONTINUATION",
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "LOW_VOL regime - insufficient volatility"
+            }
+        
         entry_primary = config.round_to_tick(pair, entry_primary)
         entry_limit = config.round_to_tick(pair, entry_limit)
         sl = config.round_to_tick(pair, sl)
         tp1 = config.round_to_tick(pair, tp1)
         tp2 = config.round_to_tick(pair, tp2)
         tp3 = config.round_to_tick(pair, tp3)
+        
+        signal_type_value = validation.classify_signal_type({
+            "is_reversal": is_reversal,
+            "fake_breakout": fake_breakout
+        })
+        
+        is_valid, validation_reason = validation.validate_signal({
+            "signal": signal_type,
+            "trend": trend,
+            "entry_primary": entry_primary,
+            "sl": sl,
+            "risk_pct": risk_pct,
+            "confidence": confidence,
+            "atr_ratio": atr_ratio
+        })
+        
+        if not is_valid:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "regime": detected_regime,
+                "signal_type": signal_type_value,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": validation_reason
+            }
         
         return {
             "pair": pair,
@@ -219,6 +284,8 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "is_reversal": is_reversal,
             "market_mode": market_mode,
             "fake_breakout": fake_breakout,
+            "regime": detected_regime,
+            "signal_type": signal_type_value,
             "timestamp": datetime.utcnow().isoformat()
         }
 
@@ -308,6 +375,24 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
                 "reason": "Invalid trade params"
             }
         
+        trend_strength = structure.detect_trend_strength(candles)
+        detected_regime = regime.detect_market_regime(atr_ratio, trend, trend_strength)
+        
+        signal_type_value = validation.classify_signal_type({
+            "is_reversal": is_reversal,
+            "fake_breakout": fake_breakout
+        })
+        
+        is_valid, validation_reason = validation.validate_signal({
+            "signal": signal_type,
+            "trend": trend,
+            "entry_primary": entry_primary,
+            "sl": sl,
+            "risk_pct": risk_pct,
+            "confidence": confidence,
+            "atr_ratio": atr_ratio
+        })
+        
         if signal_type == "BUY":
             tp1 = entry_primary * (1 + config.TP1_PERCENT)
             tp2 = entry_primary * (1 + config.TP2_PERCENT)
@@ -316,6 +401,27 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             tp1 = entry_primary * (1 - config.TP1_PERCENT)
             tp2 = entry_primary * (1 - config.TP2_PERCENT)
             tp3 = entry_primary * (1 - config.TP3_PERCENT)
+        
+        if not is_valid:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": config.round_to_tick(pair, entry_primary),
+                "entry_limit": config.round_to_tick(pair, entry_limit),
+                "sl": config.round_to_tick(pair, sl),
+                "tp1": config.round_to_tick(pair, tp1),
+                "tp2": config.round_to_tick(pair, tp2),
+                "tp3": config.round_to_tick(pair, tp3),
+                "confidence": confidence,
+                "trend": trend,
+                "liquidity": sweep,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "regime": detected_regime,
+                "signal_type": signal_type_value,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": validation_reason
+            }
         
         return {
             "pair": pair,
@@ -331,6 +437,10 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             "liquidity": sweep,
             "atr_ratio": atr_ratio,
             "risk_pct": risk_pct,
+            "regime": detected_regime,
+            "signal_type": signal_type_value,
+            "is_reversal": is_reversal,
+            "fake_breakout": fake_breakout,
             "timestamp": datetime.utcnow().isoformat()
         }
 
