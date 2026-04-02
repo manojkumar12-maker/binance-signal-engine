@@ -8,9 +8,8 @@ class CooldownManager:
         self.expiry = {}
 
     def build_fingerprint(self, signal):
-        entry = round(signal.get("entry_primary", signal.get("entry", 0)), 4)
-        sl = round(signal.get("sl", 0), 4)
-        return f"{signal['pair']}:{signal['signal']}:{entry}:{sl}"
+        entry = round(signal.get("entry_primary", signal.get("entry", 0)), 2)
+        return f"{signal['pair']}:{signal['signal']}:{entry}"
 
     def is_improved(self, new_signal, old_signal):
         if new_signal["signal"] != old_signal["signal"]:
@@ -25,9 +24,9 @@ class CooldownManager:
         return False
 
     def get_cooldown(self, signal):
-        base = 300
+        base = 120
         confidence = signal.get("confidence", 50)
-        return max(60, base - int(confidence * 2))
+        return max(45, base - int(confidence))
 
     def is_blocked(self, signal):
         fp = self.build_fingerprint(signal)

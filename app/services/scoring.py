@@ -16,43 +16,43 @@ def calculate_confidence(
     is_reversal: bool = False,
     debug: bool = False
 ) -> int:
-    score = 50
+    score = 40
     reasons = []
     
     if trend != "RANGE":
-        score += 20
+        score += 15
     else:
         reasons.append("RANGE_TREND")
-        score -= 5
+        score -= 10
     
     if htf_aligned:
-        score += 15
+        score += 10
     else:
         if liquidity and "REJECTION" in liquidity:
             score += 5
             reasons.append("HTF_MISMATCH_REVERSAL")
         else:
-            score -= 5
+            score -= 10
             reasons.append("HTF_MISMATCH")
     
     if liquidity is not None:
         if "REJECTION" in liquidity:
-            score += 25
-        else:
             score += 15
+        else:
+            score += 10
     else:
         score -= 5
         reasons.append("NO_LIQUIDITY")
     
     if volume_spike:
-        score += 20
+        score += 15
     else:
-        score += 5
+        score += 3
     
-    score += min(strength, 15)
+    score += min(strength, 10)
     
     if is_reversal:
-        score += 15
+        score += 10
         reasons.append("REVERSAL")
     
     if market_bias:
@@ -60,17 +60,19 @@ def calculate_confidence(
         signal = "BUY" if trend == "UPTREND" else "SELL"
         
         if bias == "BULLISH" and signal == "BUY":
-            score += 10
+            score += 8
         elif bias == "BEARISH" and signal == "SELL":
-            score += 10
+            score += 8
         elif bias in ["BULLISH", "BEARISH"]:
-            score -= 5
+            score -= 10
             reasons.append("BIAS_MISMATCH")
+    
+    score = max(0, min(score, 95))
     
     if debug:
         logger.info(f"SCORE={score} | REASONS={reasons}")
     
-    return max(0, min(score, 100))
+    return score
 
 
 def detect_reversal(candles: List[Dict], sweep_type: Optional[str]) -> bool:

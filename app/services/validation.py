@@ -31,6 +31,9 @@ def validate_signal(signal: Dict) -> tuple[bool, Optional[str]]:
     confidence = signal.get("confidence", 0)
     if confidence < 60:
         return False, f"Low confidence ({confidence})"
+    
+    if confidence > 90:
+        return False, f"Unrealistic confidence ({confidence})"
 
     atr_ratio = signal.get("atr_ratio", 0)
     if atr_ratio < 0.0008:
