@@ -92,14 +92,15 @@ class CooldownManager:
             self.expiry.pop(fp, None)
 
     def filter_diversity(self, signals, max_per_pair=1):
-        seen_pairs = set()
+        seen_counts = {}
         filtered = []
         
         for s in signals:
             pair = s["pair"]
-            if seen_pairs.count(pair) < max_per_pair:
+            pair_count = seen_counts.get(pair, 0)
+            if pair_count < max_per_pair:
                 filtered.append(s)
-                seen_pairs.add(pair)
+                seen_counts[pair] = pair_count + 1
         
         return filtered
 

@@ -22,6 +22,8 @@ import aiohttp
 SIGNALS_CACHE = []
 SCANNER_RUNNING = False
 SCANNER_ERROR_COUNT = 0
+CONSECUTIVE_LOSSES = 0
+LOSS_STREAK_START = 0
 
 async def fetch_klines_async(session, symbol, interval="1h", limit=100):
     url = f"{config.FUTURES_API_URL}/fapi/v1/klines"
@@ -34,13 +36,22 @@ async def fetch_klines_async(session, symbol, interval="1h", limit=100):
 
 
 async def scanner_async_loop():
-    global SIGNALS_CACHE, SCANNER_RUNNING, SCANNER_ERROR_COUNT
+    global SIGNALS_CACHE, SCANNER_RUNNING, SCANNER_ERROR_COUNT, CONSECUTIVE_LOSSES, LOSS_STREAK_START
     
     logger.info(">>> ASYNC SCANNER: Started")
     SCANNER_RUNNING = True
     
     while True:
         try:
+            if CONSECUTIVE_LOSSES >= 3:
+                if time.time() - LOSS_STREAK_START < 3600:
+                    logger.info(f">>> LOSS STREAK ACTIVE: Waiting (3 losses in row)")
+                    await asyncio.sleep(60)
+                    continue
+                else:
+                    CONSECUTIVE_LOSSES = 0
+                    LOSS_STREAK_START = 0
+            
             results = []
             oi_limit = config.OI_PAIRS_LIMIT
             pairs_with_oi = TRADING_PAIRS[:oi_limit]
@@ -71,6 +82,10 @@ async def scanner_async_loop():
                                     signal_direction = signal.get("signal")
                                     market_bias = bias.get("bias", "NEUTRAL")
                                     
+                                    regime = signal.get("regime", "TRANSITION")
+                                    if regime == "LOW_VOL":
+                                        continue
+                                    
                                     if market_bias == "BEARISH" and signal_direction == "BUY":
                                         signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
                                     elif market_bias == "BULLISH" and signal_direction == "SELL":
@@ -80,12 +95,17 @@ async def scanner_async_loop():
                                     
                                     signal["market_bias"] = market_bias
                                     
+                                    if signal.get("confidence", 0) < 70:
+                                        continue
+                                    
                                     if cooldown_manager.is_blocked(signal):
                                         logger.info(f">>> SKIPPED (cooldown): {pair}")
                                     else:
                                         cooldown_manager.store(signal)
                                         results.append(signal)
                                 else:
+                                    if signal.get("confidence", 0) < 70:
+                                        continue
                                     if cooldown_manager.is_blocked(signal):
                                         logger.info(f">>> SKIPPED (cooldown): {pair}")
                                     else:
@@ -97,7 +117,9 @@ async def scanner_async_loop():
                         SCANNER_ERROR_COUNT += 1
             
             results = cooldown_manager.filter_diversity(results, max_per_pair=1)
-            SIGNALS_CACHE = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)[:10]
+            results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
+            elite_signals = [s for s in results if s.get("confidence", 0) >= 70][:3]
+            SIGNALS_CACHE = elite_signals
             set_cache("top_signals", SIGNALS_CACHE, ttl=60)
             
             cooldown_manager.cleanup_expired()
@@ -297,6 +319,7 @@ def delete_trade(trade_id):
 
 @app.route('/api/trade/<trade_id>/close', methods=['POST'])
 def close_trade(trade_id):
+    global CONSECUTIVE_LOSSES, LOSS_STREAK_START
     logger.info(f"[API] /api/trade/{trade_id}/close")
     data = request.json
     result = tracker.close_trade_manually(
@@ -305,6 +328,13 @@ def close_trade(trade_id):
         close_price=float(data.get('close_price', 0))
     )
     if result:
+        if result.get('pnl_pct', 0) < 0:
+            CONSECUTIVE_LOSSES += 1
+            if CONSECUTIVE_LOSSES == 1:
+                LOSS_STREAK_START = time.time()
+        else:
+            CONSECUTIVE_LOSSES = 0
+            LOSS_STREAK_START = 0
         logger.info(f"[TRADE] Closed: {result['pair']} {result['type']} | PnL: {result['pnl_pct']}% | {result['remarks']}")
         return jsonify({"success": True, "trade": result})
     return jsonify({"success": False, "error": "Trade not found"}), 404
