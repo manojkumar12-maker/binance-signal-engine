@@ -1,7 +1,7 @@
 from typing import Dict, Optional, Tuple
 from datetime import datetime
 import config
-from app.services import market, structure, liquidity, volume, scoring, bias_engine, regime, validation
+from app.services import market, structure, liquidity, volume, scoring, bias_engine, regime, validation, whale
 
 
 def calculate_atr(candles: list, period: int = 14) -> float:
@@ -115,6 +115,10 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         liquidity_aligned = scoring.validate_liquidity(trend, sweep)
         
+        whale_signal, whale_bonus = whale.detect_whale_activity(candles, oi_data)
+        order_flow = whale.order_flow_strength(candles[-1])
+        is_fake = whale.is_fake_breakout(candles)
+        
         if total_strength < 5:
             return {
                 "pair": pair,
@@ -139,6 +143,16 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         confidence = scoring.apply_fake_breakout_bonus(confidence, fake_breakout, "BUY" if trend == "UPTREND" else "SELL")
         confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
+        
+        confidence += whale_bonus
+        
+        if order_flow < 0.4:
+            confidence -= 10
+        elif order_flow > 0.7:
+            confidence += 8
+        
+        if is_fake:
+            confidence -= 25
         
         if not liquidity_aligned:
             confidence = max(0, confidence - 20)
@@ -286,6 +300,8 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "fake_breakout": fake_breakout,
             "regime": detected_regime,
             "signal_type": signal_type_value,
+            "whale_signal": whale_signal,
+            "order_flow": round(order_flow, 2),
             "timestamp": datetime.utcnow().isoformat()
         }
 
@@ -334,6 +350,12 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         fake_breakout = scoring.detect_fake_breakout(candles)
         market_mode = scoring.get_market_mode(atr_ratio)
         
+        oi_data = market.get_open_interest(pair) if hasattr(market, 'get_open_interest') else []
+        
+        whale_signal, whale_bonus = whale.detect_whale_activity(candles, oi_data)
+        order_flow = whale.order_flow_strength(candles[-1])
+        is_fake = whale.is_fake_breakout(candles)
+        
         confidence = scoring.calculate_confidence(
             trend, sweep, False, total_strength, False,
             htf_aligned=True,
@@ -343,6 +365,16 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         
         confidence = scoring.apply_fake_breakout_bonus(confidence, fake_breakout, "BUY" if trend == "UPTREND" else "SELL")
         confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
+        
+        confidence += whale_bonus
+        
+        if order_flow < 0.4:
+            confidence -= 10
+        elif order_flow > 0.7:
+            confidence += 8
+        
+        if is_fake:
+            confidence -= 25
         
         if not liquidity_aligned:
             confidence = max(0, confidence - 20)
@@ -441,6 +473,8 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             "signal_type": signal_type_value,
             "is_reversal": is_reversal,
             "fake_breakout": fake_breakout,
+            "whale_signal": whale_signal,
+            "order_flow": round(order_flow, 2),
             "timestamp": datetime.utcnow().isoformat()
         }
 
