@@ -433,6 +433,15 @@ function updateLastUpdate() {
     lastUpdate.textContent = `Last update: ${timeString}`;
 }
 
+function manualRefresh() {
+    updateStatus('scanning');
+    syncWithBackend();
+    fetchAnalytics();
+    fetchSignals();
+    updateLastUpdate();
+    setTimeout(() => updateStatus('connected'), 1000);
+}
+
 function init() {
     fetchConfig();
     
