@@ -364,6 +364,9 @@ function renderClosedTrades() {
 }
 
 async function openTradeFromSignal(pair) {
+    const confirmed = confirm(`Open trade for ${pair}?`);
+    if (!confirmed) return;
+    
     try {
         const response = await fetch(`${API_BASE_URL}/signal/${pair}?timeframe=1h`);
         const data = await response.json();
