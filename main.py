@@ -139,25 +139,21 @@ async def scanner_async_loop():
             
             cooldown_manager.cleanup_expired()
             
-            logger.info(f">>> AUTO: {len(SIGNALS_CACHE)} signals, checking auto-trade...")
+            logger.info(f">>> SCAN COMPLETE: {len(SIGNALS_CACHE)} signals, creating auto-trades...")
             
             if SIGNALS_CACHE:
                 try:
                     from app.services import tracker
-                    existing = tracker.get_open_trades()
-                    logger.info(f">>> AUTO: {len(existing)} open trades")
                     
                     for signal in SIGNALS_CACHE[:2]:
                         pair = signal.get("pair")
-                        
-                        if any(t.get("pair") == pair for t in existing):
-                            logger.info(f">>> SKIP: {pair} already open")
-                            continue
+                        signal_type = signal.get("signal")
+                        entry = signal.get("entry_primary")
                         
                         trade = tracker.create_trade(
-                            pair=signal.get("pair"),
-                            signal_type=signal.get("signal"),
-                            entry=signal.get("entry_primary"),
+                            pair=pair,
+                            signal_type=signal_type,
+                            entry=entry,
                             sl=signal.get("sl"),
                             tp1=signal.get("tp1"),
                             tp2=signal.get("tp2"),
@@ -166,9 +162,11 @@ async def scanner_async_loop():
                             entry_limit=signal.get("entry_limit")
                         )
                         tracker.add_trade(trade)
-                        logger.info(f">>> AUTO TRADE: {pair} {signal.get('signal')} @ {signal.get('entry_primary')}")
+                        logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
                 except Exception as e:
                     logger.error(f">>> AUTO TRADE ERROR: {e}")
+            
+            logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
             logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
