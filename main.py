@@ -13,6 +13,7 @@ import config
 from app.services.strategy import generate_signal
 from app.services import tracker, market, bias_engine
 from app.services.redis_client import set_cache, get_cache
+from app.services.cooldown_manager import cooldown_manager
 import threading
 import time
 import asyncio
@@ -79,17 +80,17 @@ async def scanner_async_loop():
                                     
                                     signal["market_bias"] = market_bias
                                     
-                                    pair_key = f"signal:{pair}"
-                                    if not get_cache(pair_key):
-                                        results.append(signal)
-                                        set_cache(pair_key, True, ttl=300)
-                                    else:
+                                    if cooldown_manager.is_blocked(signal):
                                         logger.info(f">>> SKIPPED (cooldown): {pair}")
-                                else:
-                                    pair_key = f"signal:{pair}"
-                                    if not get_cache(pair_key):
+                                    else:
+                                        cooldown_manager.store(signal)
                                         results.append(signal)
-                                        set_cache(pair_key, True, ttl=300)
+                                else:
+                                    if cooldown_manager.is_blocked(signal):
+                                        logger.info(f">>> SKIPPED (cooldown): {pair}")
+                                    else:
+                                        cooldown_manager.store(signal)
+                                        results.append(signal)
                         else:
                             SCANNER_ERROR_COUNT += 1
                     except Exception as e:
@@ -97,6 +98,8 @@ async def scanner_async_loop():
             
             SIGNALS_CACHE = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)[:10]
             set_cache("top_signals", SIGNALS_CACHE, ttl=60)
+            
+            cooldown_manager.cleanup_expired()
             
             logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
