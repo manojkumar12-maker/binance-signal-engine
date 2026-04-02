@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 
 
 def normalize_price(price):
@@ -21,12 +22,80 @@ def is_same_signal(new_signal, old_signal):
     return diff < 0.002
 
 
+def is_on_cooldown(pair, new_signal, cache):
+    if pair not in cache:
+        return False
+
+    old = cache[pair]
+    
+    if time.time() - old.get("timestamp", 0) > 300:
+        return False
+    
+    if new_signal.get("confidence", 0) > old.get("confidence", 0) + 10:
+        return False
+    
+    if abs(new_signal.get("entry_primary", 0) - old.get("entry_primary", 0)) / old.get("entry_primary", 1) > 0.003:
+        return False
+
+    return True
+
+
+def is_price_changed(pair, new_entry, cache):
+    if pair not in cache:
+        return True
+    
+    old_entry = cache[pair].get("entry_primary", 0)
+    if old_entry == 0:
+        return True
+    
+    change = abs(new_entry - old_entry) / old_entry
+    return change > 0.002
+
+
+def balance_signals(signals):
+    buys = [s for s in signals if s.get("signal") == "BUY"]
+    sells = [s for s in signals if s.get("signal") == "SELL"]
+    
+    if len(sells) > len(buys) * 2:
+        sells = sorted(sells, key=lambda x: x.get("confidence", 0), reverse=True)[:3]
+    
+    if len(buys) > len(sells) * 2:
+        buys = sorted(buys, key=lambda x: x.get("confidence", 0), reverse=True)[:3]
+    
+    return buys + sells
+
+
+def filter_elite(signals, threshold=75):
+    return [s for s in signals if s.get("confidence", 0) >= threshold]
+
+
+def sniper_filter(signal):
+    if signal.get("confidence", 0) < 85:
+        return False
+    
+    if "RANGE" in signal.get("trend", ""):
+        return False
+    
+    liquidity = signal.get("liquidity", "")
+    if "REJECTION" not in liquidity:
+        return False
+    
+    if not signal.get("whale_signal"):
+        return False
+    
+    if signal.get("risk_pct", 0) > 1:
+        return False
+    
+    return True
+
+
 class CooldownManager:
     def __init__(self):
         self.cache = {}
         self.cache_data = {}
         self.expiry = {}
-        self.recent_pairs = set()
+        self.signal_history = {}
+        self.SNIPER_MODE = False
 
     def build_fingerprint(self, signal):
         entry = normalize_price(signal.get("entry_primary", 0))
@@ -79,14 +148,17 @@ class CooldownManager:
         self.cache[fp] = True
         self.cache_data[fp] = signal
         self.expiry[fp] = time.time() + cooldown
-        self.recent_pairs.add(signal["pair"])
+        self.signal_history[signal["pair"]] = {
+            "confidence": signal.get("confidence", 0),
+            "entry_primary": signal.get("entry_primary", 0),
+            "timestamp": time.time()
+        }
 
     def cleanup_expired(self):
         current_time = time.time()
         expired = [fp for fp, exp_time in self.expiry.items() if current_time >= exp_time]
         for fp in expired:
             pair = fp.split(":")[0]
-            self.recent_pairs.discard(pair)
             self.cache.pop(fp, None)
             self.cache_data.pop(fp, None)
             self.expiry.pop(fp, None)
@@ -113,6 +185,20 @@ class CooldownManager:
             
             if len(filtered) >= 5:
                 break
+        
+        return filtered
+
+    def process_signals(self, signals):
+        if self.SNIPER_MODE:
+            sniper_signals = [s for s in signals if sniper_filter(s)]
+            sniper_signals = sorted(sniper_signals, key=lambda x: x.get("confidence", 0), reverse=True)[:3]
+            return sniper_signals
+        
+        filtered = filter_elite(signals, 75)
+        
+        filtered = balance_signals(filtered)
+        
+        filtered = sorted(filtered, key=lambda x: x.get("confidence", 0), reverse=True)[:10]
         
         return filtered
 

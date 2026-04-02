@@ -137,18 +137,16 @@ async def scanner_async_loop():
                                         continue
                                     if cooldown_manager.is_blocked(signal):
                                         logger.info(f">>> SKIPPED (cooldown): {pair}")
-                                    else:
-                                        cooldown_manager.store(signal)
-                                        results.append(signal)
+                            else:
+                                cooldown_manager.store(signal)
+                                results.append(signal)
                         else:
                             SCANNER_ERROR_COUNT += 1
                     except Exception as e:
                         SCANNER_ERROR_COUNT += 1
             
             results = cooldown_manager.filter_diversity(results, max_per_pair=1)
-            results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
-            elite_signals = [s for s in results if s.get("confidence", 0) >= 65][:5]
-            SIGNALS_CACHE = elite_signals
+            SIGNALS_CACHE = cooldown_manager.process_signals(results)
             set_cache("top_signals", SIGNALS_CACHE, ttl=60)
             
             cooldown_manager.cleanup_expired()
