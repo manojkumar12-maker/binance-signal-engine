@@ -601,23 +601,6 @@ body {
     margin-top: 16px;
 }
 
-.refresh-btn {
-    padding: 8px 16px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--accent-yellow);
-    color: var(--accent-yellow);
-    border-radius: 6px;
-    cursor: pointer;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px;
-    transition: all 0.2s;
-}
-
-.refresh-btn:hover {
-    background: var(--accent-yellow);
-    color: var(--bg-primary);
-}
-
 .header-controls {
     display: flex;
     align-items: center;

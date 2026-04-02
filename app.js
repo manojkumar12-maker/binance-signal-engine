@@ -433,15 +433,6 @@ function updateLastUpdate() {
     lastUpdate.textContent = `Last update: ${timeString}`;
 }
 
-function manualRefresh() {
-    updateStatus('scanning');
-    syncWithBackend();
-    fetchAnalytics();
-    fetchSignals();
-    updateLastUpdate();
-    setTimeout(() => updateStatus('connected'), 1000);
-}
-
 function init() {
     fetchConfig();
     
@@ -453,15 +444,19 @@ function init() {
     syncWithBackend();
     fetchAnalytics();
     fetchSignals();
+    updateStatus('connected');
+    updateLastUpdate();
     
     setInterval(() => {
         fetchSignals();
-        fetchConfig();
-    }, 15000);
+        syncWithBackend();
+        fetchAnalytics();
+        updateLastUpdate();
+    }, 10000);
     
     setInterval(() => {
         monitorTrades();
-    }, 15000);
+    }, 10000);
 }
 
 document.addEventListener('DOMContentLoaded', init);
