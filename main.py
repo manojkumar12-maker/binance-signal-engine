@@ -139,6 +139,29 @@ async def scanner_async_loop():
             
             cooldown_manager.cleanup_expired()
             
+            if config.AUTO_TRADE and SIGNALS_CACHE:
+                from app.services import tracker
+                for signal in SIGNALS_CACHE[:2]:
+                    pair = signal.get("pair")
+                    existing = tracker.get_open_trades()
+                    if any(t.get("pair") == pair for t in existing):
+                        logger.info(f">>> AUTO: Trade already open for {pair}")
+                        continue
+                    
+                    trade = tracker.create_trade(
+                        pair=signal.get("pair"),
+                        signal_type=signal.get("signal"),
+                        entry=signal.get("entry_primary"),
+                        sl=signal.get("sl"),
+                        tp1=signal.get("tp1"),
+                        tp2=signal.get("tp2"),
+                        tp3=signal.get("tp3"),
+                        confidence=signal.get("confidence", 0),
+                        entry_limit=signal.get("entry_limit")
+                    )
+                    tracker.add_trade(trade)
+                    logger.info(f">>> AUTO TRADE OPENED: {pair} {signal.get('signal')} @ {signal.get('entry_primary')}")
+            
             logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
             if SIGNALS_CACHE:
@@ -364,10 +387,20 @@ def get_set_config():
             cooldown_manager.SNIPER_MODE = data['sniper_mode']
             logger.info(f">>> SNIPER MODE: {'ENABLED' if data['sniper_mode'] else 'DISABLED'}")
         
-        return jsonify({"success": True, "sniper_mode": cooldown_manager.SNIPER_MODE})
+        if 'auto_trade' in data:
+            config.AUTO_TRADE = data['auto_trade']
+            logger.info(f">>> AUTO TRADE: {'ENABLED' if data['auto_trade'] else 'DISABLED'}")
+        
+        return jsonify({
+            "sniper_mode": cooldown_manager.SNIPER_MODE,
+            "auto_trade": config.AUTO_TRADE,
+            "elite_threshold": config.ELITE_THRESHOLD,
+            "max_signals": config.MAX_SIGNALS
+        })
     
     return jsonify({
         "sniper_mode": cooldown_manager.SNIPER_MODE,
+        "auto_trade": config.AUTO_TRADE,
         "elite_threshold": config.ELITE_THRESHOLD,
         "max_signals": config.MAX_SIGNALS
     })
