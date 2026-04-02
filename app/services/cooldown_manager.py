@@ -1,14 +1,35 @@
 import time
 
 
+def normalize_price(price):
+    if price > 1:
+        return round(price, 2)
+    return round(price, 4)
+
+
+def is_same_signal(new_signal, old_signal):
+    if not old_signal:
+        return False
+    
+    new_entry = new_signal.get("entry_primary", 0)
+    old_entry = old_signal.get("entry_primary", 0)
+    
+    if old_entry == 0:
+        return False
+    
+    diff = abs(new_entry - old_entry) / old_entry
+    return diff < 0.002
+
+
 class CooldownManager:
     def __init__(self):
         self.cache = {}
         self.cache_data = {}
         self.expiry = {}
+        self.recent_pairs = set()
 
     def build_fingerprint(self, signal):
-        entry = round(signal.get("entry_primary", signal.get("entry", 0)), 2)
+        entry = normalize_price(signal.get("entry_primary", 0))
         return f"{signal['pair']}:{signal['signal']}:{entry}"
 
     def is_improved(self, new_signal, old_signal):
@@ -16,17 +37,21 @@ class CooldownManager:
             return True
 
         if new_signal["signal"] == "BUY":
-            return new_signal.get("entry_primary", new_signal.get("entry", 0)) < old_signal.get("entry_primary", old_signal.get("entry", 0))
+            return new_signal.get("entry_primary", 0) < old_signal.get("entry_primary", 0)
 
         if new_signal["signal"] == "SELL":
-            return new_signal.get("entry_primary", new_signal.get("entry", 0)) > old_signal.get("entry_primary", old_signal.get("entry", 0))
+            return new_signal.get("entry_primary", 0) > old_signal.get("entry_primary", 0)
 
         return False
 
     def get_cooldown(self, signal):
-        base = 120
         confidence = signal.get("confidence", 50)
-        return max(45, base - int(confidence))
+        
+        if confidence > 85:
+            return 45
+        if confidence > 70:
+            return 90
+        return 180
 
     def is_blocked(self, signal):
         fp = self.build_fingerprint(signal)
@@ -35,6 +60,9 @@ class CooldownManager:
             return False
 
         old_signal = self.cache_data.get(fp)
+        
+        if is_same_signal(signal, old_signal):
+            return True
 
         if old_signal and self.is_improved(signal, old_signal):
             return False
@@ -51,14 +79,29 @@ class CooldownManager:
         self.cache[fp] = True
         self.cache_data[fp] = signal
         self.expiry[fp] = time.time() + cooldown
+        self.recent_pairs.add(signal["pair"])
 
     def cleanup_expired(self):
         current_time = time.time()
         expired = [fp for fp, exp_time in self.expiry.items() if current_time >= exp_time]
         for fp in expired:
+            pair = fp.split(":")[0]
+            self.recent_pairs.discard(pair)
             self.cache.pop(fp, None)
             self.cache_data.pop(fp, None)
             self.expiry.pop(fp, None)
+
+    def filter_diversity(self, signals, max_per_pair=1):
+        seen_pairs = set()
+        filtered = []
+        
+        for s in signals:
+            pair = s["pair"]
+            if seen_pairs.count(pair) < max_per_pair:
+                filtered.append(s)
+                seen_pairs.add(pair)
+        
+        return filtered
 
 
 cooldown_manager = CooldownManager()

@@ -16,58 +16,61 @@ def calculate_confidence(
     is_reversal: bool = False,
     debug: bool = False
 ) -> int:
-    score = 40
+    score = 35
     reasons = []
     
     if trend != "RANGE":
-        score += 15
+        score += 12
     else:
         reasons.append("RANGE_TREND")
-        score -= 10
+        score -= 15
     
     if htf_aligned:
-        score += 10
+        score += 8
     else:
         if liquidity and "REJECTION" in liquidity:
             score += 5
             reasons.append("HTF_MISMATCH_REVERSAL")
         else:
-            score -= 10
+            score -= 12
             reasons.append("HTF_MISMATCH")
     
     if liquidity is not None:
         if "REJECTION" in liquidity:
-            score += 15
+            score += 12
         else:
-            score += 10
+            score += 8
     else:
-        score -= 5
+        score -= 8
         reasons.append("NO_LIQUIDITY")
     
     if volume_spike:
-        score += 15
+        score += 12
     else:
-        score += 3
+        score += 2
     
-    score += min(strength, 10)
+    score += min(strength, 8)
     
     if is_reversal:
-        score += 10
+        score += 8
         reasons.append("REVERSAL")
+    
+    if not liquidity:
+        score -= 20
     
     if market_bias:
         bias = market_bias.get("bias", "NEUTRAL")
         signal = "BUY" if trend == "UPTREND" else "SELL"
         
         if bias == "BULLISH" and signal == "BUY":
-            score += 8
+            score += 6
         elif bias == "BEARISH" and signal == "SELL":
-            score += 8
+            score += 6
         elif bias in ["BULLISH", "BEARISH"]:
-            score -= 10
+            score -= 15
             reasons.append("BIAS_MISMATCH")
     
-    score = max(0, min(score, 95))
+    score = max(0, min(score, 85))
     
     if debug:
         logger.info(f"SCORE={score} | REASONS={reasons}")

@@ -96,6 +96,7 @@ async def scanner_async_loop():
                     except Exception as e:
                         SCANNER_ERROR_COUNT += 1
             
+            results = cooldown_manager.filter_diversity(results, max_per_pair=1)
             SIGNALS_CACHE = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)[:10]
             set_cache("top_signals", SIGNALS_CACHE, ttl=60)
             
