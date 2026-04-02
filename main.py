@@ -53,8 +53,8 @@ async def scanner_async_loop():
                     LOSS_STREAK_START = 0
             
             results = []
-            oi_limit = config.OI_PAIRS_LIMIT
-            pairs_with_oi = TRADING_PAIRS[:oi_limit]
+            scan_count = 0
+            analysis_count = 0
             
             async with aiohttp.ClientSession() as session:
                 tasks = []
@@ -64,6 +64,7 @@ async def scanner_async_loop():
                 
                 for pair, task in tasks:
                     try:
+                        scan_count += 1
                         klines = await task
                         if klines and len(klines) >= 20:
                             from app.services import market as market_service
@@ -72,6 +73,7 @@ async def scanner_async_loop():
                             from app.services import bias_engine
                             
                             signal = generate_signal_from_candles(pair, candles)
+                            analysis_count += 1
                             
                             if signal and signal.get("signal") != "NO TRADE" and signal.get("confidence", 0) >= config.MIN_CONFIDENCE:
                                 btc_1h = await fetch_klines_async(session, "BTCUSDT", "1h", 20)
@@ -84,6 +86,7 @@ async def scanner_async_loop():
                                     
                                     regime = signal.get("regime", "TRANSITION")
                                     if regime == "LOW_VOL":
+                                        logger.info(f">>> SKIPPED (low_vol): {pair}")
                                         continue
                                     
                                     if market_bias == "BEARISH" and signal_direction == "BUY":
@@ -95,7 +98,7 @@ async def scanner_async_loop():
                                     
                                     signal["market_bias"] = market_bias
                                     
-                                    if signal.get("confidence", 0) < 70:
+                                    if signal.get("confidence", 0) < 65:
                                         continue
                                     
                                     if cooldown_manager.is_blocked(signal):
@@ -104,7 +107,7 @@ async def scanner_async_loop():
                                         cooldown_manager.store(signal)
                                         results.append(signal)
                                 else:
-                                    if signal.get("confidence", 0) < 70:
+                                    if signal.get("confidence", 0) < 65:
                                         continue
                                     if cooldown_manager.is_blocked(signal):
                                         logger.info(f">>> SKIPPED (cooldown): {pair}")
@@ -118,7 +121,7 @@ async def scanner_async_loop():
             
             results = cooldown_manager.filter_diversity(results, max_per_pair=1)
             results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
-            elite_signals = [s for s in results if s.get("confidence", 0) >= 70][:3]
+            elite_signals = [s for s in results if s.get("confidence", 0) >= 65][:3]
             SIGNALS_CACHE = elite_signals
             set_cache("top_signals", SIGNALS_CACHE, ttl=60)
             
