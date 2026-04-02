@@ -93,14 +93,26 @@ class CooldownManager:
 
     def filter_diversity(self, signals, max_per_pair=1):
         seen_counts = {}
+        used_bases = set()
         filtered = []
         
         for s in signals:
             pair = s["pair"]
+            base = pair.replace("USDT", "").replace("BUSD", "")[:3]
+            
             pair_count = seen_counts.get(pair, 0)
-            if pair_count < max_per_pair:
-                filtered.append(s)
-                seen_counts[pair] = pair_count + 1
+            if pair_count >= max_per_pair:
+                continue
+            
+            if base in used_bases:
+                continue
+            
+            filtered.append(s)
+            seen_counts[pair] = pair_count + 1
+            used_bases.add(base)
+            
+            if len(filtered) >= 5:
+                break
         
         return filtered
 

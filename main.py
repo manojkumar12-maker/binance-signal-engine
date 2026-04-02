@@ -98,8 +98,21 @@ async def scanner_async_loop():
                                     
                                     signal["market_bias"] = market_bias
                                     
+                                    if market_bias == "BEARISH" and signal_direction == "BUY":
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 25)
+                                    elif market_bias == "BULLISH" and signal_direction == "SELL":
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 25)
+                                    elif market_bias == signal_direction:
+                                        signal["confidence"] = min(100, signal.get("confidence", 0) + 10)
+                                    
                                     if signal.get("confidence", 0) < 65:
                                         continue
+                                    
+                                    whale_signal = signal.get("whale_signal", "NEUTRAL")
+                                    if whale_signal == "DISTRIBUTION" and signal_direction == "BUY":
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
+                                    elif whale_signal == "ACCUMULATION" and signal_direction == "SELL":
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
                                     
                                     if cooldown_manager.is_blocked(signal):
                                         logger.info(f">>> SKIPPED (cooldown): {pair}")
