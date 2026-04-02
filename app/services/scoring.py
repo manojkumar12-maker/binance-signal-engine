@@ -4,6 +4,15 @@ import config
 
 logger = logging.getLogger("scoring_debug")
 
+WEIGHTS = {
+    "trend": 10,
+    "liquidity": 20,
+    "volume": 15,
+    "fake_breakout": 25,
+    "whale": 20,
+    "order_flow": 10
+}
+
 
 def calculate_confidence(
     trend: str, 
@@ -14,46 +23,61 @@ def calculate_confidence(
     htf_aligned: bool = True,
     market_bias: Optional[Dict] = None,
     is_reversal: bool = False,
+    fake_breakout: bool = False,
+    whale_signal: str = "NEUTRAL",
+    order_flow: float = 0.5,
+    signal_type: str = "CONTINUATION",
     debug: bool = False
 ) -> int:
-    score = 35
+    score = 30
     reasons = []
     
     if trend != "RANGE":
-        score += 12
+        score += WEIGHTS["trend"]
     else:
         reasons.append("RANGE_TREND")
-        score -= 15
+        score -= 20
     
     if htf_aligned:
         score += 8
     else:
         if liquidity and "REJECTION" in liquidity:
             score += 5
-            reasons.append("HTF_MISMATCH_REVERSAL")
         else:
             score -= 12
-            reasons.append("HTF_MISMATCH")
     
     if liquidity is not None:
         if "REJECTION" in liquidity:
-            score += 12
+            score += WEIGHTS["liquidity"]
         else:
-            score += 8
+            score += 5
     else:
-        score -= 8
+        score -= 10
         reasons.append("NO_LIQUIDITY")
     
     if volume_spike:
-        score += 12
+        score += WEIGHTS["volume"]
     else:
         score += 2
     
     score += min(strength, 8)
     
-    if is_reversal:
-        score += 8
-        reasons.append("REVERSAL")
+    if fake_breakout:
+        if is_reversal or signal_type == "REVERSAL":
+            score += 20
+        else:
+            score -= WEIGHTS["fake_breakout"]
+            reasons.append("FAKE_BREAKOUT_BAD")
+    
+    if whale_signal != "NEUTRAL":
+        if whale_signal in ["ACCUMULATION", "DISTRIBUTION"]:
+            score += WEIGHTS["whale"]
+    
+    if order_flow > 0.7:
+        score += WEIGHTS["order_flow"]
+    elif order_flow < 0.4:
+        score -= 10
+        reasons.append("WEAK_ORDER_FLOW")
     
     if not liquidity:
         score -= 20
@@ -63,14 +87,17 @@ def calculate_confidence(
         signal = "BUY" if trend == "UPTREND" else "SELL"
         
         if bias == "BULLISH" and signal == "BUY":
-            score += 6
+            score += 8
         elif bias == "BEARISH" and signal == "SELL":
-            score += 6
+            score += 8
         elif bias in ["BULLISH", "BEARISH"]:
-            score -= 15
+            score -= 20
             reasons.append("BIAS_MISMATCH")
     
-    score = max(0, min(score, 85))
+    if liquidity != "REJECTION" and not fake_breakout and order_flow < 0.6:
+        reasons.append("WEAK_SETUP")
+    
+    score = max(0, min(score, 92))
     
     if debug:
         logger.info(f"SCORE={score} | REASONS={reasons}")

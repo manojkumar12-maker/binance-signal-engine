@@ -32,12 +32,15 @@ function renderSignals() {
     tbody.innerHTML = '';
     
     if (signalsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">No signals. Market scanning...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">No signals. Market scanning...</td></tr>';
         return;
     }
     
     signalsData.forEach(signal => {
         const row = document.createElement('tr');
+        row.style.cursor = 'pointer';
+        row.title = 'Click to open trade';
+        row.onclick = () => openTradeFromSignal(signal.pair);
         row.innerHTML = `
             <td>${signal.pair}</td>
             <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
@@ -48,9 +51,6 @@ function renderSignals() {
             <td>${formatPrice(signal.tp3)}</td>
             <td>${signal.confidence}%</td>
             <td>${signal.risk_pct}%</td>
-            <td>
-                <button class="trade-btn" onclick="openTradeFromSignal('${signal.pair}')">+</button>
-            </td>
         `;
         tbody.appendChild(row);
     });
@@ -61,7 +61,7 @@ function renderAnalytics() {
     
     const container = document.getElementById('analyticsPanel');
     if (container) {
-        const { total_trades, wins, losses, win_rate, avg_win, avg_loss, tp1_hits, tp2_hits, tp3_hits, sl_hits, avg_rr, total_pnl, open_trades } = analyticsData;
+        const { total_trades, wins, losses, win_rate, avg_win, avg_loss, total_pnl } = analyticsData;
         
         container.innerHTML = `
             <div class="analytics-grid">
@@ -85,33 +85,9 @@ function renderAnalytics() {
                     <span class="stat-label">Avg Loss</span>
                     <span class="stat-value loss">-${avg_loss}%</span>
                 </div>
-                <div class="stat-card">
-                    <span class="stat-label">Avg RR</span>
-                    <span class="stat-value">${avg_rr}</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-label">TP1 Hits</span>
-                    <span class="stat-value">${tp1_hits}</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-label">TP2 Hits</span>
-                    <span class="stat-value">${tp2_hits}</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-label">TP3 Hits</span>
-                    <span class="stat-value">${tp3_hits}</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-label">SL Hits</span>
-                    <span class="stat-value">${sl_hits}</span>
-                </div>
                 <div class="stat-card wide">
                     <span class="stat-label">Total P&L</span>
                     <span class="stat-value ${total_pnl >= 0 ? 'profit' : 'loss'}">${total_pnl >= 0 ? '+' : ''}${total_pnl}%</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-label">Open Trades</span>
-                    <span class="stat-value">${open_trades}</span>
                 </div>
             </div>
         `;
@@ -283,28 +259,24 @@ function renderActiveTrades() {
     tbody.innerHTML = '';
     
     if (activeTrades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary)">No active trades. Scanning...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">No active trades. Scanning...</td></tr>';
         return;
     }
     
     activeTrades.forEach(trade => {
         const row = document.createElement('tr');
+        row.style.cursor = 'pointer';
+        row.title = 'Click to close trade';
+        row.onclick = () => closeTradeManual(trade.id);
         row.innerHTML = `
             <td>${trade.pair}</td>
             <td class="${trade.type === 'BUY' ? 'signal-buy' : 'signal-sell'}">${trade.type}</td>
             <td>${formatPrice(trade.currentPrice || trade.entry)}</td>
-            <td>${formatPrice(trade.entry_limit || '--')}</td>
             <td>${formatPrice(trade.tp1)}</td>
             <td>${formatPrice(trade.tp2)}</td>
             <td>${formatPrice(trade.tp3)}</td>
             <td>${formatPrice(trade.sl)}</td>
             <td>${trade.confidence}%</td>
-            <td>${trade.updates || 0}</td>
-            <td>
-                <button class="trade-btn" onclick="openTradeFromSignal('${trade.pair}')">+</button>
-                <button class="close-btn" onclick="closeTradeManual('${trade.id}')">Close</button>
-                <button class="action-btn" onclick="removeTrade('${trade.id}')">Remove</button>
-            </td>
         `;
         tbody.appendChild(row);
     });

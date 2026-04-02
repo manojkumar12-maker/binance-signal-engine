@@ -18,6 +18,7 @@ import threading
 import time
 import asyncio
 import aiohttp
+from datetime import datetime
 
 SIGNALS_CACHE = []
 SCANNER_RUNNING = False
@@ -90,19 +91,15 @@ async def scanner_async_loop():
                                         continue
                                     
                                     if market_bias == "BEARISH" and signal_direction == "BUY":
-                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
-                                    elif market_bias == "BULLISH" and signal_direction == "SELL":
-                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
-                                    elif market_bias == signal_direction:
-                                        signal["confidence"] = min(100, signal.get("confidence", 0) + 10)
+                                        logger.info(f">>> SKIPPED (bias_mismatch): {pair}")
+                                        continue
+                                    if market_bias == "BULLISH" and signal_direction == "SELL":
+                                        logger.info(f">>> SKIPPED (bias_mismatch): {pair}")
+                                        continue
                                     
                                     signal["market_bias"] = market_bias
                                     
-                                    if market_bias == "BEARISH" and signal_direction == "BUY":
-                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 25)
-                                    elif market_bias == "BULLISH" and signal_direction == "SELL":
-                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 25)
-                                    elif market_bias == signal_direction:
+                                    if market_bias == signal_direction:
                                         signal["confidence"] = min(100, signal.get("confidence", 0) + 10)
                                     
                                     if signal.get("confidence", 0) < 65:
@@ -110,9 +107,25 @@ async def scanner_async_loop():
                                     
                                     whale_signal = signal.get("whale_signal", "NEUTRAL")
                                     if whale_signal == "DISTRIBUTION" and signal_direction == "BUY":
-                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
-                                    elif whale_signal == "ACCUMULATION" and signal_direction == "SELL":
-                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
+                                        logger.info(f">>> SKIPPED (whale_mismatch): {pair}")
+                                        continue
+                                    if whale_signal == "ACCUMULATION" and signal_direction == "SELL":
+                                        logger.info(f">>> SKIPPED (whale_mismatch): {pair}")
+                                        continue
+                                    
+                                    liquidity = signal.get("liquidity")
+                                    order_flow = signal.get("order_flow", 0.5)
+                                    fake_breakout = signal.get("fake_breakout", False)
+                                    
+                                    if liquidity != "SWEEP_LOW_REJECTION" and liquidity != "SWEEP_HIGH_REJECTION":
+                                        if not fake_breakout and order_flow < 0.6:
+                                            logger.info(f">>> SKIPPED (weak_setup): {pair}")
+                                            continue
+                                    
+                                    current_hour = datetime.utcnow().hour
+                                    if current_hour < 6 or current_hour > 23:
+                                        logger.info(f">>> SKIPPED (dead_hours): {pair}")
+                                        continue
                                     
                                     if cooldown_manager.is_blocked(signal):
                                         logger.info(f">>> SKIPPED (cooldown): {pair}")
@@ -134,7 +147,7 @@ async def scanner_async_loop():
             
             results = cooldown_manager.filter_diversity(results, max_per_pair=1)
             results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
-            elite_signals = [s for s in results if s.get("confidence", 0) >= 65][:3]
+            elite_signals = [s for s in results if s.get("confidence", 0) >= 65][:5]
             SIGNALS_CACHE = elite_signals
             set_cache("top_signals", SIGNALS_CACHE, ttl=60)
             
