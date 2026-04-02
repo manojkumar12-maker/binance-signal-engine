@@ -76,9 +76,6 @@ function renderSignals() {
     
     signalsData.forEach(signal => {
         const row = document.createElement('tr');
-        row.style.cursor = 'pointer';
-        row.title = 'Click to open trade';
-        row.onclick = () => openTradeFromSignal(signal.pair);
         row.innerHTML = `
             <td>${signal.pair}</td>
             <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
@@ -322,9 +319,6 @@ function renderActiveTrades() {
         pnlClass = pnlPct >= 0 ? 'profit' : 'loss';
         
         const row = document.createElement('tr');
-        row.style.cursor = 'pointer';
-        row.title = 'Click to close trade';
-        row.onclick = () => closeTradeManual(trade.id);
         row.innerHTML = `
             <td>${trade.pair}</td>
             <td class="${type === 'BUY' ? 'signal-buy' : 'signal-sell'}">${type}</td>
