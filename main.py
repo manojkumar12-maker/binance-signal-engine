@@ -127,19 +127,7 @@ async def scanner_async_loop():
                                         logger.info(f">>> SKIPPED (dead_hours): {pair}")
                                         continue
                                     
-                                    if cooldown_manager.is_blocked(signal):
-                                        logger.info(f">>> SKIPPED (cooldown): {pair}")
-                                    else:
-                                        cooldown_manager.store(signal)
-                                        results.append(signal)
-                                else:
-                                    if signal.get("confidence", 0) < 65:
-                                        continue
-                                    if cooldown_manager.is_blocked(signal):
-                                        logger.info(f">>> SKIPPED (cooldown): {pair}")
-                            else:
-                                cooldown_manager.store(signal)
-                                results.append(signal)
+                                    results.append(signal)
                         else:
                             SCANNER_ERROR_COUNT += 1
                     except Exception as e:

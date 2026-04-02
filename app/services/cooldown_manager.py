@@ -28,13 +28,21 @@ def is_on_cooldown(pair, new_signal, cache):
 
     old = cache[pair]
     
-    if time.time() - old.get("timestamp", 0) > 300:
+    if time.time() - old.get("timestamp", 0) > 180:
+        cache.pop(pair, None)
         return False
     
-    if new_signal.get("confidence", 0) > old.get("confidence", 0) + 10:
+    new_conf = new_signal.get("confidence", 0)
+    old_conf = old.get("confidence", 0)
+    
+    if new_conf > old_conf + 15:
+        cache.pop(pair, None)
         return False
     
-    if abs(new_signal.get("entry_primary", 0) - old.get("entry_primary", 0)) / old.get("entry_primary", 1) > 0.003:
+    new_entry = new_signal.get("entry_primary", 0)
+    old_entry = old.get("entry_primary", 0)
+    if old_entry > 0 and abs(new_entry - old_entry) / old_entry > 0.005:
+        cache.pop(pair, None)
         return False
 
     return True
@@ -49,7 +57,7 @@ def is_price_changed(pair, new_entry, cache):
         return True
     
     change = abs(new_entry - old_entry) / old_entry
-    return change > 0.002
+    return change > 0.005
 
 
 def balance_signals(signals):
@@ -65,28 +73,29 @@ def balance_signals(signals):
     return buys + sells
 
 
-def filter_elite(signals, threshold=75):
+def filter_elite(signals, threshold=70):
     return [s for s in signals if s.get("confidence", 0) >= threshold]
 
 
 def sniper_filter(signal):
-    if signal.get("confidence", 0) < 85:
-        return False
+    score = signal.get("confidence", 0)
     
-    if "RANGE" in signal.get("trend", ""):
-        return False
+    if score >= 85:
+        return True
     
-    liquidity = signal.get("liquidity", "")
-    if "REJECTION" not in liquidity:
-        return False
+    if score >= 75:
+        whale = signal.get("whale_signal")
+        liquidity = signal.get("liquidity", "")
+        if whale and whale != "NEUTRAL":
+            return True
+        if "REJECTION" in liquidity:
+            return True
     
-    if not signal.get("whale_signal"):
-        return False
-    
-    if signal.get("risk_pct", 0) > 1:
-        return False
-    
-    return True
+    return False
+
+
+def fallback_filter(signals, threshold=65):
+    return [s for s in signals if s.get("confidence", 0) >= threshold]
 
 
 class CooldownManager:
@@ -192,13 +201,23 @@ class CooldownManager:
         if self.SNIPER_MODE:
             sniper_signals = [s for s in signals if sniper_filter(s)]
             sniper_signals = sorted(sniper_signals, key=lambda x: x.get("confidence", 0), reverse=True)[:3]
-            return sniper_signals
+            if len(sniper_signals) > 0:
+                for s in sniper_signals:
+                    self.store(s)
+                return sniper_signals
         
-        filtered = filter_elite(signals, 75)
+        filtered = filter_elite(signals, 70)
         
         filtered = balance_signals(filtered)
         
         filtered = sorted(filtered, key=lambda x: x.get("confidence", 0), reverse=True)[:10]
+        
+        if len(filtered) == 0 and len(signals) > 0:
+            filtered = fallback_filter(signals, 65)
+            filtered = sorted(filtered, key=lambda x: x.get("confidence", 0), reverse=True)[:5]
+        
+        for s in filtered:
+            self.store(s)
         
         return filtered
 
