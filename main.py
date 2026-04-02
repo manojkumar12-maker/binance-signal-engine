@@ -146,9 +146,15 @@ async def scanner_async_loop():
                     from app.services import tracker
                     
                     for signal in SIGNALS_CACHE[:2]:
+                        if signal.get("signal") == "NO TRADE":
+                            continue
+                            
                         pair = signal.get("pair")
                         signal_type = signal.get("signal")
                         entry = signal.get("entry_primary")
+                        
+                        if not entry or entry <= 0:
+                            continue
                         
                         trade = tracker.create_trade(
                             pair=pair,
@@ -349,7 +355,11 @@ def open_trade():
 @app.route('/api/trade/<trade_id>', methods=['PUT'])
 def update_trade(trade_id):
     logger.info(f"[API] /api/trade/{trade_id}")
-    current_price = float(request.args.get('price', 0))
+    price_str = request.args.get('price', '0')
+    try:
+        current_price = float(price_str) if price_str and price_str != 'undefined' else 0
+    except:
+        current_price = 0
     if current_price > 0:
         result = tracker.update_trade(trade_id, current_price)
         return jsonify({"success": True, "trade": result})

@@ -252,10 +252,18 @@ async function fetchTopSignals() {
 }
 
 async function monitorTrades() {
+    const toRemove = [];
+    
     for (const trade of activeTrades) {
         try {
             const response = await fetch(`${API_BASE_URL}/signal/${trade.pair}?timeframe=1h`);
             const data = await response.json();
+            
+            if (data.signal === 'NO TRADE' || !data.entry_primary) {
+                console.log('Signal unavailable for', trade.pair, '- removing from tracking');
+                toRemove.push(trade.id);
+                continue;
+            }
             
             const currentPrice = data.entry_primary || data.entry;
             
@@ -283,7 +291,12 @@ async function monitorTrades() {
             }
         } catch (error) {
             console.error('Error monitoring trade:', trade.pair, error);
+            toRemove.push(trade.id);
         }
+    }
+    
+    for (const id of toRemove) {
+        activeTrades = activeTrades.filter(t => t.id !== id);
     }
     
     renderActiveTrades();
