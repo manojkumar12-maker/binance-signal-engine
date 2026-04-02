@@ -70,7 +70,7 @@ function renderSignals() {
     tbody.innerHTML = '';
     
     if (signalsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">No signals. Market scanning...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">No signals. Market scanning...</td></tr>';
         return;
     }
     
@@ -86,6 +86,7 @@ function renderSignals() {
             <td>${formatPrice(signal.tp3)}</td>
             <td>${signal.confidence}%</td>
             <td>${signal.risk_pct}%</td>
+            <td><button class="trade-btn" onclick="openTradeFromSignal('${signal.pair}')">Open</button></td>
         `;
         tbody.appendChild(row);
     });
@@ -358,9 +359,6 @@ function renderClosedTrades() {
 }
 
 async function openTradeFromSignal(pair) {
-    const confirmed = confirm(`Open trade for ${pair}?`);
-    if (!confirmed) return;
-    
     try {
         const response = await fetch(`${API_BASE_URL}/signal/${pair}?timeframe=1h`);
         const data = await response.json();
