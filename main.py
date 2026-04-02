@@ -139,28 +139,36 @@ async def scanner_async_loop():
             
             cooldown_manager.cleanup_expired()
             
+            logger.info(f">>> AUTO: {len(SIGNALS_CACHE)} signals, checking auto-trade...")
+            
             if SIGNALS_CACHE:
-                from app.services import tracker
-                for signal in SIGNALS_CACHE[:2]:
-                    pair = signal.get("pair")
+                try:
+                    from app.services import tracker
                     existing = tracker.get_open_trades()
-                    if any(t.get("pair") == pair for t in existing):
-                        logger.info(f">>> AUTO: Trade already open for {pair}")
-                        continue
+                    logger.info(f">>> AUTO: {len(existing)} open trades")
                     
-                    trade = tracker.create_trade(
-                        pair=signal.get("pair"),
-                        signal_type=signal.get("signal"),
-                        entry=signal.get("entry_primary"),
-                        sl=signal.get("sl"),
-                        tp1=signal.get("tp1"),
-                        tp2=signal.get("tp2"),
-                        tp3=signal.get("tp3"),
-                        confidence=signal.get("confidence", 0),
-                        entry_limit=signal.get("entry_limit")
-                    )
-                    tracker.add_trade(trade)
-                    logger.info(f">>> AUTO TRADE OPENED: {pair} {signal.get('signal')} @ {signal.get('entry_primary')}")
+                    for signal in SIGNALS_CACHE[:2]:
+                        pair = signal.get("pair")
+                        
+                        if any(t.get("pair") == pair for t in existing):
+                            logger.info(f">>> SKIP: {pair} already open")
+                            continue
+                        
+                        trade = tracker.create_trade(
+                            pair=signal.get("pair"),
+                            signal_type=signal.get("signal"),
+                            entry=signal.get("entry_primary"),
+                            sl=signal.get("sl"),
+                            tp1=signal.get("tp1"),
+                            tp2=signal.get("tp2"),
+                            tp3=signal.get("tp3"),
+                            confidence=signal.get("confidence", 0),
+                            entry_limit=signal.get("entry_limit")
+                        )
+                        tracker.add_trade(trade)
+                        logger.info(f">>> AUTO TRADE: {pair} {signal.get('signal')} @ {signal.get('entry_primary')}")
+                except Exception as e:
+                    logger.error(f">>> AUTO TRADE ERROR: {e}")
             
             logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
