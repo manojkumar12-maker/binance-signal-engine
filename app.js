@@ -5,6 +5,44 @@ let closedTrades = [];
 let signalsData = [];
 let monitoringInterval = null;
 let analyticsData = null;
+let sniperMode = false;
+
+async function fetchConfig() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/config`);
+        const data = await response.json();
+        sniperMode = data.sniper_mode || false;
+        updateToggleUI();
+    } catch (error) {
+        console.error('Error fetching config:', error);
+    }
+}
+
+async function toggleSniperMode() {
+    sniperMode = !sniperMode;
+    try {
+        await fetch(`${API_BASE_URL}/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sniper_mode: sniperMode })
+        });
+        updateToggleUI();
+    } catch (error) {
+        console.error('Error toggling sniper mode:', error);
+    }
+}
+
+function updateToggleUI() {
+    const toggle = document.getElementById('sniperToggle');
+    const label = document.getElementById('modeLabel');
+    if (toggle) {
+        toggle.checked = sniperMode;
+    }
+    if (label) {
+        label.textContent = sniperMode ? '🎯 SNIPER MODE' : 'NORMAL MODE';
+        label.style.color = sniperMode ? '#ff6b6b' : 'var(--text-primary)';
+    }
+}
 
 async function fetchAnalytics() {
     try {
@@ -386,12 +424,20 @@ function updateLastUpdate() {
 }
 
 function init() {
+    fetchConfig();
+    
+    const toggle = document.getElementById('sniperToggle');
+    if (toggle) {
+        toggle.addEventListener('change', toggleSniperMode);
+    }
+    
     syncWithBackend();
     fetchAnalytics();
     fetchSignals();
     
     setInterval(() => {
         fetchSignals();
+        fetchConfig();
     }, 30000);
     
     monitoringInterval = setInterval(() => {

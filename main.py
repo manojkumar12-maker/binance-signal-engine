@@ -366,6 +366,24 @@ def close_trade(trade_id):
         return jsonify({"success": True, "trade": result})
     return jsonify({"success": False, "error": "Trade not found"}), 404
 
+@app.route('/api/config', methods=['GET', 'POST'])
+def get_set_config():
+    global cooldown_manager
+    
+    if request.method == 'POST':
+        data = request.json
+        if 'sniper_mode' in data:
+            cooldown_manager.SNIPER_MODE = data['sniper_mode']
+            logger.info(f">>> SNIPER MODE: {'ENABLED' if data['sniper_mode'] else 'DISABLED'}")
+        
+        return jsonify({"success": True, "sniper_mode": cooldown_manager.SNIPER_MODE})
+    
+    return jsonify({
+        "sniper_mode": cooldown_manager.SNIPER_MODE,
+        "elite_threshold": config.ELITE_THRESHOLD,
+        "max_signals": config.MAX_SIGNALS
+    })
+
 @app.route('/api/analytics')
 def get_analytics():
     logger.info("[API] /api/analytics")
