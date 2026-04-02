@@ -285,11 +285,14 @@ async function monitorTrades() {
                 fetchAnalytics();
             } else {
                 trade.currentPrice = currentPrice;
+                trade.confidence = data.confidence;
             }
         } catch (error) {
             console.error('Error monitoring trade:', trade.pair, error);
         }
     }
+    
+    renderActiveTrades();
 }
 
 function renderActiveTrades() {
@@ -297,24 +300,40 @@ function renderActiveTrades() {
     tbody.innerHTML = '';
     
     if (activeTrades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">No active trades. Scanning...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">No active trades. Click a signal to open trade.</td></tr>';
         return;
     }
     
     activeTrades.forEach(trade => {
+        const currentPrice = trade.currentPrice || trade.entry;
+        const entry = trade.entry;
+        const type = trade.type;
+        
+        let pnlPct = 0;
+        let pnlClass = '';
+        
+        if (type === 'BUY') {
+            pnlPct = ((currentPrice - entry) / entry) * 100;
+        } else {
+            pnlPct = ((entry - currentPrice) / entry) * 100;
+        }
+        
+        pnlPct = pnlPct.toFixed(2);
+        pnlClass = pnlPct >= 0 ? 'profit' : 'loss';
+        
         const row = document.createElement('tr');
         row.style.cursor = 'pointer';
         row.title = 'Click to close trade';
         row.onclick = () => closeTradeManual(trade.id);
         row.innerHTML = `
             <td>${trade.pair}</td>
-            <td class="${trade.type === 'BUY' ? 'signal-buy' : 'signal-sell'}">${trade.type}</td>
-            <td>${formatPrice(trade.currentPrice || trade.entry)}</td>
+            <td class="${type === 'BUY' ? 'signal-buy' : 'signal-sell'}">${type}</td>
+            <td>${formatPrice(currentPrice)}</td>
             <td>${formatPrice(trade.tp1)}</td>
             <td>${formatPrice(trade.tp2)}</td>
             <td>${formatPrice(trade.tp3)}</td>
             <td>${formatPrice(trade.sl)}</td>
-            <td>${trade.confidence}%</td>
+            <td class="${pnlClass}">${pnlPct}%</td>
         `;
         tbody.appendChild(row);
     });
@@ -438,11 +457,11 @@ function init() {
     setInterval(() => {
         fetchSignals();
         fetchConfig();
-    }, 30000);
+    }, 15000);
     
-    monitoringInterval = setInterval(() => {
+    setInterval(() => {
         monitorTrades();
-    }, 30000);
+    }, 15000);
 }
 
 document.addEventListener('DOMContentLoaded', init);
