@@ -73,17 +73,17 @@ def balance_signals(signals):
     return buys + sells
 
 
-def filter_elite(signals, threshold=70):
+def filter_elite(signals, threshold=80):
     return [s for s in signals if s.get("confidence", 0) >= threshold]
 
 
 def sniper_filter(signal):
     score = signal.get("confidence", 0)
     
-    if score >= 85:
+    if score >= 90:
         return True
     
-    if score >= 75:
+    if score >= 80:
         whale = signal.get("whale_signal")
         liquidity = signal.get("liquidity", "")
         if whale and whale != "NEUTRAL":
@@ -94,7 +94,7 @@ def sniper_filter(signal):
     return False
 
 
-def fallback_filter(signals, threshold=65):
+def fallback_filter(signals, threshold=75):
     return [s for s in signals if s.get("confidence", 0) >= threshold]
 
 
@@ -206,15 +206,15 @@ class CooldownManager:
                     self.store(s)
                 return sniper_signals
         
-        filtered = filter_elite(signals, 70)
+        filtered = filter_elite(signals, 80)
         
         filtered = balance_signals(filtered)
         
-        filtered = sorted(filtered, key=lambda x: x.get("confidence", 0), reverse=True)[:10]
+        filtered = sorted(filtered, key=lambda x: x.get("confidence", 0), reverse=True)[:5]
         
         if len(filtered) == 0 and len(signals) > 0:
-            filtered = fallback_filter(signals, 65)
-            filtered = sorted(filtered, key=lambda x: x.get("confidence", 0), reverse=True)[:5]
+            filtered = fallback_filter(signals, 75)
+            filtered = sorted(filtered, key=lambda x: x.get("confidence", 0), reverse=True)[:3]
         
         for s in filtered:
             self.store(s)
