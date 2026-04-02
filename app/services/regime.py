@@ -1,9 +1,24 @@
 from typing import List, Dict
-import structure
 
 
 def detect_trend_strength(candles: List[Dict]) -> float:
-    return structure.detect_trend_strength(candles)
+    if len(candles) < 10:
+        return 0.0
+    
+    recent = candles[-10:]
+    
+    high_count = 0
+    for i in range(1, len(recent) - 1):
+        if recent[i]["high"] > recent[i-1]["high"] and recent[i]["high"] > recent[i+1]["high"]:
+            high_count += 1
+    
+    low_count = 0
+    for i in range(1, len(recent) - 1):
+        if recent[i]["low"] < recent[i-1]["low"] and recent[i]["low"] < recent[i+1]["low"]:
+            low_count += 1
+    
+    trend_strength = (high_count + low_count) / (len(recent) - 2)
+    return min(trend_strength, 1.0)
 
 
 def detect_market_regime(atr_ratio: float, trend: str, trend_strength: float = 0.0) -> str:
