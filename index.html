@@ -216,8 +216,15 @@
     .lbl-building { background: rgba(255, 184, 0, 0.15); color: #ffb800; }
     .lbl-entry { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
     .lbl-explosion { background: rgba(255, 51, 102, 0.15); color: var(--red); }
-
+    .lbl-tp { background: rgba(0, 255, 136, 0.15); color: var(--green); }
+    .lbl-sl { background: rgba(255, 51, 102, 0.15); color: var(--red); }
+    .lbl-closed { background: rgba(100, 116, 139, 0.15); color: var(--muted); }
+    
     .sig-sym { font-size: 1.4rem; font-weight: 700; color: #fff; }
+    .sig-meta { font-size: 0.7rem; color: var(--muted); margin-top: 4px; display: flex; gap: 12px; }
+    .sig-meta .meta-item { display: flex; align-items: center; gap: 4px; }
+    .sig-meta .meta-label { color: var(--muted); }
+    .sig-meta .meta-value { color: var(--accent); font-family: monospace; }
     
     .sig-stats { margin-top: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .stat-box {
@@ -360,10 +367,27 @@
       // Determine type and styling based on signal data
       const type = data.type || 'EARLY ENTRY';
       const confidence = parseFloat(data.confidence || 0);
+      const status = data.status || 'ACTIVE';
+      const isClosed = status !== 'ACTIVE' && status !== 'HOT' && status !== 'WATCHLIST';
       
       let typeStr, cClass, borderClass;
       
-      if (type.includes('CONFIRMED') || confidence > 70) {
+      // Handle closed signals
+      if (isClosed) {
+        if (status.includes('TP')) {
+          typeStr = `TP HIT (${status})`;
+          cClass = 'lbl-tp';
+          borderClass = 'type-confirmed';
+        } else if (status === 'STOPPED_OUT' || status === 'SL') {
+          typeStr = 'SL HIT';
+          cClass = 'lbl-sl';
+          borderClass = 'type-early';
+        } else {
+          typeStr = status;
+          cClass = 'lbl-closed';
+          borderClass = 'type-early';
+        }
+      } else if (type.includes('CONFIRMED') || confidence > 70) {
         typeStr = 'CONFIRMED';
         cClass = 'lbl-confirmed';
         borderClass = 'type-confirmed';
@@ -394,6 +418,38 @@
       }
 
       const fmt = n => Number(n).toFixed(6).replace(/0+$/, '').replace(/\.$/, '') || '0';
+      
+      // Calculate age for active signals
+      let ageDisplay = '';
+      if (!isClosed && data.timestamp) {
+        const ageMs = Date.now() - new Date(data.timestamp).getTime();
+        const ageMins = Math.floor(ageMs / 60000);
+        const ageHours = Math.floor(ageMins / 60);
+        const ageStr = ageHours > 0 ? `${ageHours}h ${ageMins % 60}m` : `${ageMins}m`;
+        ageDisplay = `<div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">🕐 Age: ${ageStr}</div>`;
+      }
+      
+      // Calculate P/L for closed signals
+      let pnlDisplay = '';
+      if (isClosed && data.closedPrice && data.entry) {
+        const pnl = ((data.closedPrice - data.entry) / data.entry) * 100;
+        const pnlClass = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        pnlDisplay = `<div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.3);border-radius:6px;">
+          <span style="color:var(--muted);font-size:0.7rem;">P/L</span>
+          <span style="color:${pnlClass};font-weight:700;font-size:1.1rem;margin-left:8px;">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</span>
+        </div>`;
+      }
+      
+      // Show closed price and time for closed signals
+      let metaInfo = '';
+      if (isClosed && data.closedPrice) {
+        const closedTime = data.closedAt ? new Date(data.closedAt).toLocaleString() : 'Recent';
+        metaInfo = `<div class="sig-meta">
+          <div class="meta-item"><span class="meta-label">Closed:</span><span class="meta-value">${fmt(data.closedPrice)}</span></div>
+          <div class="meta-item"><span class="meta-label">Time:</span><span class="meta-value">${closedTime}</span></div>
+          ${data.remarks ? `<div class="meta-item"><span class="meta-label">Note:</span><span class="meta-value" style="color:var(--green)">${data.remarks}</span></div>` : ''}
+        </div>`;
+      }
 
       const el = document.createElement('div');
       el.className = `signal-card ${borderClass}`;
@@ -423,6 +479,9 @@
             SL: ${data.stopLoss ? fmt(data.stopLoss) : '--'}
           </div>
         </div>
+        ${ageDisplay}
+        ${metaInfo}
+        ${pnlDisplay}
       `;
 
       signalsContainer.prepend(el);

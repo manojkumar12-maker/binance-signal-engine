@@ -15,7 +15,7 @@ import { marketDataTracker } from './engine/marketDataTracker.js';
 import { oiTracker } from './engine/oiTracker.js';
 import { topPumpSelector } from './engine/topPumpSelector.js';
 import { signalGenerator } from './signals/signalGenerator.js';
-import { addSignal, getRecentSignals, getActiveSignals } from './state.js';
+import { addSignal, getRecentSignals, getActiveSignals, updateSignalStatus } from './state.js';
 import { sendTelegram } from './utils/telegram.js';
 import { shouldEmit, selectTopSignals, isHighQuality, isExecutionReady, formatSignalForTelegram, formatTopWatch, getCooldownForType } from './signals/signalFilters.js';
 import { initDatabase, createSignal, closeDatabase } from './database/db.js';
@@ -323,6 +323,50 @@ async function start() {
       console.log(`📈 OI Stats: tracked=${stats.tracked || 0} BTC=${stats.btcChange || 0}% ready=${stats.ready || false}`);
     }, 30000);
 
+    // Monitor active signals for TP/SL hits and broadcast updates
+    const lastBroadcastedSignals = new Set();
+    
+    setInterval(() => {
+      const activeSignals = signalGenerator.getActiveSignals();
+      
+      for (const signal of activeSignals) {
+        const currentPrice = sniperState.price[signal.symbol];
+        if (!currentPrice) continue;
+        
+        // Update signal with current price and check for TP/SL
+        const updatedSignal = signalGenerator.checkSignal(signal.symbol, currentPrice);
+        
+        if (updatedSignal && updatedSignal.status !== 'ACTIVE') {
+          // Signal was closed - broadcast to frontend
+          const signalKey = `${signal.symbol}-${updatedSignal.status}`;
+          if (!lastBroadcastedSignals.has(signalKey)) {
+            lastBroadcastedSignals.add(signalKey);
+            
+            broadcast('sniper', {
+              symbol: updatedSignal.symbol,
+              type: updatedSignal.type,
+              status: updatedSignal.status,
+              confidence: updatedSignal.finalScore?.toFixed?.(1) || updatedSignal.confidence || 0,
+              entry: updatedSignal.entryPrice,
+              stopLoss: updatedSignal.stopLoss,
+              tp1: updatedSignal.targets?.tp1,
+              tp2: updatedSignal.targets?.tp2,
+              closedPrice: updatedSignal.closedPrice,
+              closedAt: updatedSignal.closedAt,
+              remarks: updatedSignal.status === 'STOPPED_OUT' ? 'SL Hit' : `TP${updatedSignal.status.split('_')[0]} Hit`
+            });
+            
+            // Also save to database
+            updateSignalStatus(updatedSignal.symbol, updatedSignal.status, updatedSignal.closedPrice)
+              .then(() => createSignal({...updatedSignal, status: updatedSignal.status}))
+              .catch(() => {});
+            
+            console.log(`🚨 SIGNAL CLOSED: ${signal.symbol} | Status: ${updatedSignal.status} | Closed: ${updatedSignal.closedPrice}`);
+          }
+        }
+      }
+    }, 5000);
+    
     setInterval(() => {
       const topSignals = runSniper();
       const topWatch = getTopWatching();
