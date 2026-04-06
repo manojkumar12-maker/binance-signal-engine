@@ -149,7 +149,7 @@ async def scanner_async_loop():
             
             logger.info(f">>> SCAN COMPLETE: {len(SIGNALS_CACHE)} signals, processing via signal lifecycle...")
             
-            for signal in SIGNALS_CACHE[:10]:
+            for signal in SIGNALS_CACHE[:5]:
                 if signal.get("signal") == "NO TRADE":
                     continue
                 
