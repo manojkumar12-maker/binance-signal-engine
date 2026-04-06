@@ -459,6 +459,7 @@ def get_trades():
     trades = tracker.load_trades()
     
     open_trades = [t for t in trades if t.get("status") == "OPEN"]
+    
     for trade in open_trades:
         try:
             pair = trade.get("pair")
@@ -470,15 +471,75 @@ def get_trades():
                     current_price = float(data["price"])
                     entry = trade.get("entry", 0)
                     signal_type = trade.get("type", "BUY")
-                    if entry > 0:
-                        if signal_type == "BUY":
-                            pnl = (current_price - entry) / entry * 100
-                        else:
-                            pnl = (entry - current_price) / entry * 100
+                    sl = trade.get("sl", 0)
+                    tp1 = trade.get("tp1", 0)
+                    tp2 = trade.get("tp2", 0)
+                    tp3 = trade.get("tp3", 0)
+                    
+                    closed = False
+                    remarks = None
+                    pnl_pct = 0
+                    
+                    if signal_type == "BUY":
+                        if current_price <= sl:
+                            trade["status"] = "SL"
+                            closed = True
+                            remarks = "SL Hit"
+                            pnl_pct = round((sl - entry) / entry * 100, 2)
+                        elif current_price >= tp3:
+                            trade["status"] = "TP3"
+                            closed = True
+                            remarks = "TP3 Hit"
+                            pnl_pct = round((tp3 - entry) / entry * 100, 2)
+                        elif current_price >= tp2:
+                            trade["status"] = "TP2"
+                            closed = True
+                            remarks = "TP2 Hit"
+                            pnl_pct = round((tp2 - entry) / entry * 100, 2)
+                        elif current_price >= tp1:
+                            trade["status"] = "TP1"
+                            closed = True
+                            remarks = "TP1 Hit"
+                            pnl_pct = round((tp1 - entry) / entry * 100, 2)
+                    elif signal_type == "SELL":
+                        if current_price >= sl:
+                            trade["status"] = "SL"
+                            closed = True
+                            remarks = "SL Hit"
+                            pnl_pct = round((entry - sl) / entry * 100, 2)
+                        elif current_price <= tp3:
+                            trade["status"] = "TP3"
+                            closed = True
+                            remarks = "TP3 Hit"
+                            pnl_pct = round((entry - tp3) / entry * 100, 2)
+                        elif current_price <= tp2:
+                            trade["status"] = "TP2"
+                            closed = True
+                            remarks = "TP2 Hit"
+                            pnl_pct = round((entry - tp2) / entry * 100, 2)
+                        elif current_price <= tp1:
+                            trade["status"] = "TP1"
+                            closed = True
+                            remarks = "TP1 Hit"
+                            pnl_pct = round((entry - tp1) / entry * 100, 2)
+                    
+                    if closed:
                         trade["current_price"] = current_price
-                        trade["pnl"] = round(pnl, 2)
+                        trade["pnl_pct"] = pnl_pct
+                        trade["remarks"] = remarks
+                        trade["closed_at"] = datetime.utcnow().isoformat()
+                    else:
+                        trade["current_price"] = current_price
+                        if entry > 0:
+                            if signal_type == "BUY":
+                                pnl = (current_price - entry) / entry * 100
+                            else:
+                                pnl = (entry - current_price) / entry * 100
+                            trade["pnl"] = round(pnl, 2)
         except:
             pass
+    
+    tracker.save_trades(trades)
     
     if status == 'open':
         filtered = [t for t in trades if t.get("status") == "OPEN"]
