@@ -302,6 +302,16 @@ scanner_thread = threading.Thread(target=start_async_scanner, daemon=True)
 scanner_thread.start()
 time.sleep(2)
 
+alert_bot_started()
+
+@app.route('/api/telegram-test')
+def test_telegram():
+    from app.services.telegram_alerts import is_configured, send_telegram
+    if not is_configured():
+        return jsonify({"configured": False, "error": "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set"})
+    result = send_telegram("🧪 Test message from Binance Signal Engine")
+    return jsonify({"configured": True, "sent": result})
+
 
 @app.route('/')
 def root():
@@ -590,5 +600,4 @@ def get_system_status():
 
 if __name__ == '__main__':
     print(f"Starting on port {port}...")
-    alert_bot_started()
     app.run(host='0.0.0.0', port=port)
