@@ -174,8 +174,6 @@ async def scanner_async_loop():
             
             logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
-            logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
-            
             if SIGNALS_CACHE:
                 for i, s in enumerate(SIGNALS_CACHE[:3]):
                     logger.info(f">>> TOP {i+1}: {s.get('pair')} {s.get('signal')} Conf:{s.get('confidence')} Entry:{s.get('entry_primary')}")

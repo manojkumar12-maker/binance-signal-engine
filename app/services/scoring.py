@@ -13,6 +13,15 @@ WEIGHTS = {
     "order_flow": 10
 }
 
+WEIGHTED_WEIGHTS = {
+    "trend_strength": 0.25,
+    "volume_strength": 0.20,
+    "liquidity_signal": 0.15,
+    "whale_signal": 0.15,
+    "entry_score": 0.15,
+    "regime_alignment": 0.10
+}
+
 
 def calculate_confidence(
     trend: str, 
@@ -272,3 +281,50 @@ def get_signal_quality(score: int) -> str:
         return "WEAK"
     else:
         return "SKIP"
+
+
+def calculate_weighted_confidence(
+    trend_strength: float,
+    volume_strength: float,
+    liquidity_signal: float,
+    whale_signal: float,
+    entry_score: float,
+    regime_alignment: float
+) -> float:
+    weights = WEIGHTED_WEIGHTS
+    
+    weighted_score = (
+        weights["trend_strength"] * trend_strength +
+        weights["volume_strength"] * volume_strength +
+        weights["liquidity_signal"] * liquidity_signal +
+        weights["whale_signal"] * whale_signal +
+        weights["entry_score"] * entry_score +
+        weights["regime_alignment"] * regime_alignment
+    )
+    
+    return round(weighted_score, 2)
+
+
+def normalize_to_100(raw_score: float) -> int:
+    normalized = min(100, max(0, raw_score))
+    return int(normalized)
+
+
+def calculate_confidence_with_weights(
+    trend_strength: float,
+    volume_strength: float,
+    liquidity_score: float,
+    whale_score: float,
+    entry_quality_score: float,
+    regime_score: float
+) -> int:
+    confidence = calculate_weighted_confidence(
+        trend_strength=trend_strength * 100,
+        volume_strength=volume_strength * 100,
+        liquidity_signal=liquidity_score,
+        whale_signal=whale_score,
+        entry_score=entry_quality_score,
+        regime_alignment=regime_score * 100
+    )
+    
+    return normalize_to_100(confidence)

@@ -2,6 +2,8 @@ from typing import Dict, Optional, Tuple
 from datetime import datetime
 import config
 from app.services import market, structure, liquidity, volume, scoring, bias_engine, regime, validation, whale
+from app.services import extension_filter, entry_quality, fake_breakout_filter, mtf_alignment
+from app.services import sniper_filter, volatility_compression, no_trade_zones, risk_engine
 
 
 def calculate_atr(candles: list, period: int = 14) -> float:
@@ -180,6 +182,76 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
         
+        is_extended, extension_distance = extension_filter.check_extension(candles, timeframe)
+        
+        if is_extended:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "is_extended": True,
+                "extension_distance_pct": extension_distance,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": f"MARKET EXTENDED: price {extension_distance}% from EMA25"
+            }
+        
+        is_trap, trap_details = fake_breakout_filter.detect_fake_breakout_trap(candles)
+        if is_trap:
+            confidence = max(0, confidence - 25)
+        
+        no_trade, zone_details = no_trade_zones.check_no_trade_zones(candles)
+        if no_trade:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": f"NO_TRADE_ZONE: {zone_details.get('status')}"
+            }
+        
+        entry_score, entry_breakdown = entry_quality.calculate_entry_quality_score(
+            candles, signal_type, entry_primary, sl, 0
+        )
+        
+        if signal_type == "BUY":
+            tp1 = entry_primary * (1 + config.TP1_PERCENT)
+            tp2 = entry_primary * (1 + config.TP2_PERCENT)
+            tp3 = entry_primary * (1 + config.TP3_PERCENT)
+        else:
+            tp1 = entry_primary * (1 - config.TP1_PERCENT)
+            tp2 = entry_primary * (1 - config.TP2_PERCENT)
+            tp3 = entry_primary * (1 - config.TP3_PERCENT)
+        
+        entry_score, entry_breakdown = entry_quality.calculate_entry_quality_score(
+            candles, signal_type, entry_primary, sl, tp1
+        )
+        
+        is_compressed, compression_details = volatility_compression.detect_volatility_compression(candles)
+        if is_compressed:
+            confidence += 10
+        
+        entry_primary, entry_limit = refine_entry(candles, trend, pair)
+        
+        sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
+        
         if not config.validate_trade(entry_primary, sl):
             return {
                 "pair": pair,
@@ -214,8 +286,6 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         trend_strength = structure.detect_trend_strength(candles)
         detected_regime = regime.detect_market_regime(atr_ratio, trend, trend_strength)
         regime_config = regime.get_regime_config(detected_regime)
-        
-        signal_type = "BUY" if trend == "UPTREND" else "SELL"
         
         if detected_regime == "LOW_VOL":
             return {
@@ -302,6 +372,12 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "signal_type": signal_type_value,
             "whale_signal": whale_signal,
             "order_flow": round(order_flow, 2),
+            "entry_score": entry_score,
+            "entry_breakdown": entry_breakdown,
+            "is_extended": is_extended,
+            "extension_distance_pct": extension_distance,
+            "fake_breakout_trap": is_trap,
+            "compression_signal": is_compressed,
             "timestamp": datetime.utcnow().isoformat()
         }
 
