@@ -18,6 +18,7 @@ from app.services.signal_lifecycle import (
     store_signal, get_stored_signal, is_signal_locked, validate_stored_signal,
     confirm_signal, execute_signal, clear_expired_signals, get_all_stored_signals
 )
+from app.services.telegram_alerts import alert_trade_entry, alert_bot_started
 from app.services.execution_worker import start_execution_worker
 import threading
 import time
@@ -187,6 +188,8 @@ async def scanner_async_loop():
                             tracker.add_trade(trade)
                             signal_lifecycle.execute_signal(pair)
                             logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
+                            
+                            alert_trade_entry(signal, {"leverage": 1, "risk_pct": 0.01, "rr": 2})
                         else:
                             logger.info(f">>> REJECTED {pair}: {reason}")
                         continue
@@ -217,6 +220,8 @@ async def scanner_async_loop():
                     tracker.add_trade(trade)
                     signal_lifecycle.execute_signal(pair)
                     logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
+                    
+                    alert_trade_entry(signal, {"leverage": 1, "risk_pct": 0.01, "rr": 2})
                 else:
                     logger.info(f">>> REJECTED {pair}: {reason}")
             
@@ -585,4 +590,5 @@ def get_system_status():
 
 if __name__ == '__main__':
     print(f"Starting on port {port}...")
+    alert_bot_started()
     app.run(host='0.0.0.0', port=port)
