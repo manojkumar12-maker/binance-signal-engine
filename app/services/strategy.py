@@ -187,6 +187,66 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
         
+        atr = calculate_atr(candles)
+        
+        recent_lows = [c['low'] for c in candles[-10:]]
+        recent_highs = [c['high'] for c in candles[-10:]]
+        support = min(recent_lows) if recent_lows else None
+        resistance = max(recent_highs) if recent_highs else None
+        
+        candle_range = candles[-1].get('high', 0) - candles[-1].get('low', 0)
+        avg_range = sum(c.get('high', 0) - c.get('low', 0) for c in candles[-20:]) / 20 if len(candles) >= 20 else candle_range
+        
+        if signal_type == "BUY" and support:
+            if abs(entry_primary - support) < atr * 0.5:
+                confidence += 15
+            elif resistance and abs(entry_primary - resistance) < atr * 0.5:
+                confidence -= 20
+        elif signal_type == "SELL" and resistance:
+            if abs(entry_primary - resistance) < atr * 0.5:
+                confidence += 15
+            elif support and abs(entry_primary - support) < atr * 0.5:
+                confidence -= 20
+        
+        if candle_range > avg_range * 1.8:
+            confidence += 10
+        else:
+            confidence -= 5
+        
+        if atr_ratio < 0.005:
+            confidence -= 20
+        
+        price_change = (candles[-1].get('close', 0) - candles[-2].get('close', 0)) / candles[-2].get('close', 1) if len(candles) >= 2 and candles[-2].get('close') else 0
+        oi_change = 0
+        if oi_data and len(oi_data) >= 2:
+            try:
+                oi_change = (float(oi_data[-1].get('openInterest', 0)) - float(oi_data[-2].get('openInterest', 0))) / float(oi_data[-2].get('openInterest', 1)) if float(oi_data[-2].get('openInterest', 1)) > 0 else 0
+            except:
+                pass
+        
+        if price_change > 0 and oi_change < 0:
+            confidence -= 15
+        elif price_change > 0 and oi_change > 0:
+            confidence += 10
+        elif price_change < 0 and oi_change > 0:
+            confidence -= 15
+        elif price_change < 0 and oi_change < 0:
+            confidence += 10
+        
+        if risk_pct > 0 and entry_primary > 0:
+            tp_distance = abs(tp1 - entry_primary) / entry_primary
+            rr = tp_distance / risk_pct if risk_pct > 0 else 0
+            if rr < 2:
+                confidence -= 20
+            elif rr >= 3:
+                confidence += 10
+        
+        signal_type = "BUY" if trend == "UPTREND" else "SELL"
+        
+        entry_primary, entry_limit = refine_entry(candles, trend, pair)
+        
+        sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
+        
         is_extended, extension_distance = extension_filter.check_extension(candles, timeframe)
         
         if is_extended:
@@ -207,6 +267,24 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "extension_distance_pct": extension_distance,
                 "timestamp": datetime.utcnow().isoformat(),
                 "reason": f"MARKET EXTENDED: price {extension_distance}% from EMA25"
+            }
+        
+        if atr_ratio < 0.005:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "CHOP MARKET: low volatility"
             }
         
         is_trap, trap_details = fake_breakout_filter.detect_fake_breakout_trap(candles)
