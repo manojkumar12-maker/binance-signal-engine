@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import socket from './socket';
 
 const API_URL = process.env.REACT_APP_API_URL || 'https://binance-signal-engine-production.up.railway.app/api';
 
@@ -47,59 +46,28 @@ function App() {
   const [lastUpdate, setLastUpdate] = useState(null);
 
   useEffect(() => {
-    let wsConnected = false;
-    let pollInterval;
-    
-    socket.on('connect', () => {
-      wsConnected = true;
-      setConnected(true);
-      console.log('✅ WebSocket connected');
-    });
-    
-    socket.on('disconnect', () => {
-      wsConnected = false;
-      setConnected(false);
-      console.log('❌ WebSocket disconnected');
-    });
-    
-    socket.on('update', (data) => {
-      setSignals(data.signals || []);
-      setTrades(data.trades || []);
-      setLastUpdate(new Date());
-    });
-
-    socket.on('connect_error', () => {
-      console.log('WebSocket failed, using HTTP polling fallback');
-      setConnected(false);
-    });
-
-    socket.on('error', () => {
-      setConnected(false);
-    });
-
-    socket.connect();
-
-    const startPolling = async () => {
-      if (!wsConnected) {
-        const data = await fetchData();
-        setSignals(data.signals);
-        setTrades(data.trades);
+    const fetchData = async () => {
+      try {
+        const [signalsRes, tradesRes] = await Promise.all([
+          fetch(`${API_URL}/signal-states`),
+          fetch(`${API_URL}/trades?status=open`)
+        ]);
+        const signalsData = await signalsRes.json();
+        const tradesData = await tradesRes.json();
+        setSignals(signalsData.signals || []);
+        setTrades(tradesData.trades || []);
         setLastUpdate(new Date());
+        setConnected(true);
+      } catch (error) {
+        console.error('Fetch error:', error);
+        setConnected(false);
       }
     };
 
-    startPolling();
-    pollInterval = setInterval(startPolling, 5000);
+    fetchData();
+    const interval = setInterval(fetchData, 5000);
 
-    return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('update');
-      socket.off('connect_error');
-      socket.off('error');
-      socket.disconnect();
-      clearInterval(pollInterval);
-    };
+    return () => clearInterval(interval);
   }, []);
 
   const pendingSignals = signals.filter(s => s.signal_state === 'PENDING');
