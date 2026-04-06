@@ -4,7 +4,7 @@ import os
 from typing import Dict, List, Optional
 from datetime import datetime
 
-TRADES_FILE = "trades.json"
+TRADES_FILE = os.environ.get('TRADES_FILE', 'trades.json')
 
 def load_trades() -> List[Dict]:
     if os.path.exists(TRADES_FILE):
@@ -12,12 +12,18 @@ def load_trades() -> List[Dict]:
             with open(TRADES_FILE, 'r') as f:
                 return json.load(f)
         except:
-            return []
+            pass
+    
+    redis_trades = load_trades_from_redis()
+    if redis_trades:
+        return redis_trades
+    
     return []
 
 def save_trades(trades: List[Dict]):
     with open(TRADES_FILE, 'w') as f:
         json.dump(trades, f, indent=2)
+    save_trades_to_redis(trades)
 
 def create_trade(pair: str, signal_type: str, entry: float, sl: float, 
                  tp1: float, tp2: float, tp3: float, confidence: int,
@@ -47,6 +53,28 @@ def add_trade(trade: Dict):
     trades = load_trades()
     trades.append(trade)
     save_trades(trades)
+    save_trades_to_redis(trades)
+
+
+def load_trades_from_redis():
+    try:
+        from app.services import redis_client as rc
+        if rc.r:
+            data = rc.r.get("trades:all")
+            if data:
+                return json.loads(data)
+    except:
+        pass
+    return None
+
+
+def save_trades_to_redis(trades: List[Dict]):
+    try:
+        from app.services import redis_client as rc
+        if rc.r:
+            rc.r.set("trades:all", json.dumps(trades), ex=86400)
+    except:
+        pass
 
 def update_trade(trade_id: str, current_price: float) -> Optional[Dict]:
     trades = load_trades()

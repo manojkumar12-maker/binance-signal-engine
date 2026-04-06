@@ -395,13 +395,17 @@ def get_top_signals():
 def get_trades():
     logger.info("[API] /api/trades")
     status = request.args.get('status', 'all')
+    
+    trades = tracker.load_trades()
+    
     if status == 'open':
-        return jsonify({"trades": tracker.get_open_trades(), "count": len(tracker.get_open_trades())})
+        filtered = [t for t in trades if t.get("status") == "OPEN"]
+        return jsonify({"trades": filtered, "count": len(filtered)})
     elif status == 'closed':
-        return jsonify({"trades": tracker.get_closed_trades(), "count": len(tracker.get_closed_trades())})
+        filtered = [t for t in trades if t.get("status") != "OPEN"]
+        return jsonify({"trades": filtered, "count": len(filtered)})
     else:
-        all_trades = tracker.load_trades()
-        return jsonify({"trades": all_trades, "count": len(all_trades)})
+        return jsonify({"trades": trades, "count": len(trades)})
 
 @app.route('/api/trade/open', methods=['POST'])
 def open_trade():
