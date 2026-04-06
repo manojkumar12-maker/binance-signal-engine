@@ -14,6 +14,10 @@ from app.services.strategy import generate_signal
 from app.services import tracker, market, bias_engine
 from app.services.redis_client import set_cache, get_cache
 from app.services.cooldown_manager import cooldown_manager
+from app.services.signal_lock import (
+    lock_signal, get_locked_signal, is_signal_locked, validate_locked_signal,
+    confirm_signal, execute_signal, clear_expired_signals
+)
 import threading
 import time
 import asyncio
@@ -137,6 +141,9 @@ async def scanner_async_loop():
             SIGNALS_CACHE = cooldown_manager.process_signals(results)
             set_cache("top_signals", SIGNALS_CACHE, ttl=60)
             
+            from app.services import signal_lock
+            signal_lock.clear_expired_signals()
+            
             cooldown_manager.cleanup_expired()
             
             logger.info(f">>> SCAN COMPLETE: {len(SIGNALS_CACHE)} signals, creating auto-trades...")
@@ -148,12 +155,38 @@ async def scanner_async_loop():
                     for signal in SIGNALS_CACHE[:2]:
                         if signal.get("signal") == "NO TRADE":
                             continue
-                            
+                        
                         pair = signal.get("pair")
                         signal_type = signal.get("signal")
                         entry = signal.get("entry_primary")
                         
                         if not entry or entry <= 0:
+                            continue
+                        
+                        if signal_lock.is_signal_locked(pair):
+                            is_valid, reason = signal_lock.validate_locked_signal(pair, config.MIN_CONFIDENCE)
+                            if not is_valid:
+                                logger.info(f">>> SKIP {pair}: {reason} (already locked)")
+                                continue
+                            
+                            locked = signal_lock.get_locked_signal(pair)
+                            if locked and locked.get("signal_state") == "CONFIRMED":
+                                logger.info(f">>> SKIP {pair}: already confirmed, waiting for execution")
+                                continue
+                            
+                            confirm_signal(pair)
+                            logger.info(f">>> CONFIRMED: {pair}")
+                            continue
+                        
+                        locked_signal = signal_lock.lock_signal(signal, "PENDING")
+                        logger.info(f">>> LOCKED {pair}: state=PENDING, confidence={signal.get('confidence')}")
+                        
+                        is_valid, reason = signal_lock.validate_locked_signal(pair, config.MIN_CONFIDENCE)
+                        if is_valid:
+                            confirm_signal(pair)
+                            logger.info(f">>> CONFIRMED {pair}: passed validation")
+                        else:
+                            logger.info(f">>> REJECTED {pair}: {reason}")
                             continue
                         
                         trade = tracker.create_trade(
@@ -168,6 +201,7 @@ async def scanner_async_loop():
                             entry_limit=signal.get("entry_limit")
                         )
                         tracker.add_trade(trade)
+                        signal_lock.execute_signal(pair)
                         logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
                 except Exception as e:
                     logger.error(f">>> AUTO TRADE ERROR: {e}")
@@ -261,10 +295,21 @@ def health():
 @app.route('/api/signal/<pair>')
 def get_signal(pair):
     logger.info(f"[API] /api/signal/{pair}")
+    
+    pair_upper = pair.upper()
+    
+    if is_signal_locked(pair_upper):
+        locked = get_locked_signal(pair_upper)
+        state = locked.get("signal_state")
+        
+        if state in ["PENDING", "CONFIRMED", "EXECUTED"]:
+            logger.info(f"[API] {pair}: returning LOCKED signal (state={state})")
+            return jsonify(locked)
+    
     timeframe = request.args.get('timeframe', '1h')
     fetch_oi = request.args.get('fetch_oi', 'true').lower() == 'true'
     use_bias = request.args.get('use_bias', 'true').lower() == 'true'
-    result = generate_signal(pair.upper(), timeframe, fetch_oi, use_bias)
+    result = generate_signal(pair_upper, timeframe, fetch_oi, use_bias)
     logger.info(f"[API] {pair}: {result.get('signal')} | Conf: {result.get('confidence')} | Risk: {result.get('risk_pct')}%")
     return jsonify(result)
 
