@@ -72,7 +72,7 @@ def store_signal(signal: Dict, state: str = "PENDING") -> Optional[Dict]:
     locked_signal["signal_state"] = state
     locked_signal["locked_at"] = time.time()
     locked_signal["locked_timestamp"] = datetime.utcnow().isoformat()
-    locked_signal["ttl"] = SIGNAL_DECAY_SECONDS.get("1h", 1800)
+    locked_signal["ttl"] = config.SIGNAL_DECAY_MINUTES * 60
     
     locked_signal["snapshot"] = {
         "trend": signal.get("trend"),

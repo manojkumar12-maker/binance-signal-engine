@@ -158,39 +158,55 @@ async def scanner_async_loop():
             
             cooldown_manager.cleanup_expired()
             
-            logger.info(f">>> SCAN COMPLETE: {len(SIGNALS_CACHE)} signals, processing via signal lifecycle...")
+            ranked_signals = sorted(
+                SIGNALS_CACHE,
+                key=lambda x: (x.get("confidence", 0) + x.get("entry_score", 0)),
+                reverse=True
+            )
+            top_signals = ranked_signals[:3]
             
-            for signal in SIGNALS_CACHE[:5]:
-                if signal.get("signal") == "NO TRADE":
-                    continue
-                
-                pair = signal.get("pair")
-                signal_type = signal.get("signal")
-                entry = signal.get("entry_primary")
-                
-                if not entry or entry <= 0:
-                    continue
-                
-                if signal_lifecycle.is_signal_locked(pair):
-                    locked = signal_lifecycle.get_stored_signal(pair)
-                    if locked and locked.get("signal_state") in ["CONFIRMED", "EXECUTED"]:
-                        logger.info(f">>> SKIP {pair}: already in progress (state={locked.get('signal_state')})")
+            open_trades = tracker.get_open_trades()
+            total_risk = sum(t.get("risk_pct", 0) for t in open_trades) / 100
+            
+            if total_risk >= config.MAX_TOTAL_RISK_PCT:
+                logger.warning(f">>> MAX EXPOSURE REACHED: {total_risk*100:.1f}% >= {config.MAX_TOTAL_RISK_PCT*100}% - blocking new trades")
+            
+            logger.info(f">>> SCAN COMPLETE: {len(SIGNALS_CACHE)} signals, processing top 3 via signal lifecycle...")
+            
+            if total_risk >= config.MAX_TOTAL_RISK_PCT:
+                logger.warning(f">>> MAX EXPOSURE REACHED - skipping all signals")
+            else:
+                for signal in top_signals:
+                    if signal.get("signal") == "NO TRADE":
                         continue
                     
-                    if locked and locked.get("signal_state") == "PENDING":
-                        is_valid, reason = signal_lifecycle.validate_stored_signal(pair, config.MIN_CONFIDENCE)
-                        if is_valid:
-                            signal_lifecycle.confirm_signal(pair)
-                            logger.info(f">>> CONFIRMED {pair}: passed validation")
-                            
-                            trade = tracker.create_trade(
-                                pair=pair,
-                                signal_type=signal_type,
-                                entry=entry,
-                                sl=signal.get("sl"),
-                                tp1=signal.get("tp1"),
-                                tp2=signal.get("tp2"),
-                                tp3=signal.get("tp3"),
+                    pair = signal.get("pair")
+                    signal_type = signal.get("signal")
+                    entry = signal.get("entry_primary")
+                    
+                    if not entry or entry <= 0:
+                        continue
+                    
+                    if signal_lifecycle.is_signal_locked(pair):
+                        locked = signal_lifecycle.get_stored_signal(pair)
+                        if locked and locked.get("signal_state") in ["CONFIRMED", "EXECUTED"]:
+                            logger.info(f">>> SKIP {pair}: already in progress (state={locked.get('signal_state')})")
+                            continue
+                        
+                        if locked and locked.get("signal_state") == "PENDING":
+                            is_valid, reason = signal_lifecycle.validate_stored_signal(pair, config.MIN_CONFIDENCE)
+                            if is_valid:
+                                signal_lifecycle.confirm_signal(pair)
+                                logger.info(f">>> CONFIRMED {pair}: passed validation")
+                                
+                                trade = tracker.create_trade(
+                                    pair=pair,
+                                    signal_type=signal_type,
+                                    entry=entry,
+                                    sl=signal.get("sl"),
+                                    tp1=signal.get("tp1"),
+                                    tp2=signal.get("tp2"),
+                                    tp3=signal.get("tp3"),
                                 confidence=signal.get("confidence", 0),
                                 entry_limit=signal.get("entry_limit")
                             )

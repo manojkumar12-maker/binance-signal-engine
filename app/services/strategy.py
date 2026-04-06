@@ -236,14 +236,33 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             candles, signal_type, entry_primary, sl, 0
         )
         
-        if signal_type == "BUY":
-            tp1 = entry_primary * (1 + config.TP1_PERCENT)
-            tp2 = entry_primary * (1 + config.TP2_PERCENT)
-            tp3 = entry_primary * (1 + config.TP3_PERCENT)
+        atr = calculate_atr(candles)
+        
+        if config.ATR_BASED_TP_SL:
+            sl_distance = atr * config.ATR_SL_MULTIPLIER
+            tp1_distance = atr * config.ATR_TP1_MULTIPLIER
+            tp2_distance = atr * config.ATR_TP2_MULTIPLIER
+            tp3_distance = atr * config.ATR_TP3_MULTIPLIER
+            
+            if signal_type == "BUY":
+                sl = entry_primary - sl_distance
+                tp1 = entry_primary + tp1_distance
+                tp2 = entry_primary + tp2_distance
+                tp3 = entry_primary + tp3_distance
+            else:
+                sl = entry_primary + sl_distance
+                tp1 = entry_primary - tp1_distance
+                tp2 = entry_primary - tp2_distance
+                tp3 = entry_primary - tp3_distance
         else:
-            tp1 = entry_primary * (1 - config.TP1_PERCENT)
-            tp2 = entry_primary * (1 - config.TP2_PERCENT)
-            tp3 = entry_primary * (1 - config.TP3_PERCENT)
+            if signal_type == "BUY":
+                tp1 = entry_primary * (1 + config.TP1_PERCENT)
+                tp2 = entry_primary * (1 + config.TP2_PERCENT)
+                tp3 = entry_primary * (1 + config.TP3_PERCENT)
+            else:
+                tp1 = entry_primary * (1 - config.TP1_PERCENT)
+                tp2 = entry_primary * (1 - config.TP2_PERCENT)
+                tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
         entry_score, entry_breakdown = entry_quality.calculate_entry_quality_score(
             candles, signal_type, entry_primary, sl, tp1
