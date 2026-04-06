@@ -345,16 +345,21 @@ async function monitorTrades() {
     
     for (const trade of activeTrades) {
         try {
-            const response = await fetch(`${API_BASE_URL}/signal/${trade.pair}?timeframe=1h`);
+            const response = await fetch(`${API_BASE_URL}/price/${trade.pair}`);
             const data = await response.json();
             
-            if (data.signal === 'NO TRADE' || !data.entry_primary) {
-                console.log('Signal unavailable for', trade.pair, '- removing from tracking');
-                toRemove.push(trade.id);
-                continue;
+            if (!data.price) {
+                console.log('Price unavailable for', trade.pair, '- trying signal endpoint');
+                const signalRes = await fetch(`${API_BASE_URL}/signal/${trade.pair}?timeframe=1h`);
+                const signalData = await signalRes.json();
+                if (signalData.signal === 'NO TRADE' || !signalData.entry_primary) {
+                    toRemove.push(trade.id);
+                    continue;
+                }
+                var currentPrice = signalData.entry_primary || signalData.entry;
+            } else {
+                var currentPrice = data.price;
             }
-            
-            const currentPrice = data.entry_primary || data.entry;
             
             const result = await fetch(`${API_BASE_URL}/trade/${trade.id}?price=${currentPrice}`, {
                 method: 'PUT'
@@ -376,7 +381,6 @@ async function monitorTrades() {
                 fetchAnalytics();
             } else {
                 trade.currentPrice = currentPrice;
-                trade.confidence = data.confidence;
             }
         } catch (error) {
             console.error('Error monitoring trade:', trade.pair, error);
@@ -562,7 +566,7 @@ function init() {
     
     setInterval(() => {
         monitorTrades();
-    }, 10000);
+    }, 5000);
 }
 
 document.addEventListener('DOMContentLoaded', init);

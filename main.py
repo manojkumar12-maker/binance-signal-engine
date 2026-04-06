@@ -332,6 +332,19 @@ def get_pairs():
     logger.info("[API] /api/pairs")
     return jsonify({"pairs": TRADING_PAIRS})
 
+
+@app.route('/api/price/<pair>')
+def get_price(pair):
+    try:
+        klines = market.get_klines(pair.upper(), "1h", 1)
+        if klines and len(klines) > 0:
+            current_price = float(klines[-1][4])
+            return jsonify({"pair": pair.upper(), "price": current_price})
+        return jsonify({"error": "No data"}), 404
+    except Exception as e:
+        logger.error(f"[API] price error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/market-bias')
 def get_market_bias():
     logger.info("[API] /api/market-bias")
