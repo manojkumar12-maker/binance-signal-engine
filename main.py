@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 import os
 import logging
 import sys
@@ -8,6 +9,10 @@ sys.path.insert(0, 'app')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 import config
 from app.services.strategy import generate_signal
@@ -244,9 +249,6 @@ def start_async_scanner():
 def get_pairs_with_oi_limit(pairs, limit):
     return pairs[:limit]
 
-
-app = Flask(__name__)
-CORS(app)
 
 logger.info("=== SYSTEM STARTING ===")
 logger.info(f"Config: MIN_CONFIDENCE={config.MIN_CONFIDENCE}, MIN_ATR_RATIO={config.MIN_ATR_RATIO}")
@@ -621,5 +623,46 @@ def get_system_status():
 
 
 if __name__ == '__main__':
-    print(f"Starting on port {port}...")
-    app.run(host='0.0.0.0', port=port)
+    print(f"Starting on port {port} with WebSocket support...")
+    alert_bot_started()
+    
+    def broadcast_data():
+        while True:
+            try:
+                all_signals = get_all_stored_signals()
+                trades = tracker.load_trades()
+                open_trades = [t for t in trades if t.get("status") == "OPEN"]
+                
+                for trade in open_trades:
+                    try:
+                        pair = trade.get("pair")
+                        url = f"{config.FUTURES_API_URL}/fapi/v1/ticker/price?symbol={pair}"
+                        resp = requests.get(url, timeout=3)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if "price" in data:
+                                current_price = float(data["price"])
+                                entry = trade.get("entry", 0)
+                                signal_type = trade.get("type", "BUY")
+                                if entry > 0:
+                                    if signal_type == "BUY":
+                                        pnl = (current_price - entry) / entry * 100
+                                    else:
+                                        pnl = (entry - current_price) / entry * 100
+                                    trade["current_price"] = current_price
+                                    trade["pnl"] = round(pnl, 2)
+                    except:
+                        pass
+                
+                socketio.emit("update", {
+                    "signals": all_signals,
+                    "trades": open_trades,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Broadcast error: {e}")
+            
+            socketio.sleep(3)
+    
+    socketio.start_background_task(broadcast_data)
+    socketio.run(app, host="0.0.0.0", port=port)

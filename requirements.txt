@@ -9,3 +9,5 @@ requests
 asyncio
 python-dotenv
 aiohttp
+flask-socketio
+eventlet
