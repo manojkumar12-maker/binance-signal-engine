@@ -59,11 +59,35 @@
         }
         .refresh { 
             font-size: 12px; 
-            color: var(--text-dim); 
+            color: var(--green); 
             padding: 8px 16px;
             background: var(--bg-card);
             border-radius: 8px;
-            border: 1px solid var(--border);
+            border: 1px solid var(--green);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .refresh::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+        .refresh.error { 
+            color: var(--red); 
+            border-color: var(--red);
+        }
+        .refresh.error::before {
+            background: var(--red);
+            animation: none;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
         }
         
         .stats-grid { 
@@ -416,10 +440,12 @@
                     }).join('');
                 }
                 
-                document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+                document.getElementById('lastUpdate').textContent = '● LIVE';
+                document.getElementById('lastUpdate').className = 'refresh';
             } catch(e) {
                 console.error(e);
-                document.getElementById('lastUpdate').textContent = 'Error loading data';
+                document.getElementById('lastUpdate').textContent = '● OFFLINE';
+                document.getElementById('lastUpdate').className = 'refresh error';
             }
         }
         
