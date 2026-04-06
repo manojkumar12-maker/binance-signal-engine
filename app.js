@@ -55,15 +55,13 @@ async function fetchAnalytics() {
 
 async function fetchSignals() {
     try {
-        const response = await fetch(`${API_BASE_URL}/top-signals?limit=10&min_confidence=60`);
-        const data = await response.json();
-        signalsData = data.signals || [];
-        
         const signalsResponse = await fetch(`${API_BASE_URL}/signals?min_confidence=60`);
         const signalsDataResult = await signalsResponse.json();
+        
+        const activeSignals = signalsDataResult.signals || [];
         const executed = signalsDataResult.executed_signals || [];
         
-        signalsData = [...signalsData, ...executed];
+        signalsData = [...activeSignals, ...executed];
         
         renderSignals();
     } catch (error) {
@@ -348,58 +346,46 @@ async function fetchTopSignals() {
 }
 
 async function monitorTrades() {
-    const toRemove = [];
-    
-    for (const trade of activeTrades) {
-        try {
-            const response = await fetch(`${API_BASE_URL}/price/${trade.pair}`);
-            const data = await response.json();
+    try {
+        const response = await fetch(`${API_BASE_URL}/trades?status=open`);
+        const data = await response.json();
+        
+        const openTrades = data.trades || [];
+        const toRemove = [];
+        
+        for (const trade of activeTrades) {
+            const backendTrade = openTrades.find(t => t.id === trade.id);
             
-            if (!data.price) {
-                console.log('Price unavailable for', trade.pair, '- trying signal endpoint');
-                const signalRes = await fetch(`${API_BASE_URL}/signal/${trade.pair}?timeframe=1h`);
-                const signalData = await signalRes.json();
-                if (signalData.signal === 'NO TRADE' || !signalData.entry_primary) {
-                    toRemove.push(trade.id);
-                    continue;
-                }
-                var currentPrice = signalData.entry_primary || signalData.entry;
-            } else {
-                var currentPrice = data.price;
+            if (!backendTrade) {
+                toRemove.push(trade.id);
+                continue;
             }
             
-            const result = await fetch(`${API_BASE_URL}/trade/${trade.id}?price=${currentPrice}`, {
-                method: 'PUT'
-            });
-            const updateResult = await result.json();
-            
-            if (updateResult.trade && updateResult.trade.status !== 'OPEN') {
+            if (backendTrade.status !== 'OPEN') {
                 const index = activeTrades.findIndex(t => t.id === trade.id);
                 if (index >= 0) {
                     const closedTrade = activeTrades.splice(index, 1)[0];
-                    closedTrade.status = updateResult.trade.status;
-                    closedTrade.pnl_pct = updateResult.trade.pnl_pct;
-                    closedTrade.closed_at = updateResult.trade.closed_at;
-                    closedTrade.remarks = updateResult.trade.remarks;
+                    closedTrade.status = backendTrade.status;
+                    closedTrade.pnl_pct = backendTrade.pnl_pct;
+                    closedTrade.closed_at = backendTrade.closed_at;
+                    closedTrade.remarks = backendTrade.remarks;
                     closedTrades.unshift(closedTrade);
                 }
-                renderActiveTrades();
-                renderClosedTrades();
-                fetchAnalytics();
             } else {
-                trade.currentPrice = currentPrice;
+                trade.currentPrice = backendTrade.current_price || trade.entry;
+                trade.pnl_pct = backendTrade.pnl;
             }
-        } catch (error) {
-            console.error('Error monitoring trade:', trade.pair, error);
-            toRemove.push(trade.id);
         }
+        
+        for (const id of toRemove) {
+            activeTrades = activeTrades.filter(t => t.id !== id);
+        }
+        
+        renderActiveTrades();
+        renderClosedTrades();
+    } catch (error) {
+        console.error('Error monitoring trades:', error);
     }
-    
-    for (const id of toRemove) {
-        activeTrades = activeTrades.filter(t => t.id !== id);
-    }
-    
-    renderActiveTrades();
 }
 
 function renderActiveTrades() {

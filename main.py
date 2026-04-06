@@ -456,6 +456,28 @@ def get_trades():
     
     trades = tracker.load_trades()
     
+    open_trades = [t for t in trades if t.get("status") == "OPEN"]
+    for trade in open_trades:
+        try:
+            pair = trade.get("pair")
+            url = f"{config.FUTURES_API_URL}/fapi/v1/ticker/price?symbol={pair}"
+            resp = requests.get(url, timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                if "price" in data:
+                    current_price = float(data["price"])
+                    entry = trade.get("entry", 0)
+                    signal_type = trade.get("type", "BUY")
+                    if entry > 0:
+                        if signal_type == "BUY":
+                            pnl = (current_price - entry) / entry * 100
+                        else:
+                            pnl = (entry - current_price) / entry * 100
+                        trade["current_price"] = current_price
+                        trade["pnl"] = round(pnl, 2)
+        except:
+            pass
+    
     if status == 'open':
         filtered = [t for t in trades if t.get("status") == "OPEN"]
         return jsonify({"trades": filtered, "count": len(filtered)})
