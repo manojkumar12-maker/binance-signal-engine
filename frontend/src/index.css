@@ -99,6 +99,41 @@ body {
   gap: 24px;
 }
 
+.stats-section {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.stats-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.stats-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.stats-card.wins .stats-value { color: var(--accent-green); }
+.stats-card.losses .stats-value { color: var(--accent-red); }
+.stats-card.win-rate .stats-value { color: var(--accent-blue); }
+.stats-card.pnl.profit .stats-value { color: var(--accent-green); }
+.stats-card.pnl.loss .stats-value { color: var(--accent-red); }
+
 .pipeline-section {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

@@ -21,42 +21,39 @@ const renderState = (state) => {
   }
 };
 
-async function fetchData() {
-  try {
-    const [signalsRes, tradesRes] = await Promise.all([
-      fetch(`${API_URL}/signal-states`),
-      fetch(`${API_URL}/trades?status=open`)
-    ]);
-    const signals = await signalsRes.json();
-    const trades = await tradesRes.json();
-    return {
-      signals: signals.signals || [],
-      trades: trades.trades || []
-    };
-  } catch (error) {
-    console.error('Fetch error:', error);
-    return { signals: [], trades: [] };
-  }
-}
-
 function App() {
   const [signals, setSignals] = useState([]);
   const [trades, setTrades] = useState([]);
+  const [closedTrades, setClosedTrades] = useState([]);
+  const [analytics, setAnalytics] = useState({ wins: 0, losses: 0, win_rate: 0, total_pnl: 0, total_trades: 0 });
   const [lastUpdate, setLastUpdate] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [signalsRes, tradesRes] = await Promise.all([
+        const [signalsRes, tradesRes, closedRes, analyticsRes] = await Promise.all([
           fetch(`${API_URL}/signal-states`),
-          fetch(`${API_URL}/trades?status=open`)
+          fetch(`${API_URL}/trades?status=open`),
+          fetch(`${API_URL}/trades?status=closed`),
+          fetch(`${API_URL}/analytics`)
         ]);
         
-        if (signalsRes.ok && tradesRes.ok) {
+        if (signalsRes.ok && tradesRes.ok && closedRes.ok && analyticsRes.ok) {
           const signalsData = await signalsRes.json();
           const tradesData = await tradesRes.json();
+          const closedData = await closedRes.json();
+          const analyticsData = await analyticsRes.json();
+          
           setSignals(signalsData.signals || []);
           setTrades(tradesData.trades || []);
+          setClosedTrades(closedData.trades || []);
+          setAnalytics({
+            wins: analyticsData.wins || 0,
+            losses: analyticsData.losses || 0,
+            win_rate: analyticsData.win_rate || 0,
+            total_pnl: analyticsData.total_pnl || 0,
+            total_trades: analyticsData.total_trades || 0
+          });
           setLastUpdate(new Date());
         }
       } catch (error) {
@@ -92,6 +89,25 @@ function App() {
       </header>
 
       <main className="main-content">
+        <section className="stats-section">
+          <div className="stats-card wins">
+            <span className="stats-label">WINS</span>
+            <span className="stats-value">{analytics.wins}</span>
+          </div>
+          <div className="stats-card losses">
+            <span className="stats-label">LOSSES</span>
+            <span className="stats-value">{analytics.losses}</span>
+          </div>
+          <div className="stats-card win-rate">
+            <span className="stats-label">WIN RATE</span>
+            <span className="stats-value">{analytics.win_rate}%</span>
+          </div>
+          <div className={`stats-card pnl ${analytics.total_pnl >= 0 ? 'profit' : 'loss'}`}>
+            <span className="stats-label">TOTAL P&L</span>
+            <span className="stats-value">{analytics.total_pnl >= 0 ? '+' : ''}{analytics.total_pnl}%</span>
+          </div>
+        </section>
+
         <section className="pipeline-section">
           <div className="pipeline-card">
             <span className="pipeline-label">PENDING</span>
@@ -202,6 +218,52 @@ function App() {
                         <td>{formatPrice(trade.tp1)}</td>
                         <td>{formatPrice(trade.tp2)}</td>
                         <td>{formatPrice(trade.tp3)}</td>
+                        <td className={`pnl ${isProfit ? 'profit' : 'loss'}`}>
+                          {pnl >= 0 ? '+' : ''}{pnl}%
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="trades-section">
+          <h2>🔒 Closed Trades</h2>
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Pair</th>
+                  <th>Type</th>
+                  <th>Entry</th>
+                  <th>Exit</th>
+                  <th>Status</th>
+                  <th>P/L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {closedTrades.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{textAlign: 'center', color: '#6c7280'}}>
+                      No closed trades
+                    </td>
+                  </tr>
+                ) : (
+                  closedTrades.map((trade, idx) => {
+                    const pnl = trade.pnl_pct || 0;
+                    const isProfit = pnl >= 0;
+                    return (
+                      <tr key={idx}>
+                        <td className="pair">{trade.pair}</td>
+                        <td className={`signal ${trade.type?.toLowerCase()}`}>
+                          {trade.type}
+                        </td>
+                        <td>{formatPrice(trade.entry)}</td>
+                        <td>{formatPrice(trade.current_price)}</td>
+                        <td>{trade.status}</td>
                         <td className={`pnl ${isProfit ? 'profit' : 'loss'}`}>
                           {pnl >= 0 ? '+' : ''}{pnl}%
                         </td>
