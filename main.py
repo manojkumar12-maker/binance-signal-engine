@@ -16,7 +16,7 @@ from app.services.redis_client import set_cache, get_cache
 from app.services.cooldown_manager import cooldown_manager
 from app.services.signal_lifecycle import (
     store_signal, get_stored_signal, is_signal_locked, validate_stored_signal,
-    confirm_signal, execute_signal, clear_expired_signals
+    confirm_signal, execute_signal, clear_expired_signals, get_all_stored_signals
 )
 from app.services.execution_worker import start_execution_worker
 import threading
@@ -30,6 +30,7 @@ SCANNER_RUNNING = False
 SCANNER_ERROR_COUNT = 0
 CONSECUTIVE_LOSSES = 0
 LOSS_STREAK_START = 0
+PRICE_CACHE = {}
 
 async def fetch_klines_async(session, symbol, interval="1h", limit=100):
     url = f"{config.FUTURES_API_URL}/fapi/v1/klines"
@@ -335,14 +336,35 @@ def get_pairs():
 
 @app.route('/api/price/<pair>')
 def get_price(pair):
+    global PRICE_CACHE
     try:
-        klines = market.get_klines(pair.upper(), "1h", 1)
+        symbol = pair.upper()
+        
+        if symbol in PRICE_CACHE:
+            return jsonify({"pair": symbol, "price": PRICE_CACHE[symbol], "cached": True})
+        
+        url = f"{config.FUTURES_API_URL}/fapi/v1/ticker/price?symbol={symbol}"
+        resp = requests.get(url, timeout=5)
+        data = resp.json()
+        
+        if "price" in data:
+            price = float(data["price"])
+            PRICE_CACHE[symbol] = price
+            return jsonify({"pair": symbol, "price": price})
+        
+        logger.warning(f"[API] price fallback for {symbol}")
+        klines = market.get_klines(symbol, "1h", 1)
         if klines and len(klines) > 0:
             current_price = float(klines[-1][4])
-            return jsonify({"pair": pair.upper(), "price": current_price})
+            PRICE_CACHE[symbol] = current_price
+            return jsonify({"pair": symbol, "price": current_price})
+        
         return jsonify({"error": "No data"}), 404
     except Exception as e:
         logger.error(f"[API] price error: {e}")
+        cached = PRICE_CACHE.get(pair.upper())
+        if cached:
+            return jsonify({"pair": pair.upper(), "price": cached, "cached": True})
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/market-bias')
@@ -366,8 +388,29 @@ def get_all_signals():
     filtered = [s for s in SIGNALS_CACHE if s.get("confidence", 0) >= min_confidence]
     filtered = filtered[:10]
     
+    executed_from_redis = get_all_stored_signals("EXECUTED")
+    executed_pairs = [s.get("pair") for s in executed_from_redis]
+    
+    executed_signals = []
+    for pair in executed_pairs:
+        stored = get_stored_signal(pair)
+        if stored:
+            executed_signals.append({
+                "pair": pair,
+                "signal": stored.get("signal", "BUY"),
+                "entry_primary": stored.get("entry_primary"),
+                "sl": stored.get("sl"),
+                "tp1": stored.get("tp1"),
+                "tp2": stored.get("tp2"),
+                "tp3": stored.get("tp3"),
+                "confidence": stored.get("confidence", 0),
+                "risk_pct": stored.get("risk_pct", 0),
+                "signal_state": "EXECUTED"
+            })
+    
     return jsonify({
         "signals": filtered,
+        "executed_signals": executed_signals,
         "count": len(filtered)
     })
 

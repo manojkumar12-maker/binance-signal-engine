@@ -58,6 +58,13 @@ async function fetchSignals() {
         const response = await fetch(`${API_BASE_URL}/top-signals?limit=10&min_confidence=60`);
         const data = await response.json();
         signalsData = data.signals || [];
+        
+        const signalsResponse = await fetch(`${API_BASE_URL}/signals?min_confidence=60`);
+        const signalsDataResult = await signalsResponse.json();
+        const executed = signalsDataResult.executed_signals || [];
+        
+        signalsData = [...signalsData, ...executed];
+        
         renderSignals();
     } catch (error) {
         console.error('Error fetching signals:', error);
