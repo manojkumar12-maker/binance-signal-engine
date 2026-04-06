@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS, cross_origin
 import os
 import logging
@@ -321,7 +321,11 @@ def test_telegram():
 
 @app.route('/')
 def root():
-    return jsonify({"status": "online", "app": "Binance Signal Engine"})
+    return send_file('dashboard.html')
+
+@app.route('/dashboard')
+def dashboard():
+    return send_file('dashboard.html')
 
 @app.route('/health')
 def health():
