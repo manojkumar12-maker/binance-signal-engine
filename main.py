@@ -187,6 +187,21 @@ async def scanner_async_loop():
                     if not entry or entry <= 0:
                         continue
                     
+                    entry_score = signal.get("entry_score", 0)
+                    if entry_score < config.MIN_ENTRY_SCORE:
+                        logger.info(f">>> REJECTED {pair}: entry_score {entry_score} < {config.MIN_ENTRY_SCORE}")
+                        continue
+                    
+                    sl = signal.get("sl", 0)
+                    tp1 = signal.get("tp1", 0)
+                    if sl > 0 and entry > 0 and tp1 > 0:
+                        risk_pct = abs(entry - sl) / entry
+                        reward_pct = abs(tp1 - entry) / entry
+                        rr = reward_pct / risk_pct if risk_pct > 0 else 0
+                        if rr < config.MIN_RR_FILTER:
+                            logger.info(f">>> REJECTED {pair}: RR {rr:.1f} < {config.MIN_RR_FILTER}")
+                            continue
+                    
                     if signal_lifecycle.is_signal_locked(pair):
                         locked = signal_lifecycle.get_stored_signal(pair)
                         if locked and locked.get("signal_state") in ["CONFIRMED", "EXECUTED"]:
