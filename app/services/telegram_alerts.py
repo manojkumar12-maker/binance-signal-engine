@@ -42,7 +42,9 @@ def alert_trade_entry(signal: Dict, position: Dict) -> bool:
 *Side:* {signal.get('signal')}
 *Entry:* {signal.get('entry_primary')}
 *Stop Loss:* {signal.get('sl')}
-*Take Profit:* {signal.get('tp1')}
+*TP1:* {signal.get('tp1')}
+*TP2:* {signal.get('tp2')}
+*TP3:* {signal.get('tp3')}
 
 *Leverage:* {position.get('leverage', 1)}x
 *Risk:* {round(position.get('risk_pct', 0) * 100, 2)}%

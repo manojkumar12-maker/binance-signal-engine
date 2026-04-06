@@ -317,7 +317,7 @@
                 <span class="section-count" id="signalsCount">0</span>
             </div>
             <table id="signalsTable">
-                <thead><tr><th>Pair</th><th>Signal</th><th>Entry</th><th>SL</th><th>TP1</th><th>Conf%</th><th>Risk%</th><th>State</th></tr></thead>
+                <thead><tr><th>Pair</th><th>Signal</th><th>Entry</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Conf%</th><th>Risk%</th><th>State</th></tr></thead>
                 <tbody id="signalsBody"></tbody>
             </table>
         </div>
@@ -328,7 +328,7 @@
                 <span class="section-count" id="activeCount">0</span>
             </div>
             <table id="activeTable">
-                <thead><tr><th>Pair</th><th>Type</th><th>Entry</th><th>Current</th><th>SL</th><th>P/L</th></tr></thead>
+                <thead><tr><th>Pair</th><th>Type</th><th>Entry</th><th>Current</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>P/L</th></tr></thead>
                 <tbody id="activeBody"></tbody>
             </table>
         </div>
@@ -339,7 +339,7 @@
                 <span class="section-count" id="closedCount">0</span>
             </div>
             <table id="closedTable">
-                <thead><tr><th>Pair</th><th>Type</th><th>Entry</th><th>Exit</th><th>Status</th><th>P/L</th></tr></thead>
+                <thead><tr><th>Pair</th><th>Type</th><th>Entry</th><th>Exit</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Status</th><th>P/L</th></tr></thead>
                 <tbody id="closedBody"></tbody>
             </table>
         </div>
@@ -395,6 +395,8 @@
                             <td>${fmt(s.entry_primary)}</td>
                             <td>${fmt(s.sl)}</td>
                             <td>${fmt(s.tp1)}</td>
+                            <td>${fmt(s.tp2)}</td>
+                            <td>${fmt(s.tp3)}</td>
                             <td>${s.confidence || 0}%</td>
                             <td>${s.risk_pct || 0}%</td>
                             <td><span class="state-badge ${state.toLowerCase()}">${state}</span></td>
@@ -416,6 +418,9 @@
                             <td>${fmt(t.entry)}</td>
                             <td>${fmt(t.current_price)}</td>
                             <td>${fmt(t.sl)}</td>
+                            <td>${fmt(t.tp1)}</td>
+                            <td>${fmt(t.tp2)}</td>
+                            <td>${fmt(t.tp3)}</td>
                             <td class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl}%</td>
                         </tr>`;
                     }).join('');
@@ -434,6 +439,10 @@
                             <td class="${t.type?.toLowerCase()}">${t.type}</td>
                             <td>${fmt(t.entry)}</td>
                             <td>${fmt(t.current_price)}</td>
+                            <td>${fmt(t.sl)}</td>
+                            <td>${fmt(t.tp1)}</td>
+                            <td>${fmt(t.tp2)}</td>
+                            <td>${fmt(t.tp3)}</td>
                             <td>${t.status}</td>
                             <td class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl}%</td>
                         </tr>`;
