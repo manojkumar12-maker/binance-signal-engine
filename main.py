@@ -462,6 +462,46 @@ def get_analytics():
     logger.info("[API] /api/analytics")
     return jsonify(tracker.get_analytics())
 
+
+@app.route('/api/signal-states')
+def get_signal_states():
+    from app.services.signal_lifecycle import get_all_stored_signals
+    try:
+        all_signals = get_all_stored_signals()
+        return jsonify({
+            "signals": all_signals,
+            "count": len(all_signals)
+        })
+    except Exception as e:
+        logger.error(f"[API] signal-states error: {e}")
+        return jsonify({"signals": [], "count": 0, "error": str(e)}), 500
+
+
+@app.route('/api/system-status')
+def get_system_status():
+    from app.services.signal_lifecycle import get_all_stored_signals
+    
+    all_signals = get_all_stored_signals()
+    pending = sum(1 for s in all_signals if s.get("signal_state") == "PENDING")
+    confirmed = sum(1 for s in all_signals if s.get("signal_state") == "CONFIRMED")
+    executed = sum(1 for s in all_signals if s.get("signal_state") == "EXECUTED")
+    rejected = sum(1 for s in all_signals if s.get("signal_state") == "REJECTED")
+    
+    return jsonify({
+        "scanner_running": SCANNER_RUNNING,
+        "scanner_errors": SCANNER_ERROR_COUNT,
+        "signals_in_pipeline": {
+            "pending": pending,
+            "confirmed": confirmed,
+            "executed": executed,
+            "rejected": rejected,
+            "total": len(all_signals)
+        },
+        "consecutive_losses": CONSECUTIVE_LOSSES,
+        "cache_size": len(SIGNALS_CACHE)
+    })
+
+
 if __name__ == '__main__':
     print(f"Starting on port {port}...")
     app.run(host='0.0.0.0', port=port)

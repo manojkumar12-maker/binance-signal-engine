@@ -3,6 +3,8 @@ const API_BASE_URL = 'https://binance-signal-engine-production.up.railway.app/ap
 let activeTrades = [];
 let closedTrades = [];
 let signalsData = [];
+let signalStatesData = [];
+let systemStatusData = null;
 let monitoringInterval = null;
 let analyticsData = null;
 let sniperMode = false;
@@ -62,19 +64,105 @@ async function fetchSignals() {
     }
 }
 
+async function fetchSignalStates() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/signal-states`);
+        const data = await response.json();
+        signalStatesData = data.signals || [];
+    } catch (error) {
+        console.error('Error fetching signal states:', error);
+    }
+}
+
+async function fetchSystemStatus() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/system-status`);
+        systemStatusData = await response.json();
+        renderSystemStatus();
+    } catch (error) {
+        console.error('Error fetching system status:', error);
+    }
+}
+
+function getSignalState(pair) {
+    const state = signalStatesData.find(s => s.pair === pair);
+    return state ? state.signal_state : null;
+}
+
+function getSignalAge(pair) {
+    const state = signalStatesData.find(s => s.pair === pair);
+    if (!state || !state.locked_at) return null;
+    const ageSeconds = Math.floor(Date.now() / 1000 - state.locked_at);
+    return ageSeconds;
+}
+
+function renderSystemStatus() {
+    if (!systemStatusData) return;
+    
+    document.getElementById('scannerStatus').textContent = systemStatusData.scanner_running ? 'Running' : 'Stopped';
+    document.getElementById('scannerStatus').style.color = systemStatusData.scanner_running ? '#00c087' : '#f6465d';
+    
+    document.getElementById('scannerErrors').textContent = systemStatusData.scanner_errors || 0;
+    document.getElementById('lossStreak').textContent = systemStatusData.consecutive_losses || 0;
+    document.getElementById('cacheSize').textContent = systemStatusData.cache_size || 0;
+    
+    const pipeline = systemStatusData.signals_in_pipeline || {};
+    document.getElementById('pendingCount').textContent = pipeline.pending || 0;
+    document.getElementById('pendingCount').className = 'pipeline-value ' + (pipeline.pending > 0 ? 'pending' : '');
+    document.getElementById('confirmedCount').textContent = pipeline.confirmed || 0;
+    document.getElementById('confirmedCount').className = 'pipeline-value ' + (pipeline.confirmed > 0 ? 'confirmed' : '');
+    document.getElementById('executedCount').textContent = pipeline.executed || 0;
+    document.getElementById('executedCount').className = 'pipeline-value ' + (pipeline.executed > 0 ? 'executed' : '');
+    document.getElementById('rejectedCount').textContent = pipeline.rejected || 0;
+    document.getElementById('rejectedCount').className = 'pipeline-value ' + (pipeline.rejected > 0 ? 'rejected' : '');
+    
+    const errorsList = document.getElementById('errorsList');
+    const rejected = signalStatesData.filter(s => s.signal_state === 'REJECTED');
+    const pending = signalStatesData.filter(s => s.signal_state === 'PENDING');
+    
+    if (rejected.length === 0 && pending.length === 0) {
+        errorsList.innerHTML = '<div class="error-item">No errors</div>';
+    } else {
+        let html = '';
+        rejected.forEach(s => {
+            html += `<div class="error-item rejected">${s.pair} → ${s.signal_state}: ${s.state_reason || 'REJECTED'}</div>`;
+        });
+        pending.forEach(s => {
+            const age = getSignalAge(s.pair);
+            html += `<div class="error-item pending">${s.pair} → ${s.signal_state} (${age || 0}s old)</div>`;
+        });
+        errorsList.innerHTML = html;
+    }
+}
+
 function renderSignals() {
     const tbody = document.getElementById('signalsBody');
     tbody.innerHTML = '';
     
     if (signalsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">No signals. Market scanning...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">No signals. Market scanning...</td></tr>';
         return;
     }
     
     signalsData.forEach(signal => {
+        const pair = signal.pair;
+        const state = getSignalState(pair);
+        const age = getSignalAge(pair);
+        
+        let stateHtml = '<span class="state-badge none">NEW</span>';
+        if (state === 'PENDING') {
+            stateHtml = `<span class="state-badge pending">PENDING${age ? ' (' + age + 's)' : ''}</span>`;
+        } else if (state === 'CONFIRMED') {
+            stateHtml = '<span class="state-badge confirmed">CONFIRMED</span>';
+        } else if (state === 'EXECUTED') {
+            stateHtml = '<span class="state-badge executed">EXECUTED</span>';
+        } else if (state === 'REJECTED') {
+            stateHtml = '<span class="state-badge rejected">REJECTED</span>';
+        }
+        
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>${signal.pair}</td>
+            <td>${pair}</td>
             <td class="${signal.signal === 'BUY' ? 'signal-buy' : 'signal-sell'}">${signal.signal}</td>
             <td>${formatPrice(signal.entry_primary)}</td>
             <td>${formatPrice(signal.sl)}</td>
@@ -83,6 +171,7 @@ function renderSignals() {
             <td>${formatPrice(signal.tp3)}</td>
             <td>${signal.confidence}%</td>
             <td>${signal.risk_pct}%</td>
+            <td>${stateHtml}</td>
         `;
         tbody.appendChild(row);
     });
@@ -457,11 +546,15 @@ function init() {
     syncWithBackend();
     fetchAnalytics();
     fetchSignals();
+    fetchSignalStates();
+    fetchSystemStatus();
     updateStatus('connected');
     updateLastUpdate();
     
     setInterval(() => {
         fetchSignals();
+        fetchSignalStates();
+        fetchSystemStatus();
         syncWithBackend();
         fetchAnalytics();
         updateLastUpdate();

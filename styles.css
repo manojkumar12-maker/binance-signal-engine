@@ -666,3 +666,165 @@ input:checked + .slider {
 input:checked + .slider:before {
     transform: translateX(24px);
 }
+
+.debug-panels {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.system-status-panel,
+.pipeline-panel,
+.errors-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.system-status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.status-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+.status-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.status-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.pipeline-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 8px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    text-align: center;
+}
+
+.pipeline-label {
+    font-size: 9px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.pipeline-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.pipeline-value.pending {
+    color: #f0b90b;
+}
+
+.pipeline-value.confirmed {
+    color: #1e90ff;
+}
+
+.pipeline-value.executed {
+    color: #00c087;
+}
+
+.pipeline-value.rejected {
+    color: #f6465d;
+}
+
+.errors-list {
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.error-item {
+    padding: 6px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.error-item.pending {
+    color: #f0b90b;
+    background: rgba(240, 185, 11, 0.1);
+}
+
+.error-item.rejected {
+    color: #f6465d;
+    background: rgba(246, 70, 93, 0.1);
+}
+
+.state-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.state-badge.none {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+
+.state-badge.pending {
+    background: rgba(240, 185, 11, 0.15);
+    color: #f0b90b;
+}
+
+.state-badge.confirmed {
+    background: rgba(30, 144, 255, 0.15);
+    color: #1e90ff;
+}
+
+.state-badge.executed {
+    background: rgba(0, 192, 135, 0.15);
+    color: #00c087;
+}
+
+.state-badge.rejected {
+    background: rgba(246, 70, 93, 0.15);
+    color: #f6465d;
+}
+
+@media (max-width: 1200px) {
+    .debug-panels {
+        grid-template-columns: 1fr;
+    }
+}

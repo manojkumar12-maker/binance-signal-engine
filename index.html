@@ -53,6 +53,7 @@
                                     <th>TP3</th>
                                     <th>Conf%</th>
                                     <th>Risk%</th>
+                                    <th>State</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -101,6 +102,59 @@
                             <tbody id="closedSignalsBody">
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="debug-panels">
+                <div class="panel system-status-panel">
+                    <h2 class="panel-title">🔧 System Status</h2>
+                    <div class="system-status-grid" id="systemStatusGrid">
+                        <div class="status-item">
+                            <span class="status-label">Scanner</span>
+                            <span class="status-value" id="scannerStatus">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Errors</span>
+                            <span class="status-value" id="scannerErrors">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Loss Streak</span>
+                            <span class="status-value" id="lossStreak">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Cache</span>
+                            <span class="status-value" id="cacheSize">--</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="panel pipeline-panel">
+                    <h2 class="panel-title">📊 Signal Pipeline</h2>
+                    <div class="pipeline-grid" id="pipelineGrid">
+                        <div class="pipeline-item">
+                            <span class="pipeline-label">PENDING</span>
+                            <span class="pipeline-value" id="pendingCount">0</span>
+                        </div>
+                        <div class="pipeline-item">
+                            <span class="pipeline-label">CONFIRMED</span>
+                            <span class="pipeline-value" id="confirmedCount">0</span>
+                        </div>
+                        <div class="pipeline-item">
+                            <span class="pipeline-label">EXECUTED</span>
+                            <span class="pipeline-value" id="executedCount">0</span>
+                        </div>
+                        <div class="pipeline-item">
+                            <span class="pipeline-label">REJECTED</span>
+                            <span class="pipeline-value" id="rejectedCount">0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="panel errors-panel">
+                    <h2 class="panel-title">❌ Errors & Rejections</h2>
+                    <div class="errors-list" id="errorsList">
+                        <div class="error-item">No errors</div>
                     </div>
                 </div>
             </div>
