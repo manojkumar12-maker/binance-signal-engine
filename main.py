@@ -192,31 +192,11 @@ async def scanner_async_loop():
                 
                 stored = signal_lifecycle.store_signal(signal, "PENDING")
                 if not stored:
+                    logger.warning(f">>> FAILED TO STORE {pair}")
                     continue
                 
                 logger.info(f">>> LOCKED {pair}: state=PENDING, confidence={signal.get('confidence')}")
-                
-                is_valid, reason = signal_lifecycle.validate_stored_signal(pair, config.MIN_CONFIDENCE)
-                if is_valid:
-                    signal_lifecycle.confirm_signal(pair)
-                    logger.info(f">>> CONFIRMED {pair}: passed validation")
-                    
-                    trade = tracker.create_trade(
-                        pair=pair,
-                        signal_type=signal_type,
-                        entry=entry,
-                        sl=signal.get("sl"),
-                        tp1=signal.get("tp1"),
-                        tp2=signal.get("tp2"),
-                        tp3=signal.get("tp3"),
-                        confidence=signal.get("confidence", 0),
-                        entry_limit=signal.get("entry_limit")
-                    )
-                    tracker.add_trade(trade)
-                    signal_lifecycle.execute_signal(pair)
-                    logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
-                else:
-                    logger.info(f">>> REJECTED {pair}: {reason}")
+                logger.info(f">>> WAITING FOR NEXT CYCLE: {pair}")
             
             logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             

@@ -1,6 +1,6 @@
 import time
 import json
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union, Any
 from datetime import datetime
 import config
 
@@ -23,8 +23,11 @@ SIGNAL_DECAY_SECONDS = {
 
 def get_redis_client():
     try:
-        from app.services.redis_client import get_redis_client as get_client
-        return get_client()
+        from app.services import redis_client as rc
+        if rc.r:
+            rc.r.ping()
+            return rc.r
+        return None
     except:
         return None
 
@@ -48,7 +51,7 @@ def release_lock(symbol: str) -> bool:
     return True
 
 
-def store_signal(signal: Dict, state: str = "PENDING") -> Dict:
+def store_signal(signal: Dict, state: str = "PENDING") -> Optional[Dict]:
     pair = signal.get("pair")
     if not pair:
         return signal
@@ -86,6 +89,11 @@ def store_signal(signal: Dict, state: str = "PENDING") -> Dict:
     
     if r:
         r.set(existing_key, json.dumps(locked_signal), ex=locked_signal["ttl"])
+        
+        verification = r.get(existing_key)
+        if not verification:
+            release_lock(pair)
+            return None
     
     release_lock(pair)
     return locked_signal
@@ -117,6 +125,10 @@ def update_signal_state(pair: str, new_state: str, reason: str = "") -> bool:
         return False
     
     r = get_redis_client()
+    if not r:
+        release_lock(pair)
+        return False
+    
     key = f"signal:{pair}"
     
     data = r.get(key)
@@ -209,16 +221,23 @@ def revalidate_signal(pair: str, new_signal: Dict, min_confidence: float = 65) -
     return True, "VALID"
 
 
-def get_all_stored_signals(state: str = None) -> List[Dict]:
+def get_all_stored_signals(state: Optional[str] = None) -> List[Dict]:
     r = get_redis_client()
     if not r:
         return []
     
     keys = r.keys("signal:*")
-    signals = []
+    keys_list: List[Any] = list(keys) if keys else []
+    if not keys_list:
+        return []
     
-    for key in keys:
-        data = r.get(key)
+    signals: List[Dict] = []
+    
+    for key in keys_list:
+        key_str = str(key) if key else None
+        if not key_str:
+            continue
+        data = r.get(key_str)
         if data:
             signal = json.loads(data)
             if state is None or signal.get("signal_state") == state:
@@ -237,10 +256,17 @@ def clear_expired_signals() -> int:
         return 0
     
     keys = r.keys("signal:*")
+    keys_list: List[Any] = list(keys) if keys else []
+    if not keys_list:
+        return 0
+    
     cleared = 0
     
-    for key in keys:
-        data = r.get(key)
+    for key in keys_list:
+        key_str = str(key) if key else None
+        if not key_str:
+            continue
+        data = r.get(key_str)
         if data:
             signal = json.loads(data)
             state = signal.get("signal_state")
