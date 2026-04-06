@@ -58,6 +58,12 @@
         
         .empty { text-align: center; color: var(--text2); padding: 30px; }
         
+        .state { font-size: 10px; padding: 3px 8px; border-radius: 4px; }
+        .state.pending { background: rgba(210, 153, 34, 0.2); color: var(--yellow); }
+        .state.confirmed { background: rgba(63, 185, 80, 0.2); color: var(--green); }
+        .state.executed { background: rgba(88, 166, 255, 0.2); color: var(--blue); }
+        .state.rejected { background: rgba(248, 81, 73, 0.2); color: var(--red); }
+        
         @media (max-width: 768px) {
             .stats, .pipeline { grid-template-columns: repeat(2, 1fr); }
             .header { flex-direction: column; gap: 10px; }
@@ -120,6 +126,12 @@
         <tbody id="closedBody"></tbody>
     </table>
     
+    <h2>🎯 Live Signals</h2>
+    <table id="signalsTable">
+        <thead><tr><th>Pair</th><th>Signal</th><th>Entry</th><th>SL</th><th>TP1</th><th>Conf%</th><th>Risk%</th><th>State</th></tr></thead>
+        <tbody id="signalsBody"></tbody>
+    </table>
+    
     <script>
         const API = 'https://binance-signal-engine-production.up.railway.app/api';
         
@@ -178,15 +190,33 @@
                 if ((closed.trades || []).length === 0) {
                     closedBody.innerHTML = '<tr><td colspan="6" class="empty">No closed trades</td></tr>';
                 } else {
-                    closedBody.innerHTML = (closed.trades || []).map(t => {
-                        const pnl = t.pnl_pct || 0;
+                closedBody.innerHTML = (closed.trades || []).map(t => {
+                    const pnl = t.pnl_pct || 0;
+                    return `<tr>
+                        <td class="pair">${t.pair}</td>
+                        <td class="${t.type?.toLowerCase()}">${t.type}</td>
+                        <td>${fmt(t.entry)}</td>
+                        <td>${fmt(t.current_price)}</td>
+                        <td>${t.status}</td>
+                        <td class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl}%</td>
+                    </tr>`;
+                }).join('');
+                
+                const signalsBody = document.getElementById('signalsBody');
+                if (sigs.length === 0) {
+                    signalsBody.innerHTML = '<tr><td colspan="8" class="empty">No signals</td></tr>';
+                } else {
+                    signalsBody.innerHTML = sigs.slice(0, 10).map(s => {
+                        const state = s.signal_state || 'NEW';
                         return `<tr>
-                            <td class="pair">${t.pair}</td>
-                            <td class="${t.type?.toLowerCase()}">${t.type}</td>
-                            <td>${fmt(t.entry)}</td>
-                            <td>${fmt(t.current_price)}</td>
-                            <td>${t.status}</td>
-                            <td class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl}%</td>
+                            <td class="pair">${s.pair}</td>
+                            <td class="${s.signal?.toLowerCase()}">${s.signal}</td>
+                            <td>${fmt(s.entry_primary)}</td>
+                            <td>${fmt(s.sl)}</td>
+                            <td>${fmt(s.tp1)}</td>
+                            <td>${s.confidence || 0}%</td>
+                            <td>${s.risk_pct || 0}%</td>
+                            <td><span class="state ${state.toLowerCase()}">${state}</span></td>
                         </tr>`;
                     }).join('');
                 }
