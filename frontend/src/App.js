@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import socket from './socket';
 
+const API_URL = process.env.REACT_APP_API_URL || 'https://binance-signal-engine-production.up.railway.app/api';
+
 const formatPrice = (price) => {
   if (!price || price === 0) return '--';
   return price.toLocaleString('en-US', {
@@ -20,6 +22,24 @@ const renderState = (state) => {
   }
 };
 
+async function fetchData() {
+  try {
+    const [signalsRes, tradesRes] = await Promise.all([
+      fetch(`${API_URL}/signal-states`),
+      fetch(`${API_URL}/trades?status=open`)
+    ]);
+    const signals = await signalsRes.json();
+    const trades = await tradesRes.json();
+    return {
+      signals: signals.signals || [],
+      trades: trades.trades || []
+    };
+  } catch (error) {
+    console.error('Fetch error:', error);
+    return { signals: [], trades: [] };
+  }
+}
+
 function App() {
   const [signals, setSignals] = useState([]);
   const [trades, setTrades] = useState([]);
@@ -27,8 +47,20 @@ function App() {
   const [lastUpdate, setLastUpdate] = useState(null);
 
   useEffect(() => {
-    socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
+    let wsConnected = false;
+    let pollInterval;
+    
+    socket.on('connect', () => {
+      wsConnected = true;
+      setConnected(true);
+      console.log('✅ WebSocket connected');
+    });
+    
+    socket.on('disconnect', () => {
+      wsConnected = false;
+      setConnected(false);
+      console.log('❌ WebSocket disconnected');
+    });
     
     socket.on('update', (data) => {
       setSignals(data.signals || []);
@@ -36,10 +68,37 @@ function App() {
       setLastUpdate(new Date());
     });
 
+    socket.on('connect_error', () => {
+      console.log('WebSocket failed, using HTTP polling fallback');
+      setConnected(false);
+    });
+
+    socket.on('error', () => {
+      setConnected(false);
+    });
+
+    socket.connect();
+
+    const startPolling = async () => {
+      if (!wsConnected) {
+        const data = await fetchData();
+        setSignals(data.signals);
+        setTrades(data.trades);
+        setLastUpdate(new Date());
+      }
+    };
+
+    startPolling();
+    pollInterval = setInterval(startPolling, 5000);
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
       socket.off('update');
+      socket.off('connect_error');
+      socket.off('error');
+      socket.disconnect();
+      clearInterval(pollInterval);
     };
   }, []);
 
