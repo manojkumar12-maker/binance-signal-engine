@@ -4,6 +4,7 @@ import config
 from app.services import market, structure, liquidity, volume, scoring, bias_engine, regime, validation, whale
 from app.services import extension_filter, entry_quality, fake_breakout_filter, mtf_alignment
 from app.services import sniper_filter, volatility_compression, no_trade_zones, risk_engine
+from app.services import data_consistency
 
 
 def calculate_atr(candles: list, period: int = 14) -> float:
@@ -53,10 +54,14 @@ def check_volatility_filter(candles: list, current_price: float) -> Tuple[bool, 
     return True, round(atr_ratio, 6)
 
 
-def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use_bias: bool = True) -> Dict:
+def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use_bias: bool = True, use_closed_candles: bool = True) -> Dict:
     try:
         candles = market.get_klines(pair, timeframe, config.CANDLE_LIMIT)
         htf_candles = market.get_klines(pair, "4h", config.CANDLE_LIMIT)
+        
+        if use_closed_candles:
+            candles = data_consistency.get_closed_candles(candles, remove_last=1)
+            htf_candles = data_consistency.get_closed_candles(htf_candles, remove_last=1)
     except Exception as e:
         return {
             "pair": pair,
