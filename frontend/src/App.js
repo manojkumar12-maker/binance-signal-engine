@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 
-const API_URL = process.env.REACT_APP_API_URL || 'https://binance-signal-engine-production.up.railway.app/api';
+const API_URL = process.env.REACT_APP_API_URL || window.location.hostname === 'localhost' 
+  ? 'http://localhost:8080/api' 
+  : 'https://binance-signal-engine-production.up.railway.app/api';
 
 const formatPrice = (price) => {
   if (!price || price === 0) return '--';
@@ -27,27 +29,36 @@ function App() {
   const [closedTrades, setClosedTrades] = useState([]);
   const [analytics, setAnalytics] = useState({ wins: 0, losses: 0, win_rate: 0, total_pnl: 0, total_trades: 0 });
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       try {
-        const [signalsRes, tradesRes, closedRes, analyticsRes] = await Promise.all([
-          fetch(`${API_URL}/signal-states`),
-          fetch(`${API_URL}/trades?status=open`),
-          fetch(`${API_URL}/trades?status=closed`),
-          fetch(`${API_URL}/analytics`)
-        ]);
+        console.log('Fetching from:', API_URL);
         
-        if (signalsRes.ok && tradesRes.ok && closedRes.ok && analyticsRes.ok) {
-          const signalsData = await signalsRes.json();
-          const tradesData = await tradesRes.json();
-          const closedData = await closedRes.json();
-          const analyticsData = await analyticsRes.json();
-          
-          setSignals(signalsData.signals || []);
-          setTrades(tradesData.trades || []);
-          setClosedTrades(closedData.trades || []);
-          setAnalytics({
+        const signalsRes = await fetch(`${API_URL}/signal-states`);
+        const tradesRes = await fetch(`${API_URL}/trades?status=open`);
+        const closedRes = await fetch(`${API_URL}/trades?status=closed`);
+        const analyticsRes = await fetch(`${API_URL}/analytics`);
+        
+        console.log('Responses:', signalsRes.status, tradesRes.status, closedRes.status, analyticsRes.status);
+        
+        if (!signalsRes.ok || !tradesRes.ok || !closedRes.ok || !analyticsRes.ok) {
+          throw new Error('API response not ok');
+        }
+        
+        const signalsData = await signalsRes.json();
+        const tradesData = await tradesRes.json();
+        const closedData = await closedRes.json();
+        const analyticsData = await analyticsRes.json();
+        
+        setSignals(signalsData.signals || []);
+        setTrades(tradesData.trades || []);
+        setClosedTrades(closedData.trades || []);
+        setAnalytics({
             wins: analyticsData.wins || 0,
             losses: analyticsData.losses || 0,
             win_rate: analyticsData.win_rate || 0,
@@ -55,9 +66,12 @@ function App() {
             total_trades: analyticsData.total_trades || 0
           });
           setLastUpdate(new Date());
+          setLoading(false);
         }
       } catch (error) {
         console.error('Fetch error:', error);
+        setError(error.message);
+        setLoading(false);
       }
     };
 
@@ -87,6 +101,14 @@ function App() {
           )}
         </div>
       </header>
+
+      {loading && (
+        <div className="loading">Loading...</div>
+      )}
+      
+      {error && (
+        <div className="error">Error: {error}</div>
+      )}
 
       <main className="main-content">
         <section className="stats-section">

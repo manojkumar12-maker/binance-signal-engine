@@ -293,3 +293,19 @@ body {
     font-size: 12px;
   }
 }
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+  font-size: 18px;
+}
+
+.error {
+  text-align: center;
+  padding: 20px;
+  background: rgba(246, 70, 93, 0.1);
+  color: var(--accent-red);
+  margin: 20px;
+  border-radius: 8px;
+}
