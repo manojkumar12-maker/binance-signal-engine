@@ -42,7 +42,6 @@ async function fetchData() {
 function App() {
   const [signals, setSignals] = useState([]);
   const [trades, setTrades] = useState([]);
-  const [connected, setConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
 
   useEffect(() => {
@@ -52,15 +51,16 @@ function App() {
           fetch(`${API_URL}/signal-states`),
           fetch(`${API_URL}/trades?status=open`)
         ]);
-        const signalsData = await signalsRes.json();
-        const tradesData = await tradesRes.json();
-        setSignals(signalsData.signals || []);
-        setTrades(tradesData.trades || []);
-        setLastUpdate(new Date());
-        setConnected(true);
+        
+        if (signalsRes.ok && tradesRes.ok) {
+          const signalsData = await signalsRes.json();
+          const tradesData = await tradesRes.json();
+          setSignals(signalsData.signals || []);
+          setTrades(tradesData.trades || []);
+          setLastUpdate(new Date());
+        }
       } catch (error) {
         console.error('Fetch error:', error);
-        setConnected(false);
       }
     };
 
@@ -83,10 +83,6 @@ function App() {
           <h1>BINANCE SIGNAL ENGINE</h1>
         </div>
         <div className="header-controls">
-          <div className={`status-indicator ${connected ? 'connected' : ''}`}>
-            <span className="status-dot"></span>
-            <span className="status-text">{connected ? 'Connected' : 'Disconnected'}</span>
-          </div>
           {lastUpdate && (
             <span className="last-update">
               Last update: {lastUpdate.toLocaleTimeString()}
