@@ -389,6 +389,31 @@
                 let closed = await closedRes.json();
                 const analytics = await analyticsRes.json();
                 
+                const signalList = signals.signals || [];
+                document.getElementById('signalsCount').textContent = signalList.length;
+                document.getElementById('pending').textContent = signalList.filter(s => s.signal_state === 'PENDING').length;
+                document.getElementById('confirmed').textContent = signalList.filter(s => s.signal_state === 'CONFIRMED').length;
+                document.getElementById('executed').textContent = signalList.filter(s => s.signal_state === 'EXECUTED').length;
+                document.getElementById('rejected').textContent = signalList.filter(s => s.signal_state === 'REJECTED').length;
+                
+                const signalsBody = document.getElementById('signalsBody');
+                if (signalList.length === 0) {
+                    signalsBody.innerHTML = '<tr><td colspan="7" class="empty">No signals in pipeline</td></tr>';
+                } else {
+                    signalsBody.innerHTML = signalList.slice(0, 10).map(s => {
+                        const side = s.signal || 'BUY';
+                        return `<tr>
+                            <td class="pair">${s.pair || 'N/A'}</td>
+                            <td class="${side.toLowerCase()}">${side}</td>
+                            <td>${fmt(s.entry_primary)}</td>
+                            <td>${fmt(s.sl)}</td>
+                            <td>${fmt(s.tp1)}</td>
+                            <td>${s.confidence || 0}</td>
+                            <td>${s.signal_state || 'NEW'}</td>
+                        </tr>`;
+                    }).join('');
+                }
+                
                 closed.trades = (closed.trades || []).filter(t => 
                     isToday(t.created_at) || isToday(t.closed_at)
                 );
