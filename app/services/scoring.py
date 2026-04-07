@@ -283,6 +283,63 @@ def get_signal_quality(score: int) -> str:
         return "SKIP"
 
 
+def get_confidence_tier(confidence: int, entry_score: int = 0) -> str:
+    if confidence >= 85 and entry_score >= 80:
+        return "SNIPER"
+    elif confidence >= 78 and entry_score >= 70:
+        return "A"
+    elif confidence >= 70:
+        return "B"
+    else:
+        return "REJECT"
+
+
+def check_location_filter(candles: list, signal_type: str, current_price: float) -> tuple:
+    if len(candles) < 20:
+        return True, "INSUFFICIENT_DATA"
+    
+    recent_candles = candles[-20:]
+    high_range = max(c.get('high', 0) for c in recent_candles)
+    low_range = min(c.get('low', 0) for c in recent_candles)
+    
+    if high_range <= low_range:
+        return True, "INVALID_RANGE"
+    
+    range_pos = (current_price - low_range) / (high_range - low_range)
+    
+    if signal_type == "BUY":
+        if range_pos > 0.75:
+            return False, "BUYING_AT_TOP"
+        if range_pos < 0.25:
+            return True, "OK"
+    elif signal_type == "SELL":
+        if range_pos < 0.25:
+            return False, "SELLING_AT_BOTTOM"
+        if range_pos > 0.75:
+            return True, "OK"
+    
+    return True, "OK"
+
+
+def get_regime_enforcement(regime: str, signal_type: str, is_reversal: bool) -> tuple:
+    if regime == "LOW_VOL":
+        return False, "LOW_VOL_REGIME"
+    
+    if regime == "TRENDING":
+        if not is_reversal:
+            return True, "CONTINUATION_OK"
+        else:
+            return False, "REVERSAL_IN_TRENDING"
+    
+    if regime == "RANGE" or regime == "TRANSITION":
+        if is_reversal:
+            return True, "REVERSAL_OK"
+        else:
+            return True, "CONTINUATION_OK"
+    
+    return True, "OK"
+
+
 def calculate_weighted_confidence(
     trend_strength: float,
     volume_strength: float,

@@ -118,8 +118,16 @@ async def scanner_async_loop():
                                     if market_bias == signal_direction:
                                         signal["confidence"] = min(100, signal.get("confidence", 0) + 10)
                                     
-                                    if signal.get("confidence", 0) < 65:
-                                        continue
+                                    tier = signal.get("tier", "REJECT")
+                                    
+                                    if config.SNIPER_MODE_ONLY:
+                                        if tier != "SNIPER":
+                                            logger.info(f">>> SKIPPED (not_sniper): {pair} tier={tier}")
+                                            continue
+                                    else:
+                                        if signal.get("confidence", 0) < config.MIN_SNIPER_CONFIDENCE:
+                                            logger.info(f">>> SKIPPED (low_confidence): {pair}")
+                                            continue
                                     
                                     whale_signal = signal.get("whale_signal", "NEUTRAL")
                                     if whale_signal == "DISTRIBUTION" and signal_direction == "BUY":
@@ -306,6 +314,36 @@ BLACKLIST = [
     "GALAUSDT", "AXSUSDT", "APEUSDT", "FTMUSDT", "OPUSDT"
 ]
 
+TOP_PAIRS_LIMIT = 50
+
+def get_top_usdt_pairs_by_volume(limit: int = 50):
+    try:
+        url = f"{config.FUTURES_API_URL}/fapi/v1/ticker/24hr"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        usdt_pairs = []
+        for item in data:
+            symbol = item.get('symbol', '')
+            if (
+                symbol.endswith('USDT') and
+                symbol not in BLACKLIST and
+                item.get('status') == 'TRADING'
+            ):
+                usdt_pairs.append({
+                    'symbol': symbol,
+                    'volume': float(item.get('quoteVolume', 0))
+                })
+        
+        usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
+        
+        top_symbols = [p['symbol'] for p in usdt_pairs[:limit]]
+        logger.info(f"[CONFIG] Top {len(top_symbols)} pairs by volume: {top_symbols[:10]}...")
+        return top_symbols
+    except Exception as e:
+        logger.error(f"[CONFIG] Error fetching volume pairs: {e}")
+        return get_all_usdt_pairs()[:limit]
+
 def get_all_usdt_pairs():
     try:
         url = f"{config.FUTURES_API_URL}/fapi/v1/exchangeInfo"
@@ -332,7 +370,7 @@ def get_all_usdt_pairs():
             "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"
         ]
 
-TRADING_PAIRS = get_all_usdt_pairs()
+TRADING_PAIRS = get_top_usdt_pairs_by_volume(TOP_PAIRS_LIMIT)
 logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}...")
 
 scanner_thread = threading.Thread(target=start_async_scanner, daemon=True)

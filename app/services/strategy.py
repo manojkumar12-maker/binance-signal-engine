@@ -5,6 +5,7 @@ from app.services import market, structure, liquidity, volume, scoring, bias_eng
 from app.services import extension_filter, entry_quality, fake_breakout_filter, mtf_alignment
 from app.services import sniper_filter, volatility_compression, no_trade_zones, risk_engine
 from app.services import data_consistency
+from app.services.scoring import get_confidence_tier, check_location_filter, get_regime_enforcement
 
 
 def calculate_atr(candles: list, period: int = 14) -> float:
@@ -13,7 +14,7 @@ def calculate_atr(candles: list, period: int = 14) -> float:
 
 def calculate_atr_based_sl(entry: float, candles: list, signal_type: str, pair: str = "BTCUSDT") -> Tuple[float, float]:
     atr = calculate_atr(candles)
-    sl_distance = atr * config.ATR_MULTIPLIER
+    sl_distance = atr * config.ATR_SL_MULTIPLIER
     
     min_sl_distance = entry * 0.003
     if sl_distance < min_sl_distance:
@@ -218,9 +219,10 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         price_change = (candles[-1].get('close', 0) - candles[-2].get('close', 0)) / candles[-2].get('close', 1) if len(candles) >= 2 and candles[-2].get('close') else 0
         oi_change = 0
-        if oi_data and len(oi_data) >= 2:
+        if oi_data and isinstance(oi_data, list) and len(oi_data) >= 2:
             try:
-                oi_change = (float(oi_data[-1].get('openInterest', 0)) - float(oi_data[-2].get('openInterest', 0))) / float(oi_data[-2].get('openInterest', 1)) if float(oi_data[-2].get('openInterest', 1)) > 0 else 0
+                if all(isinstance(x, (int, float)) for x in oi_data):
+                    oi_change = (oi_data[-1] - oi_data[-2]) / oi_data[-2] if oi_data[-2] > 0 else 0
             except:
                 pass
         
@@ -230,16 +232,8 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             confidence += 10
         elif price_change < 0 and oi_change > 0:
             confidence -= 15
-        elif price_change < 0 and oi_change < 0:
+        elif price_change < 0 and oi_change > 0:
             confidence += 10
-        
-        if risk_pct > 0 and entry_primary > 0:
-            tp_distance = abs(tp1 - entry_primary) / entry_primary
-            rr = tp_distance / risk_pct if risk_pct > 0 else 0
-            if rr < 2:
-                confidence -= 20
-            elif rr >= 3:
-                confidence += 10
         
         signal_type = "BUY" if trend == "UPTREND" else "SELL"
         
@@ -409,12 +403,70 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "reason": "LOW_VOL regime - insufficient volatility"
             }
         
-        entry_primary = config.round_to_tick(pair, entry_primary)
-        entry_limit = config.round_to_tick(pair, entry_limit)
-        sl = config.round_to_tick(pair, sl)
-        tp1 = config.round_to_tick(pair, tp1)
-        tp2 = config.round_to_tick(pair, tp2)
-        tp3 = config.round_to_tick(pair, tp3)
+        location_ok, location_reason = check_location_filter(candles, signal_type, entry_primary)
+        if not location_ok:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "regime": detected_regime,
+                "signal_type": signal_type,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": f"LOCATION_FILTER: {location_reason}"
+            }
+        
+        regime_ok, regime_reason = get_regime_enforcement(detected_regime, signal_type, is_reversal)
+        if not regime_ok:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "regime": detected_regime,
+                "signal_type": signal_type,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": f"REGIME_ENFORCEMENT: {regime_reason}"
+            }
+        
+        tier = get_confidence_tier(int(confidence), int(entry_score))
+        
+        if config.SNIPER_MODE_ONLY and tier != "SNIPER":
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "regime": detected_regime,
+                "signal_type": signal_type,
+                "tier": tier,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": f"TIER_REJECT: {tier} requires SNIPER for execution"
+            }
         
         signal_type_value = validation.classify_signal_type({
             "is_reversal": is_reversal,
@@ -480,6 +532,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "extension_distance_pct": extension_distance,
             "fake_breakout_trap": is_trap,
             "compression_signal": is_compressed,
+            "tier": tier,
             "timestamp": datetime.utcnow().isoformat()
         }
 
