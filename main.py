@@ -184,6 +184,7 @@ async def scanner_async_loop():
             if total_risk >= config.MAX_TOTAL_RISK_PCT:
                 logger.warning(f">>> MAX EXPOSURE REACHED - skipping all signals")
             else:
+                processed = False
                 for signal in top_signals:
                     if signal.get("signal") == "NO TRADE":
                         continue
@@ -226,52 +227,54 @@ async def scanner_async_loop():
                                     pair=pair,
                                     signal_type=signal_type,
                                     entry=entry,
-                                    sl=signal.get("sl"),
-                                    tp1=signal.get("tp1"),
-                                    tp2=signal.get("tp2"),
-                                    tp3=signal.get("tp3"),
-                                confidence=signal.get("confidence", 0),
-                                entry_limit=signal.get("entry_limit")
-                            )
-                            tracker.add_trade(trade)
-                            signal_lifecycle.execute_signal(pair)
-                            logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
-                            
-                            alert_trade_entry(signal, {"leverage": 1, "risk_pct": 0.01, "rr": 2})
-                        else:
-                            logger.info(f">>> REJECTED {pair}: {reason}")
+                                    sl=signal.get("sl", 0) or 0,
+                                    tp1=signal.get("tp1", 0) or 0,
+                                    tp2=signal.get("tp2", 0) or 0,
+                                    tp3=signal.get("tp3", 0) or 0,
+                                    confidence=signal.get("confidence", 0),
+                                    entry_limit=signal.get("entry_limit")
+                                )
+                                tracker.add_trade(trade)
+                                signal_lifecycle.execute_signal(pair)
+                                logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
+                                
+                                alert_trade_entry(signal, {"leverage": 1, "risk_pct": 0.01, "rr": 2})
+                            else:
+                                logger.info(f">>> REJECTED {pair}: {reason}")
+                            continue
+                    
+                    stored = signal_lifecycle.store_signal(signal, "PENDING")
+                    if not stored:
+                        logger.warning(f">>> FAILED TO STORE {pair}")
                         continue
-                
-                stored = signal_lifecycle.store_signal(signal, "PENDING")
-                if not stored:
-                    logger.warning(f">>> FAILED TO STORE {pair}")
-                    continue
-                
-                logger.info(f">>> LOCKED {pair}: state=PENDING, confidence={signal.get('confidence')}")
-                
-                is_valid, reason = signal_lifecycle.validate_stored_signal(pair, config.MIN_CONFIDENCE)
-                if is_valid:
-                    signal_lifecycle.confirm_signal(pair)
-                    logger.info(f">>> CONFIRMED {pair}: passed validation")
                     
-                    trade = tracker.create_trade(
-                        pair=pair,
-                        signal_type=signal_type,
-                        entry=entry,
-                        sl=signal.get("sl"),
-                        tp1=signal.get("tp1"),
-                        tp2=signal.get("tp2"),
-                        tp3=signal.get("tp3"),
-                        confidence=signal.get("confidence", 0),
-                        entry_limit=signal.get("entry_limit")
-                    )
-                    tracker.add_trade(trade)
-                    signal_lifecycle.execute_signal(pair)
-                    logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
+                    logger.info(f">>> LOCKED {pair}: state=PENDING, confidence={signal.get('confidence')}")
                     
-                    alert_trade_entry(signal, {"leverage": 1, "risk_pct": 0.01, "rr": 2})
-                else:
-                    logger.info(f">>> REJECTED {pair}: {reason}")
+                    is_valid, reason = signal_lifecycle.validate_stored_signal(pair, config.MIN_CONFIDENCE)
+                    if is_valid:
+                        signal_lifecycle.confirm_signal(pair)
+                        logger.info(f">>> CONFIRMED {pair}: passed validation")
+                        
+                        trade = tracker.create_trade(
+                            pair=pair,
+                            signal_type=signal_type,
+                            entry=entry,
+                            sl=signal.get("sl", 0) or 0,
+                            tp1=signal.get("tp1", 0) or 0,
+                            tp2=signal.get("tp2", 0) or 0,
+                            tp3=signal.get("tp3", 0) or 0,
+                            confidence=signal.get("confidence", 0),
+                            entry_limit=signal.get("entry_limit")
+                        )
+                        tracker.add_trade(trade)
+                        signal_lifecycle.execute_signal(pair)
+                        logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
+                        
+                        alert_trade_entry(signal, {"leverage": 1, "risk_pct": 0.01, "rr": 2})
+                    else:
+                        logger.info(f">>> REJECTED {pair}: {reason}")
+                    
+                    processed = True
             
             logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
@@ -316,11 +319,31 @@ BLACKLIST = [
 
 TOP_PAIRS_LIMIT = 50
 
+FALLBACK_PAIRS = [
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT",
+    "LINKUSDT", "UNIUSDT", "ATOMUSDT", "LTCUSDT", "ETCUSDT",
+    "XLMUSDT", "ALGOUSDT", "VETUSDT", "FILUSDT", "TRXUSDT",
+    "NEARUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "SUIUSDT",
+    "SEIUSDT", "INJUSDT", "TIAUSDT", "RNDRUSDT", "FTMUSDT",
+    "SANDUSDT", "MANAUSDT", "AXSUSDT", "AAVEUSDT", "GRTUSDT",
+    "MKRUSDT", "SNXUSDT", "DYDXUSDT", "IMXUSDT", "LDOUSDT",
+    "QNTUSDT", "RUNEUSDT", "KAVAUSDT", "ZECUSDT", "DASHUSDT",
+    "COMPUSDT", "BATUSDT", "ENJUSDT", "CHZUSDT", "1INCHUSDT"
+]
+
 def get_top_usdt_pairs_by_volume(limit: int = 50):
     try:
         url = f"{config.FUTURES_API_URL}/fapi/v1/ticker/24hr"
         response = requests.get(url, timeout=10)
         data = response.json()
+        
+        if not data or not isinstance(data, list):
+            logger.warning(f"[CONFIG] Invalid response from ticker API: {type(data)}")
+            logger.info(f"[CONFIG] Using fallback pairs list")
+            return FALLBACK_PAIRS[:limit]
+        
+        logger.debug(f"[CONFIG] Raw ticker response sample: {data[:2] if len(data) >= 2 else data}")
         
         usdt_pairs = []
         for item in data:
@@ -330,19 +353,36 @@ def get_top_usdt_pairs_by_volume(limit: int = 50):
                 symbol not in BLACKLIST and
                 item.get('status') == 'TRADING'
             ):
-                usdt_pairs.append({
-                    'symbol': symbol,
-                    'volume': float(item.get('quoteVolume', 0))
-                })
+                try:
+                    volume = float(item.get('quoteVolume', 0))
+                    if volume > 0:
+                        usdt_pairs.append({
+                            'symbol': symbol,
+                            'volume': volume
+                        })
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"[CONFIG] Skip {symbol}: volume parse error - {e}")
+                    continue
+        
+        if not usdt_pairs:
+            logger.warning(f"[CONFIG] No USDT pairs found after filtering")
+            logger.info(f"[CONFIG] Using fallback pairs list")
+            return FALLBACK_PAIRS[:limit]
         
         usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
         
         top_symbols = [p['symbol'] for p in usdt_pairs[:limit]]
         logger.info(f"[CONFIG] Top {len(top_symbols)} pairs by volume: {top_symbols[:10]}...")
         return top_symbols
+    except requests.exceptions.Timeout:
+        logger.error(f"[CONFIG] Timeout fetching volume pairs - using fallback")
+        return FALLBACK_PAIRS[:limit]
+    except requests.exceptions.RequestException as e:
+        logger.error(f"[CONFIG] Network error fetching volume pairs: {e} - using fallback")
+        return FALLBACK_PAIRS[:limit]
     except Exception as e:
-        logger.error(f"[CONFIG] Error fetching volume pairs: {e}")
-        return get_all_usdt_pairs()[:limit]
+        logger.error(f"[CONFIG] Error fetching volume pairs: {e} - using fallback")
+        return FALLBACK_PAIRS[:limit]
 
 def get_all_usdt_pairs():
     try:
