@@ -100,6 +100,14 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         trend = structure.detect_trend(candles)
         htf_trend = structure.detect_htf_trend(htf_candles) if htf_candles else "RANGE"
         sweep = liquidity.detect_sweep(candles)
+        
+        bos = structure.detect_bos(candles, trend)
+        choch = structure.detect_choch(candles, trend)
+        fvg = structure.detect_fvg(candles)
+        is_chop = structure.is_chop_market(candles)
+        liquidity_targets = structure.get_liquidity_targets(candles, "BUY" if trend == "UPTREND" else "SELL")
+        vwap_bias = structure.get_vwap_bias(candles)
+        
         volume_result = volume.check_volume_confirmation(oi_data, candles)
         
         if isinstance(volume_result, tuple):
@@ -115,6 +123,82 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         volatility_pass, atr_ratio = check_volatility_filter(candles, current_price)
         
         htf_aligned = htf_trend == "RANGE" or htf_trend == trend
+        
+        if not htf_aligned and htf_trend != "RANGE":
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": current_price, "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "HTF_LTF_MISMATCH"
+            }
+        
+        if is_chop:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": current_price, "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "CHOP_MARKET"
+            }
+        
+        if not liquidity_targets.get("rr_viable", True):
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": current_price, "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "POOR_LIQUIDITY_TARGET_RR"
+            }
+        
+        if vwap_bias != "NEUTRAL":
+            signal_direction = "BUY" if trend == "UPTREND" else "SELL"
+            if vwap_bias == "BEARISH" and signal_direction == "BUY":
+                return {
+                    "pair": pair,
+                    "signal": "NO TRADE",
+                    "entry_primary": current_price, "entry_limit": 0,
+                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                    "confidence": 0,
+                    "trend": f"{trend} ({htf_trend})",
+                    "liquidity": sweep,
+                    "volume": volume_confirmed,
+                    "atr_ratio": atr_ratio,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "reason": f"VWAP_MISMATCH: price={vwap_bias}"
+                }
+            if vwap_bias == "BULLISH" and signal_direction == "SELL":
+                return {
+                    "pair": pair,
+                    "signal": "NO TRADE",
+                    "entry_primary": current_price, "entry_limit": 0,
+                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                    "confidence": 0,
+                    "trend": f"{trend} ({htf_trend})",
+                    "liquidity": sweep,
+                    "volume": volume_confirmed,
+                    "atr_ratio": atr_ratio,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "reason": f"VWAP_MISMATCH: price={vwap_bias}"
+                }
         
         is_reversal = scoring.detect_reversal(candles, sweep)
         
@@ -148,6 +232,15 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             market_bias=None,
             is_reversal=is_reversal
         )
+        
+        if bos:
+            confidence += 15
+        
+        if choch:
+            confidence += 20
+        
+        if fvg:
+            confidence += 5
         
         confidence = scoring.apply_fake_breakout_bonus(confidence, fake_breakout, "BUY" if trend == "UPTREND" else "SELL")
         confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
@@ -533,6 +626,12 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "fake_breakout_trap": is_trap,
             "compression_signal": is_compressed,
             "tier": tier,
+            "bos": bos,
+            "choch": choch,
+            "fvg": fvg,
+            "is_chop": is_chop,
+            "liquidity_target": liquidity_targets.get("target"),
+            "vwap_bias": vwap_bias,
             "timestamp": datetime.utcnow().isoformat()
         }
 
