@@ -354,6 +354,27 @@
             return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: num < 1 ? 6 : 2 });
         }
         
+        function isToday(timestamp) {
+            if (!timestamp) return false;
+            const date = new Date(timestamp.replace('Z', '+00:00'));
+            const today = new Date();
+            return date.toDateString() === today.toDateString();
+        }
+        
+        function checkMidnightReset() {
+            const now = new Date();
+            const nextMidnight = new Date(now);
+            nextMidnight.setDate(nextMidnight.getDate() + 1);
+            nextMidnight.setHours(0, 0, 1, 0);
+            const msUntilMidnight = nextMidnight - now;
+            
+            if (msUntilMidnight < 60000) {
+                setTimeout(() => {
+                    location.reload();
+                }, msUntilMidnight);
+            }
+        }
+        
         async function fetchAll() {
             try {
                 const [signalsRes, tradesRes, closedRes, analyticsRes] = await Promise.all([
@@ -365,92 +386,27 @@
                 
                 const signals = await signalsRes.json();
                 const trades = await tradesRes.json();
-                const closed = await closedRes.json();
+                let closed = await closedRes.json();
                 const analytics = await analyticsRes.json();
                 
-                document.getElementById('wins').textContent = analytics.wins || 0;
-                document.getElementById('losses').textContent = analytics.losses || 0;
-                document.getElementById('winrate').textContent = (analytics.win_rate || 0) + '%';
+                closed.trades = (closed.trades || []).filter(t => 
+                    isToday(t.created_at) || isToday(t.closed_at)
+                );
                 
+                document.getElementById('wins').textContent = closed.trades.filter(t => (t.pnl_pct || 0) > 0).length;
+                document.getElementById('losses').textContent = closed.trades.filter(t => (t.pnl_pct || 0) < 0).length;
+                
+                const dayWinRate = closed.trades.length > 0 
+                    ? Math.round((closed.trades.filter(t => (t.pnl_pct || 0) > 0).length / closed.trades.length) * 100) 
+                    : 0;
+                document.getElementById('winrate').textContent = dayWinRate + '%';
+                
+                const dayPnl = closed.trades.reduce((sum, t) => sum + (t.pnl_pct || 0), 0);
                 const pnlEl = document.getElementById('totalPnl');
-                const pnl = analytics.total_pnl || 0;
-                pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl + '%';
-                pnlEl.className = 'stat-value ' + (pnl >= 0 ? 'positive' : 'negative');
+                pnlEl.textContent = (dayPnl >= 0 ? '+' : '') + dayPnl.toFixed(2) + '%';
+                pnlEl.className = 'stat-value ' + (dayPnl >= 0 ? 'positive' : 'negative');
                 
-                const sigs = signals.signals || [];
-                document.getElementById('signalsCount').textContent = sigs.length;
-                document.getElementById('pending').textContent = sigs.filter(s => s.signal_state === 'PENDING').length;
-                document.getElementById('confirmed').textContent = sigs.filter(s => s.signal_state === 'CONFIRMED').length;
-                document.getElementById('executed').textContent = sigs.filter(s => s.signal_state === 'EXECUTED').length;
-                document.getElementById('rejected').textContent = sigs.filter(s => s.signal_state === 'REJECTED').length;
-                
-                const signalsBody = document.getElementById('signalsBody');
-                if (sigs.length === 0) {
-                    signalsBody.innerHTML = '<tr><td colspan="8" class="empty">No signals detected</td></tr>';
-                } else {
-                    signalsBody.innerHTML = sigs.slice(0, 10).map(s => {
-                        const state = s.signal_state || 'NEW';
-                        return `<tr>
-                            <td class="pair">${s.pair}</td>
-                            <td class="${s.signal?.toLowerCase()}">${s.signal}</td>
-                            <td>${fmt(s.entry_primary)}</td>
-                            <td>${fmt(s.sl)}</td>
-                            <td>${fmt(s.tp1)}</td>
-                            <td>${fmt(s.tp2)}</td>
-                            <td>${fmt(s.tp3)}</td>
-                            <td>${s.confidence || 0}%</td>
-                            <td>${s.risk_pct || 0}%</td>
-                            <td><span class="state-badge ${state.toLowerCase()}">${state}</span></td>
-                        </tr>`;
-                    }).join('');
-                }
-                
-                const activeBody = document.getElementById('activeBody');
-                const activeTrades = trades.trades || [];
-                document.getElementById('activeCount').textContent = activeTrades.length;
-                if (activeTrades.length === 0) {
-                    activeBody.innerHTML = '<tr><td colspan="6" class="empty">No active trades</td></tr>';
-                } else {
-                    activeBody.innerHTML = activeTrades.map(t => {
-                        const pnl = t.pnl || 0;
-                        return `<tr>
-                            <td class="pair">${t.pair}</td>
-                            <td class="${t.type?.toLowerCase()}">${t.type}</td>
-                            <td>${fmt(t.entry)}</td>
-                            <td>${fmt(t.current_price)}</td>
-                            <td>${fmt(t.sl)}</td>
-                            <td>${fmt(t.tp1)}</td>
-                            <td>${fmt(t.tp2)}</td>
-                            <td>${fmt(t.tp3)}</td>
-                            <td class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl}%</td>
-                        </tr>`;
-                    }).join('');
-                }
-                
-                const closedBody = document.getElementById('closedBody');
-                const closedTrades = closed.trades || [];
-                document.getElementById('closedCount').textContent = closedTrades.length;
-                if (closedTrades.length === 0) {
-                    closedBody.innerHTML = '<tr><td colspan="6" class="empty">No closed trades</td></tr>';
-                } else {
-                    closedBody.innerHTML = closedTrades.map(t => {
-                        const pnl = t.pnl_pct || 0;
-                        return `<tr>
-                            <td class="pair">${t.pair}</td>
-                            <td class="${t.type?.toLowerCase()}">${t.type}</td>
-                            <td>${fmt(t.entry)}</td>
-                            <td>${fmt(t.current_price)}</td>
-                            <td>${fmt(t.sl)}</td>
-                            <td>${fmt(t.tp1)}</td>
-                            <td>${fmt(t.tp2)}</td>
-                            <td>${fmt(t.tp3)}</td>
-                            <td>${t.status}</td>
-                            <td class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl}%</td>
-                        </tr>`;
-                    }).join('');
-                }
-                
-                document.getElementById('lastUpdate').textContent = '● LIVE';
+                document.getElementById('lastUpdate').textContent = '● ' + new Date().toLocaleTimeString();
                 document.getElementById('lastUpdate').className = 'refresh';
             } catch(e) {
                 console.error(e);
@@ -461,6 +417,7 @@
         
         fetchAll();
         setInterval(fetchAll, 5000);
+        checkMidnightReset();
     </script>
 </body>
 </html>
