@@ -447,7 +447,11 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         if reject_reason:
             logger.warning(f"[SCORING] {pair}: {reject_reason} - structure={structure_score}, execution={execution_score}")
         
-        confidence = max(structure_score, execution_score)
+        confidence = int(structure_score * 0.65 + execution_score * 0.35)
+        
+        current_session = structure.get_current_session()
+        if current_session not in ["LONDON", "NY"]:
+            confidence -= 5
         
         if not m5_retest_valid:
             confidence -= 5
@@ -736,25 +740,6 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             }
         
         current_session = structure.get_current_session()
-        if not structure.is_valid_trading_session():
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": entry_primary,
-                "entry_limit": entry_limit,
-                "sl": sl,
-                "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "regime": detected_regime,
-                "signal_type": signal_type,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": f"OFF_SESSION: {current_session}"
-            }
         
         stacked_ob = structure.detect_multi_tf_ob(htf_candles_4h, candles)
         
