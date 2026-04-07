@@ -69,6 +69,38 @@ async def scanner_async_loop():
                     CONSECUTIVE_LOSSES = 0
                     LOSS_STREAK_START = 0
             
+            trades = tracker.load_trades()
+            recent_trades = [t for t in trades if t.get("status") == "OPEN" or 
+                           (t.get("closed_at") and 
+                            (datetime.utcnow() - datetime.fromisoformat(t["closed_at"].replace("Z", "+00:00"))).total_seconds() < 1800)]
+            
+            cooldowned_pairs = set()
+            for t in recent_trades:
+                pair = t.get("pair", "")
+                if pair:
+                    cooldowned_pairs.add(pair)
+            
+            closed_today = [t for t in trades if t.get("closed_at") and 
+                          (datetime.utcnow() - datetime.fromisoformat(t["closed_at"].replace("Z", "+00:00"))).total_seconds() < 86400]
+            daily_pnl = sum(t.get("pnl_pct", 0) for t in closed_today)
+            
+            if daily_pnl <= -config.KILL_SWITCH_DAILY_LOSS * 100:
+                logger.warning(f">>> KILL SWITCH: Daily loss {daily_pnl:.1f}% >= {config.KILL_SWITCH_DAILY_LOSS*100}% - stopping trading")
+                await asyncio.sleep(300)
+                continue
+            
+            open_trades = [t for t in trades if t.get("status") == "OPEN"]
+            if open_trades:
+                entry_prices = [t.get("entry", 0) for t in open_trades if t.get("entry", 0) > 0]
+                if entry_prices:
+                    current_equity = sum(entry_prices)
+                    avg_entry = sum(entry_prices) / len(entry_prices)
+                    worst_pnl = min([(t.get("entry", 0) - t.get("sl", 0)) / t.get("entry", 1) * 100 for t in open_trades if t.get("entry", 0) > 0], default=0)
+                    if worst_pnl <= -config.KILL_SWITCH_DRAWDOWN * 100:
+                        logger.warning(f">>> KILL SWITCH: Drawdown {abs(worst_pnl):.1f}% >= {config.KILL_SWITCH_DRAWDOWN*100}% - pausing")
+                        await asyncio.sleep(600)
+                        continue
+            
             results = []
             scan_count = 0
             analysis_count = 0
@@ -76,6 +108,8 @@ async def scanner_async_loop():
             async with aiohttp.ClientSession() as session:
                 tasks = []
                 for pair in TRADING_PAIRS:
+                    if pair in cooldowned_pairs:
+                        continue
                     task = fetch_klines_async(session, pair, "1h", config.CANDLE_LIMIT)
                     tasks.append((pair, task))
                 
@@ -178,6 +212,14 @@ async def scanner_async_loop():
             
             if total_risk >= config.MAX_TOTAL_RISK_PCT:
                 logger.warning(f">>> MAX EXPOSURE REACHED: {total_risk*100:.1f}% >= {config.MAX_TOTAL_RISK_PCT*100}% - blocking new trades")
+            
+            if config.MAX_PER_SECTOR > 0:
+                sector_exposure = 0
+                for open_t in open_trades:
+                    open_sector = config.get_sector(open_t.get("pair", ""))
+                    sector_exposure += open_t.get("risk_pct", 0)
+                if sector_exposure > 30:
+                    logger.warning(f">>> SECTOR EXPOSURE HIGH: {sector_exposure}% - blocking new sector trades")
             
             logger.info(f">>> SCAN COMPLETE: {len(SIGNALS_CACHE)} signals, processing top 3 via signal lifecycle...")
             

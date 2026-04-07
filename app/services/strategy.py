@@ -99,19 +99,54 @@ def check_m5_retest_entry(candles_5m: list, trend: str, entry_price: float, sl: 
     return True
 
 
-def classify_setup_type(bos: Optional[str], choch: Optional[str], sweep: Optional[str]) -> str:
+def classify_setup_type(bos: Optional[str], choch: Optional[str], sweep: Optional[str], trend: str = "RANGE") -> str:
+    if choch and "CHoCH" in choch and sweep and "REJECTION" in sweep:
+        return "REVERSAL_STRONG"
+    
     if choch and "CHoCH" in choch:
-        return "REVERSAL"
+        return "REVERSAL_WEAK"
     
-    if bos and "BOS" in bos:
+    if bos and "BOS" in bos and trend != "RANGE":
         return "CONTINUATION"
     
-    if sweep and "REJECTION" in sweep:
-        if choch or bos:
-            return "REVERSAL"
-        return "CONTINUATION"
+    return "INVALID"
+
+
+def validate_retest(candles_5m: list, trend: str) -> bool:
+    if not candles_5m or len(candles_5m) < 10:
+        return True
     
-    return "CONTINUATION"
+    recent = candles_5m[-5:]
+    last = recent[-1]
+    prev = recent[-2]
+    
+    body = abs(last.get('close', 0) - last.get('open', 0))
+    range_ = last.get('high', 0) - last.get('low', 0)
+    
+    if range_ == 0:
+        return False
+    
+    body_ratio = body / range_
+    
+    if trend == "UPTREND":
+        last_low = last.get('low', 0)
+        prev_low = prev.get('low', 0)
+        
+        if last_low > prev_low:
+            if body_ratio > 0.6:
+                return True
+        return False
+    
+    elif trend == "DOWNTREND":
+        last_high = last.get('high', 0)
+        prev_high = prev.get('high', 0)
+        
+        if last_high < prev_high:
+            if body_ratio > 0.6:
+                return True
+        return False
+    
+    return False
 
 
 def refine_entry(candles: list, trend: str, pair: str = "BTCUSDT") -> Tuple[float, float]:
@@ -231,23 +266,24 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         liquidity_targets = structure.get_liquidity_targets(candles, "BUY" if trend == "UPTREND" else "SELL")
         vwap_bias = structure.get_vwap_bias(candles)
         
-        setup_type = classify_setup_type(bos, choch, sweep)
+        m5_retest_valid = validate_retest(ltf_candles_5m, trend) if ltf_candles_5m else True
         
-        if setup_type == "REVERSAL":
-            if not choch or not sweep:
-                return {
-                    "pair": pair,
-                    "signal": "NO TRADE",
-                    "entry_primary": current_price, "entry_limit": 0,
-                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                    "confidence": 0,
-                    "trend": f"{trend} ({htf_trend}/{htf_trend_4h})",
-                    "liquidity": sweep,
-                    "volume": False,
-                    "atr_ratio": 0,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "reason": "REVERSAL_WEAK_CONFIRMATION"
-                }
+        setup_type = classify_setup_type(bos, choch, sweep, trend)
+        
+        if setup_type == "REVERSAL_WEAK":
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": current_price, "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend}/{htf_trend_4h})",
+                "liquidity": sweep,
+                "volume": False,
+                "atr_ratio": 0,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "REVERSAL_WEAK_REJECTED"
+            }
         
         volume_result = volume.check_volume_confirmation(oi_data, candles)
         
@@ -388,6 +424,12 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             market_bias=None,
             is_reversal=is_reversal
         )
+        
+        if setup_type == "REVERSAL_STRONG":
+            confidence += 10
+        
+        if not m5_retest_valid:
+            confidence -= 15
         
         if bos:
             confidence += 15
@@ -792,6 +834,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "ltf_trend_15m": ltf_trend,
             "ltf_entry_trigger": ltf_entry_trigger,
             "setup_type": setup_type,
+            "m5_retest_valid": m5_retest_valid,
             "timestamp": datetime.utcnow().isoformat()
         }
 
