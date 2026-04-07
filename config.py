@@ -121,8 +121,8 @@ SECTOR_MAP = {
 def get_sector(symbol: str) -> str:
     return SECTOR_MAP.get(symbol, "OTHER")
 
-MIN_ENTRY_SCORE = 80
-MIN_RR_FILTER = 2.0
+MIN_ENTRY_SCORE = 70
+MIN_RR_FILTER = 1.5
 
 SIGNAL_DECAY_MINUTES = 30
 MAX_TOTAL_RISK_PCT = 0.05

@@ -425,7 +425,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         from app.services.scoring import calculate_split_confidence
         
-        entry_score_val = entry_score if 'entry_score' in locals() else 70
+        entry_score_val = 70
         
         structure_score, execution_score, reject_reason = calculate_split_confidence(
             trend=trend,

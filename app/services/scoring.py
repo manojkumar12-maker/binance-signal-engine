@@ -518,7 +518,7 @@ def calculate_split_confidence(
         volume_spike, whale_signal, order_flow, fvg, ltf_trigger, entry_score
     )
     
-    final_score = int(structure_score * 0.7 + execution_score * 0.3)
+    final_score = int(structure_score * 0.65 + execution_score * 0.35)
     final_score = max(0, min(100, final_score))
     
     return structure_score, execution_score, final_score

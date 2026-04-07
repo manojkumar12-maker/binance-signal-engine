@@ -900,6 +900,25 @@ def get_system_status():
     })
 
 
+@app.route('/api/self-learning')
+def get_self_learning():
+    logger.info("[API] /api/self-learning")
+    try:
+        from app.services import self_learning
+        summary = self_learning.get_performance_summary()
+        suggestions = self_learning.suggest_parameter_adjustments()
+        regime_shift = self_learning.detect_regime_shift()
+        return jsonify({
+            "performance": summary,
+            "suggestions": suggestions,
+            "regime_shift": regime_shift,
+            "updated_at": datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"[API] self-learning error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     print(f"Starting on port {port}...")
     alert_bot_started()
