@@ -160,15 +160,12 @@ async def scanner_async_loop():
                                     if config.SNIPER_MODE_ONLY:
                                         if tier == "SNIPER":
                                             pass
-                                        elif tier == "A" and active_trades < 2:
-                                            logger.info(f">>> A-TIER LIMITED: {pair} (active={active_trades})")
+                                        elif tier == "A" and active_trades < 3:
+                                            logger.info(f">>> A-TIER: {pair} tier={tier}")
                                         elif tier != "SNIPER":
                                             logger.info(f">>> SKIPPED (not_sniper): {pair} tier={tier}")
-                                            continue
                                     else:
-                                        if signal.get("confidence", 0) < config.MIN_SNIPER_CONFIDENCE:
-                                            logger.info(f">>> SKIPPED (low_confidence): {pair}")
-                                            continue
+                                        logger.info(f">>> ALLOW: {pair} tier={tier} conf={signal.get('confidence')}")
                                     
                                     whale_signal = signal.get("whale_signal", "NEUTRAL")
                                     if whale_signal == "DISTRIBUTION" and signal_direction == "BUY":
