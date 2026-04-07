@@ -30,6 +30,34 @@ def calculate_atr_based_sl(entry: float, candles: list, signal_type: str, pair: 
     return sl, risk_pct
 
 
+def check_ltf_entry_trigger(candles_15m: list, trend: str) -> bool:
+    if not candles_15m or len(candles_15m) < 5:
+        return False
+    
+    recent = candles_15m[-5:]
+    last = candles_15m[-1]
+    
+    if trend == "UPTREND":
+        last_high = last.get('high', 0)
+        prev_high = recent[-2].get('high', 0)
+        
+        if last.get('close', 0) > last.get('open', 0):
+            if last_high > prev_high:
+                return True
+        return False
+    
+    elif trend == "DOWNTREND":
+        last_low = last.get('low', 0)
+        prev_low = recent[-2].get('low', 0)
+        
+        if last.get('close', 0) < last.get('open', 0):
+            if last_low < prev_low:
+                return True
+        return False
+    
+    return False
+
+
 def refine_entry(candles: list, trend: str, pair: str = "BTCUSDT") -> Tuple[float, float]:
     last = candles[-1]
     current_price = last['close']
@@ -97,8 +125,43 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         current_price = candles[-1]["close"]
         oi_data = [] if not fetch_oi else market.get_open_interest(pair)
         
+        htf_candles_4h = market.get_klines(pair, "4h", config.CANDLE_LIMIT)
+        ltf_candles_15m = market.get_klines(pair, "15m", config.CANDLE_LIMIT)
+        
+        if htf_candles_4h and len(htf_candles_4h) >= 20:
+            htf_candles_4h = data_consistency.get_closed_candles(htf_candles_4h, remove_last=1)
+        
+        if ltf_candles_15m and len(ltf_candles_15m) >= 20:
+            ltf_candles_15m = data_consistency.get_closed_candles(ltf_candles_15m, remove_last=1)
+        
         trend = structure.detect_trend(candles)
         htf_trend = structure.detect_htf_trend(htf_candles) if htf_candles else "RANGE"
+        htf_trend_4h = structure.detect_htf_trend(htf_candles_4h) if htf_candles_4h else "RANGE"
+        
+        if htf_trend_4h != "RANGE" and htf_trend_4h != trend:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": current_price, "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend}/{htf_trend_4h})",
+                "liquidity": None,
+                "volume": False,
+                "atr_ratio": 0,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "H4_H1_MISMATCH"
+            }
+        
+        ltf_trend = structure.detect_trend(ltf_candles_15m) if ltf_candles_15m else "RANGE"
+        
+        if ltf_candles_15m:
+            ltf_bos = structure.detect_bos(ltf_candles_15m, trend)
+            ltf_entry_trigger = check_ltf_entry_trigger(ltf_candles_15m, trend)
+        else:
+            ltf_bos = None
+            ltf_entry_trigger = False
+        
         sweep = liquidity.detect_sweep(candles)
         
         bos = structure.detect_bos(candles, trend)
@@ -152,6 +215,21 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "atr_ratio": atr_ratio,
                 "timestamp": datetime.utcnow().isoformat(),
                 "reason": "CHOP_MARKET"
+            }
+        
+        if not ltf_entry_trigger:
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": current_price, "entry_limit": 0,
+                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                "confidence": 0,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "NO_LTF_ENTRY_TRIGGER"
             }
         
         if not liquidity_targets.get("rr_viable", True):
@@ -632,6 +710,9 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "is_chop": is_chop,
             "liquidity_target": liquidity_targets.get("target"),
             "vwap_bias": vwap_bias,
+            "htf_trend_4h": htf_trend_4h,
+            "ltf_trend_15m": ltf_trend,
+            "ltf_entry_trigger": ltf_entry_trigger,
             "timestamp": datetime.utcnow().isoformat()
         }
 
