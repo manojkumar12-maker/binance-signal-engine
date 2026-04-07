@@ -196,6 +196,17 @@ async def scanner_async_loop():
                     if not entry or entry <= 0:
                         continue
                     
+                    if config.MAX_PER_SECTOR > 0:
+                        signal_sector = config.get_sector(pair)
+                        sector_count = 0
+                        for open_t in open_trades:
+                            open_sector = config.get_sector(open_t.get("pair", ""))
+                            if open_sector == signal_sector:
+                                sector_count += 1
+                        if sector_count >= config.MAX_PER_SECTOR:
+                            logger.info(f">>> REJECTED {pair}: sector {signal_sector} has {sector_count} open trades (max {config.MAX_PER_SECTOR})")
+                            continue
+                    
                     entry_score = signal.get("entry_score", 0)
                     if entry_score < config.MIN_ENTRY_SCORE:
                         logger.info(f">>> REJECTED {pair}: entry_score {entry_score} < {config.MIN_ENTRY_SCORE}")
@@ -611,13 +622,20 @@ def get_trades():
                         elif current_price >= tp2:
                             trade["status"] = "TP2"
                             closed = True
-                            remarks = "TP2 Hit"
+                            remarks = "TP2 Hit - 30% closed"
                             pnl_pct = round((tp2 - entry) / entry * 100, 2)
+                            if not trade.get("tp1_closed", False):
+                                trade["closed_pct"] = 50
+                                trade["tp1_closed"] = True
+                                trade["sl"] = entry
                         elif current_price >= tp1:
                             trade["status"] = "TP1"
                             closed = True
-                            remarks = "TP1 Hit"
+                            remarks = "TP1 Hit - 50% closed"
                             pnl_pct = round((tp1 - entry) / entry * 100, 2)
+                            trade["closed_pct"] = 50
+                            trade["tp1_closed"] = True
+                            trade["sl"] = entry
                     elif signal_type == "SELL":
                         if current_price >= sl:
                             trade["status"] = "SL"
@@ -632,13 +650,36 @@ def get_trades():
                         elif current_price <= tp2:
                             trade["status"] = "TP2"
                             closed = True
-                            remarks = "TP2 Hit"
+                            remarks = "TP2 Hit - 30% closed"
                             pnl_pct = round((entry - tp2) / entry * 100, 2)
+                            if not trade.get("tp1_closed", False):
+                                trade["closed_pct"] = 50
+                                trade["tp1_closed"] = True
+                                trade["sl"] = entry
                         elif current_price <= tp1:
                             trade["status"] = "TP1"
                             closed = True
-                            remarks = "TP1 Hit"
+                            remarks = "TP1 Hit - 50% closed"
                             pnl_pct = round((entry - tp1) / entry * 100, 2)
+                            trade["closed_pct"] = 50
+                            trade["tp1_closed"] = True
+                            trade["sl"] = entry
+                    
+                    if not closed and entry > 0:
+                        if signal_type == "BUY":
+                            if trade.get("tp1_closed", False) and current_price > tp2:
+                                trailing_distance = (current_price - entry) * 0.5
+                                new_sl = current_price - trailing_distance
+                                if new_sl > trade.get("sl", 0):
+                                    trade["sl"] = new_sl
+                                    trade["trailing_active"] = True
+                        else:
+                            if trade.get("tp1_closed", False) and current_price < tp2:
+                                trailing_distance = (entry - current_price) * 0.5
+                                new_sl = current_price + trailing_distance
+                                if new_sl < trade.get("sl", float('inf')) if signal_type == "SELL" else 0:
+                                    trade["sl"] = new_sl
+                                    trade["trailing_active"] = True
                     
                     if closed:
                         trade["current_price"] = current_price

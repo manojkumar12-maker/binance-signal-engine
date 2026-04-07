@@ -58,6 +58,62 @@ def check_ltf_entry_trigger(candles_15m: list, trend: str) -> bool:
     return False
 
 
+def check_m5_retest_entry(candles_5m: list, trend: str, entry_price: float, sl: float) -> bool:
+    if not candles_5m or len(candles_5m) < 10:
+        return True
+    
+    recent = candles_5m[-10:]
+    
+    if trend == "UPTREND":
+        swing_lows = []
+        for i in range(1, len(recent) - 1):
+            if recent[i]["low"] < recent[i-1]["low"] and recent[i]["low"] < recent[i+1]["low"]:
+                swing_lows.append(recent[i]["low"])
+        
+        if not swing_lows:
+            return True
+        
+        recent_low = min(swing_lows)
+        
+        if recent_low > sl and recent_low < entry_price:
+            return True
+        
+        return False
+    
+    elif trend == "DOWNTREND":
+        swing_highs = []
+        for i in range(1, len(recent) - 1):
+            if recent[i]["high"] > recent[i-1]["high"] and recent[i]["high"] > recent[i+1]["high"]:
+                swing_highs.append(recent[i]["high"])
+        
+        if not swing_highs:
+            return True
+        
+        recent_high = max(swing_highs)
+        
+        if recent_high < sl and recent_high > entry_price:
+            return True
+        
+        return False
+    
+    return True
+
+
+def classify_setup_type(bos: Optional[str], choch: Optional[str], sweep: Optional[str]) -> str:
+    if choch and "CHoCH" in choch:
+        return "REVERSAL"
+    
+    if bos and "BOS" in bos:
+        return "CONTINUATION"
+    
+    if sweep and "REJECTION" in sweep:
+        if choch or bos:
+            return "REVERSAL"
+        return "CONTINUATION"
+    
+    return "CONTINUATION"
+
+
 def refine_entry(candles: list, trend: str, pair: str = "BTCUSDT") -> Tuple[float, float]:
     last = candles[-1]
     current_price = last['close']
@@ -127,12 +183,16 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         htf_candles_4h = market.get_klines(pair, "4h", config.CANDLE_LIMIT)
         ltf_candles_15m = market.get_klines(pair, "15m", config.CANDLE_LIMIT)
+        ltf_candles_5m = market.get_klines(pair, "5m", config.CANDLE_LIMIT)
         
         if htf_candles_4h and len(htf_candles_4h) >= 20:
             htf_candles_4h = data_consistency.get_closed_candles(htf_candles_4h, remove_last=1)
         
         if ltf_candles_15m and len(ltf_candles_15m) >= 20:
             ltf_candles_15m = data_consistency.get_closed_candles(ltf_candles_15m, remove_last=1)
+        
+        if ltf_candles_5m and len(ltf_candles_5m) >= 20:
+            ltf_candles_5m = data_consistency.get_closed_candles(ltf_candles_5m, remove_last=1)
         
         trend = structure.detect_trend(candles)
         htf_trend = structure.detect_htf_trend(htf_candles) if htf_candles else "RANGE"
@@ -170,6 +230,24 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         is_chop = structure.is_chop_market(candles)
         liquidity_targets = structure.get_liquidity_targets(candles, "BUY" if trend == "UPTREND" else "SELL")
         vwap_bias = structure.get_vwap_bias(candles)
+        
+        setup_type = classify_setup_type(bos, choch, sweep)
+        
+        if setup_type == "REVERSAL":
+            if not choch or not sweep:
+                return {
+                    "pair": pair,
+                    "signal": "NO TRADE",
+                    "entry_primary": current_price, "entry_limit": 0,
+                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
+                    "confidence": 0,
+                    "trend": f"{trend} ({htf_trend}/{htf_trend_4h})",
+                    "liquidity": sweep,
+                    "volume": False,
+                    "atr_ratio": 0,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "reason": "REVERSAL_WEAK_CONFIRMATION"
+                }
         
         volume_result = volume.check_volume_confirmation(oi_data, candles)
         
@@ -713,6 +791,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "htf_trend_4h": htf_trend_4h,
             "ltf_trend_15m": ltf_trend,
             "ltf_entry_trigger": ltf_entry_trigger,
+            "setup_type": setup_type,
             "timestamp": datetime.utcnow().isoformat()
         }
 

@@ -58,6 +58,66 @@ MAX_OPEN_TRADES = 3
 MAX_LEVERAGE = 10
 MAX_ENTRY_SLIPPAGE = 0.005
 
+MAX_PER_SECTOR = 1
+
+SECTOR_MAP = {
+    "BTCUSDT": "L1",
+    "ETHUSDT": "L1",
+    "BNBUSDT": "L1",
+    "SOLUSDT": "L1",
+    "ADAUSDT": "L1",
+    "XRPUSDT": "L1",
+    "DOTUSDT": "L1",
+    "MATICUSDT": "L1",
+    "AVAXUSDT": "L1",
+    "LINKUSDT": "L1",
+    "UNIUSDT": "DEFI",
+    "AAVEUSDT": "DEFI",
+    "MKRUSDT": "DEFI",
+    "SNXUSDT": "DEFI",
+    "COMPUSDT": "DEFI",
+    "DOGEUSDT": "MEME",
+    "SHIBUSDT": "MEME",
+    "PEPEUSDT": "MEME",
+    "WIFUSDT": "MEME",
+    "BONKUSDT": "MEME",
+    "NEARUSDT": "L1",
+    "APTUSDT": "L1",
+    "ARBUSDT": "L2",
+    "OPUSDT": "L2",
+    "SUIUSDT": "L1",
+    "SEIUSDT": "L1",
+    "INJUSDT": "L1",
+    "TIAUSDT": "L1",
+    "RNDRUSDT": "AI",
+    "FETUSDT": "AI",
+    "GRTUSDT": "DEFI",
+    "FILUSDT": "STORAGE",
+    "VETUSDT": "L1",
+    "ALGOUSDT": "L1",
+    "ATOMUSDT": "L1",
+    "LTCUSDT": "L1",
+    "ETCUSDT": "L1",
+    "XLMUSDT": "L1",
+    "TRXUSDT": "L1",
+    "FTMUSDT": "L1",
+    "SANDUSDT": "GAMEFI",
+    "MANAUSDT": "GAMEFI",
+    "AXSUSDT": "GAMEFI",
+    "ENJUSDT": "GAMEFI",
+    "CHZUSDT": "SPORTS",
+    "1INCHUSDT": "DEFI",
+    "CRVUSDT": "DEFI",
+    "LDOUSDT": "DEFI",
+    "IMXUSDT": "L1",
+    "QNTUSDT": "L1",
+    "RUNEUSDT": "DEFI",
+    "KAVAUSDT": "L1"
+}
+
+def get_sector(symbol: str) -> str:
+    return SECTOR_MAP.get(symbol, "OTHER")
+
 MIN_ENTRY_SCORE = 80
 MIN_RR_FILTER = 2.0
 
