@@ -399,6 +399,130 @@ FEATURE_STATS = {
     "reversal_strong": {"wins": 0, "losses": 0}
 }
 
+STRUCTURE_WEIGHTS = {
+    "liquidity_rejection": 25,
+    "choch": 20,
+    "bos": 15,
+    "trend": 10,
+    "htf_aligned": 10,
+    "reversal_strong": 10,
+    "combo_bonus": 5
+}
+
+EXECUTION_WEIGHTS = {
+    "volume_spike": 10,
+    "whale": 10,
+    "order_flow": 10,
+    "fvg": 5,
+    "ltf_trigger": 10,
+    "entry_score": 10
+}
+
+
+def calculate_structure_score(
+    trend: str,
+    liquidity: Optional[str],
+    htf_aligned: bool,
+    bos: Optional[str],
+    choch: Optional[str],
+    setup_type: str = "INVALID"
+) -> int:
+    score = 0
+    
+    if trend != "RANGE":
+        score += STRUCTURE_WEIGHTS["trend"]
+    
+    if htf_aligned:
+        score += STRUCTURE_WEIGHTS["htf_aligned"]
+    
+    if liquidity and "REJECTION" in liquidity:
+        score += STRUCTURE_WEIGHTS["liquidity_rejection"]
+        
+        if bos and "BOS" in bos:
+            score += STRUCTURE_WEIGHTS["combo_bonus"]
+    
+    if choch and "CHoCH" in choch:
+        score += STRUCTURE_WEIGHTS["choch"]
+    
+    if bos and "BOS" in bos:
+        score += STRUCTURE_WEIGHTS["bos"]
+    
+    if setup_type == "REVERSAL_STRONG":
+        score += STRUCTURE_WEIGHTS["reversal_strong"]
+    
+    return score
+
+
+def calculate_execution_score(
+    volume_spike: bool,
+    whale_signal: str,
+    order_flow: float,
+    fvg: Optional[Dict],
+    ltf_trigger: bool,
+    entry_score: int = 0
+) -> int:
+    score = 0
+    
+    if volume_spike:
+        score += EXECUTION_WEIGHTS["volume_spike"]
+    
+    if whale_signal != "NEUTRAL":
+        score += EXECUTION_WEIGHTS["whale"]
+    
+    if order_flow > 0.7:
+        score += EXECUTION_WEIGHTS["order_flow"]
+    elif order_flow > 0.5:
+        score += 5
+    
+    if fvg:
+        score += EXECUTION_WEIGHTS["fvg"]
+    
+    if ltf_trigger:
+        score += EXECUTION_WEIGHTS["ltf_trigger"]
+    
+    if entry_score >= 80:
+        score += 10
+    elif entry_score >= 70:
+        score += 5
+    
+    return score
+
+
+def calculate_split_confidence(
+    trend: str,
+    liquidity: Optional[str],
+    htf_aligned: bool,
+    bos: Optional[str],
+    choch: Optional[str],
+    setup_type: str,
+    volume_spike: bool,
+    whale_signal: str,
+    order_flow: float,
+    fvg: Optional[Dict],
+    ltf_trigger: bool,
+    entry_score: int = 0,
+    fake_breakout: Optional[str] = None,
+    market_bias_aligned: bool = True
+) -> tuple:
+    if fake_breakout:
+        return 0, 0, "FAKE_BREAKOUT_REJECT"
+    
+    if not htf_aligned:
+        return 0, 0, "HTF_MISMATCH_REJECT"
+    
+    structure_score = calculate_structure_score(
+        trend, liquidity, htf_aligned, bos, choch, setup_type
+    )
+    
+    execution_score = calculate_execution_score(
+        volume_spike, whale_signal, order_flow, fvg, ltf_trigger, entry_score
+    )
+    
+    final_score = int(structure_score * 0.7 + execution_score * 0.3)
+    final_score = max(0, min(100, final_score))
+    
+    return structure_score, execution_score, final_score
+
 ADAPTIVE_WEIGHTS = {
     "liquidity": 20,
     "bos": 15,
@@ -438,14 +562,20 @@ def get_adaptive_weight(feature: str) -> int:
     
     win_rate = stats["wins"] / total
     
+    base = ADAPTIVE_WEIGHTS.get(feature, 10)
+    
     if win_rate > 0.6:
-        return ADAPTIVE_WEIGHTS.get(feature, 10) + 5
+        return base + 3
+    elif win_rate > 0.55:
+        return base + 2
     elif win_rate > 0.5:
-        return ADAPTIVE_WEIGHTS.get(feature, 10)
+        return base + 1
+    elif win_rate > 0.45:
+        return base
     elif win_rate > 0.4:
-        return max(5, ADAPTIVE_WEIGHTS.get(feature, 10) - 5)
+        return base - 2
     else:
-        return max(3, ADAPTIVE_WEIGHTS.get(feature, 10) - 8)
+        return base - 3
 
 
 def calculate_adaptive_confidence(signal: Dict) -> int:

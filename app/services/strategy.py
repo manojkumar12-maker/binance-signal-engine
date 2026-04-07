@@ -423,58 +423,36 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "reason": "Weak candle strength"
             }
         
-        confidence = scoring.calculate_confidence(
-            trend, sweep, volume_confirmed, total_strength, volume_spike,
+        from app.services.scoring import calculate_split_confidence
+        
+        entry_score_val = entry_score if 'entry_score' in locals() else 70
+        
+        structure_score, execution_score, reject_reason = calculate_split_confidence(
+            trend=trend,
+            liquidity=sweep,
             htf_aligned=htf_aligned,
-            market_bias=None,
-            is_reversal=is_reversal
+            bos=bos,
+            choch=choch,
+            setup_type=setup_type,
+            volume_spike=volume_spike,
+            whale_signal=whale_signal,
+            order_flow=order_flow,
+            fvg=fvg,
+            ltf_trigger=ltf_entry_trigger,
+            entry_score=entry_score_val,
+            fake_breakout=fake_breakout,
+            market_bias_aligned=True
         )
         
-        if setup_type == "REVERSAL_STRONG":
-            confidence += 10
+        if reject_reason:
+            logger.warning(f"[SCORING] {pair}: {reject_reason} - structure={structure_score}, execution={execution_score}")
+        
+        confidence = max(structure_score, execution_score)
         
         if not m5_retest_valid:
-            confidence -= 15
+            confidence -= 5
         
-        if bos:
-            confidence += 15
-        
-        if choch:
-            confidence += 20
-        
-        if fvg:
-            confidence += 5
-        
-        confidence = scoring.apply_fake_breakout_bonus(confidence, fake_breakout, "BUY" if trend == "UPTREND" else "SELL")
-        confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
-        
-        confidence += whale_bonus
-        
-        if order_flow < 0.4:
-            confidence -= 10
-        elif order_flow > 0.7:
-            confidence += 8
-        
-        if is_fake:
-            confidence -= 25
-        
-        if not liquidity_aligned:
-            confidence = max(0, confidence - 20)
-        else:
-            confidence += 5
-        
-        if not volatility_pass:
-            confidence -= 10
-        elif atr_ratio > 0.01:
-            confidence += 5
-        
-        if trend == "RANGE" and not is_reversal:
-            confidence = max(0, confidence - 25)
-        
-        if trend == "RANGE" and is_reversal:
-            confidence += 10
-        
-        confidence = max(0, min(confidence, 100))
+        confidence = max(0, min(100, confidence))
         
         from app.services.scoring import calculate_adaptive_confidence
         adaptive_conf = calculate_adaptive_confidence({
@@ -845,6 +823,8 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "fake_breakout_trap": is_trap,
             "compression_signal": is_compressed,
             "tier": tier,
+            "structure_score": structure_score,
+            "execution_score": execution_score,
             "bos": bos,
             "choch": choch,
             "fvg": fvg,
