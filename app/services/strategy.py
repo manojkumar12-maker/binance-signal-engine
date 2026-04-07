@@ -1,11 +1,14 @@
 from typing import Dict, Optional, Tuple
 from datetime import datetime
+import logging
 import config
 from app.services import market, structure, liquidity, volume, scoring, bias_engine, regime, validation, whale
 from app.services import extension_filter, entry_quality, fake_breakout_filter, mtf_alignment
 from app.services import sniper_filter, volatility_compression, no_trade_zones, risk_engine
 from app.services import data_consistency
 from app.services.scoring import get_confidence_tier, check_location_filter, get_regime_enforcement
+
+logger = logging.getLogger("signal_strategy")
 
 
 def calculate_atr(candles: list, period: int = 14) -> float:
@@ -30,32 +33,44 @@ def calculate_atr_based_sl(entry: float, candles: list, signal_type: str, pair: 
     return sl, risk_pct
 
 
-def check_ltf_entry_trigger(candles_15m: list, trend: str) -> bool:
+def check_ltf_entry_trigger(candles_15m: list, trend: str) -> tuple:
     if not candles_15m or len(candles_15m) < 5:
-        return False
+        return False, "NO_DATA"
     
     recent = candles_15m[-5:]
     last = candles_15m[-1]
+    prev = recent[-2]
+    
+    last_close = last.get('close', 0)
+    last_open = last.get('open', 0)
+    last_high = last.get('high', 0)
+    last_low = last.get('low', 0)
+    prev_high = prev.get('high', 0)
+    prev_low = prev.get('low', 0)
+    
+    body = abs(last_close - last_open)
+    candle_range = last_high - last_low
+    body_ratio = body / candle_range if candle_range > 0 else 0
     
     if trend == "UPTREND":
-        last_high = last.get('high', 0)
-        prev_high = recent[-2].get('high', 0)
+        if last_high > prev_high and last_close > last_open:
+            return True, "BREAKOUT"
         
-        if last.get('close', 0) > last.get('open', 0):
-            if last_high > prev_high:
-                return True
-        return False
+        if last_low > prev_low and last_close > last_open and body_ratio > 0.6:
+            return True, "REJECTION"
+        
+        return False, "NO_TRIGGER"
     
     elif trend == "DOWNTREND":
-        last_low = last.get('low', 0)
-        prev_low = recent[-2].get('low', 0)
+        if last_low < prev_low and last_close < last_open:
+            return True, "BREAKOUT"
         
-        if last.get('close', 0) < last.get('open', 0):
-            if last_low < prev_low:
-                return True
-        return False
+        if last_high < prev_high and last_close < last_open and body_ratio > 0.6:
+            return True, "REJECTION"
+        
+        return False, "NO_TRIGGER"
     
-    return False
+    return False, "RANGE"
 
 
 def check_m5_retest_entry(candles_5m: list, trend: str, entry_price: float, sl: float) -> bool:
@@ -252,10 +267,11 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         if ltf_candles_15m:
             ltf_bos = structure.detect_bos(ltf_candles_15m, trend)
-            ltf_entry_trigger = check_ltf_entry_trigger(ltf_candles_15m, trend)
+            ltf_entry_trigger, ltf_trigger_type = check_ltf_entry_trigger(ltf_candles_15m, trend)
         else:
             ltf_bos = None
             ltf_entry_trigger = False
+            ltf_trigger_type = "NO_DATA"
         
         sweep = liquidity.detect_sweep(candles)
         
@@ -332,21 +348,10 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             }
         
         if not ltf_entry_trigger:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": current_price, "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "NO_LTF_ENTRY_TRIGGER"
-            }
+            logger.warning(f"[LTF] {pair}: No entry trigger ({ltf_trigger_type}) - allowing with penalty")
         
         if not liquidity_targets.get("rr_viable", True):
+            logger.warning(f"[RR] {pair}: Poor liquidity target RR - allowing with penalty")
             return {
                 "pair": pair,
                 "signal": "NO TRADE",
@@ -470,6 +475,22 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             confidence += 10
         
         confidence = max(0, min(confidence, 100))
+        
+        from app.services.scoring import calculate_adaptive_confidence
+        adaptive_conf = calculate_adaptive_confidence({
+            "liquidity": sweep,
+            "bos": bos,
+            "choch": choch,
+            "fvg": fvg,
+            "volume": volume_confirmed,
+            "whale_signal": whale_signal,
+            "trend": f"{trend} ({htf_trend})",
+            "vwap_bias": vwap_bias,
+            "setup_type": setup_type
+        })
+        
+        if adaptive_conf > confidence:
+            confidence = adaptive_conf
         
         market_bias = None
         

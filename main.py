@@ -154,8 +154,15 @@ async def scanner_async_loop():
                                     
                                     tier = signal.get("tier", "REJECT")
                                     
+                                    open_trades = tracker.get_open_trades()
+                                    active_trades = len(open_trades)
+                                    
                                     if config.SNIPER_MODE_ONLY:
-                                        if tier != "SNIPER":
+                                        if tier == "SNIPER":
+                                            pass
+                                        elif tier == "A" and active_trades < 2:
+                                            logger.info(f">>> A-TIER LIMITED: {pair} (active={active_trades})")
+                                        elif tier != "SNIPER":
                                             logger.info(f">>> SKIPPED (not_sniper): {pair} tier={tier}")
                                             continue
                                     else:

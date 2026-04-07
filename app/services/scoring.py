@@ -385,3 +385,101 @@ def calculate_confidence_with_weights(
     )
     
     return normalize_to_100(confidence)
+
+
+FEATURE_STATS = {
+    "liquidity": {"wins": 0, "losses": 0},
+    "bos": {"wins": 0, "losses": 0},
+    "choch": {"wins": 0, "losses": 0},
+    "fvg": {"wins": 0, "losses": 0},
+    "volume": {"wins": 0, "losses": 0},
+    "whale": {"wins": 0, "losses": 0},
+    "htf_aligned": {"wins": 0, "losses": 0},
+    "vwap_aligned": {"wins": 0, "losses": 0},
+    "reversal_strong": {"wins": 0, "losses": 0}
+}
+
+ADAPTIVE_WEIGHTS = {
+    "liquidity": 20,
+    "bos": 15,
+    "choch": 20,
+    "fvg": 5,
+    "volume": 15,
+    "whale": 15,
+    "htf_aligned": 8,
+    "vwap_aligned": 8,
+    "reversal_strong": 20
+}
+
+
+def update_feature_stats(trade_result: str, features: Dict):
+    if trade_result not in ["WIN", "LOSS"]:
+        return
+    
+    for feature, active in features.items():
+        if not active or feature not in FEATURE_STATS:
+            continue
+        
+        if trade_result == "WIN":
+            FEATURE_STATS[feature]["wins"] += 1
+        else:
+            FEATURE_STATS[feature]["losses"] += 1
+
+
+def get_adaptive_weight(feature: str) -> int:
+    if feature not in ADAPTIVE_WEIGHTS:
+        return 10
+    
+    stats = FEATURE_STATS.get(feature, {"wins": 0, "losses": 0})
+    total = stats["wins"] + stats["losses"]
+    
+    if total < 10:
+        return ADAPTIVE_WEIGHTS.get(feature, 10)
+    
+    win_rate = stats["wins"] / total
+    
+    if win_rate > 0.6:
+        return ADAPTIVE_WEIGHTS.get(feature, 10) + 5
+    elif win_rate > 0.5:
+        return ADAPTIVE_WEIGHTS.get(feature, 10)
+    elif win_rate > 0.4:
+        return max(5, ADAPTIVE_WEIGHTS.get(feature, 10) - 5)
+    else:
+        return max(3, ADAPTIVE_WEIGHTS.get(feature, 10) - 8)
+
+
+def calculate_adaptive_confidence(signal: Dict) -> int:
+    features = {
+        "liquidity": signal.get("liquidity") is not None and "REJECTION" in str(signal.get("liquidity", "")),
+        "bos": signal.get("bos") is not None,
+        "choch": signal.get("choch") is not None,
+        "fvg": signal.get("fvg") is not None,
+        "volume": signal.get("volume", False),
+        "whale": signal.get("whale_signal") != "NEUTRAL",
+        "htf_aligned": "UPTREND" in signal.get("trend", "") or "DOWNTREND" in signal.get("trend", ""),
+        "vwap_aligned": signal.get("vwap_bias") in ["BULLISH", "BEARISH"],
+        "reversal_strong": signal.get("setup_type") == "REVERSAL_STRONG"
+    }
+    
+    base_score = 40
+    
+    for feature, active in features.items():
+        if active:
+            base_score += get_adaptive_weight(feature)
+    
+    return min(100, max(0, base_score))
+
+
+def get_feature_performance() -> Dict:
+    performance = {}
+    for feature, stats in FEATURE_STATS.items():
+        total = stats["wins"] + stats["losses"]
+        if total > 0:
+            win_rate = stats["wins"] / total
+            performance[feature] = {
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "total": total,
+                "win_rate": round(win_rate * 100, 1)
+            }
+    return performance
