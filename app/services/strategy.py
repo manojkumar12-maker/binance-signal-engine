@@ -735,6 +735,29 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "reason": f"REGIME_ENFORCEMENT: {regime_reason}"
             }
         
+        current_session = structure.get_current_session()
+        if not structure.is_valid_trading_session():
+            return {
+                "pair": pair,
+                "signal": "NO TRADE",
+                "entry_primary": entry_primary,
+                "entry_limit": entry_limit,
+                "sl": sl,
+                "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                "confidence": confidence,
+                "trend": f"{trend} ({htf_trend})",
+                "liquidity": sweep,
+                "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "regime": detected_regime,
+                "signal_type": signal_type,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": f"OFF_SESSION: {current_session}"
+            }
+        
+        stacked_ob = structure.detect_multi_tf_ob(htf_candles_4h, candles)
+        
         tier = get_confidence_tier(int(confidence), int(entry_score))
         
         if config.SNIPER_MODE_ONLY and tier != "SNIPER":
@@ -836,6 +859,8 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "ltf_entry_trigger": ltf_entry_trigger,
             "setup_type": setup_type,
             "m5_retest_valid": m5_retest_valid,
+            "stacked_ob": stacked_ob.get("type") if stacked_ob else None,
+            "current_session": current_session,
             "timestamp": datetime.utcnow().isoformat()
         }
 

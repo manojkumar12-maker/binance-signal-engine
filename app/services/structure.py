@@ -318,3 +318,89 @@ def get_vwap_bias(candles: List[Dict]) -> str:
     elif current_price < vwap:
         return "BEARISH"
     return "NEUTRAL"
+
+
+def detect_order_block(candles: List[Dict], lookback: int = 20) -> Dict:
+    if len(candles) < lookback + 3:
+        return {"type": None, "zone": None, "index": None}
+    
+    highs = [c.get("high", 0) for c in candles]
+    lows = [c.get("low", 0) for c in candles]
+    opens = [c.get("open", 0) for c in candles]
+    closes = [c.get("close", 0) for c in candles]
+    
+    avg_range = sum(h - l for h, l in zip(highs[-20:], lows[-20:])) / 20 if len(candles) >= 20 else 1
+    
+    for i in range(len(candles) - lookback, len(candles) - 3):
+        body = abs(closes[i] - opens[i])
+        if body == 0:
+            continue
+            
+        next_range = highs[i+1] - lows[i+1]
+        
+        if closes[i] < opens[i]:
+            if next_range > avg_range * 1.5 and closes[i+1] > highs[i]:
+                return {
+                    "type": "BULLISH_OB",
+                    "zone": (lows[i], highs[i]),
+                    "index": i
+                }
+        
+        if closes[i] > opens[i]:
+            if next_range > avg_range * 1.5 and closes[i+1] < lows[i]:
+                return {
+                    "type": "BEARISH_OB",
+                    "zone": (lows[i], highs[i]),
+                    "index": i
+                }
+    
+    return {"type": None, "zone": None, "index": None}
+
+
+def detect_multi_tf_ob(h4_candles: List[Dict], h1_candles: List[Dict]) -> Optional[Dict]:
+    h4_ob = detect_order_block(h4_candles)
+    h1_ob = detect_order_block(h1_candles)
+    
+    if not h4_ob.get("type") or not h1_ob.get("type"):
+        return None
+    
+    h4_zone = h4_ob.get("zone")
+    h1_zone = h1_ob.get("zone")
+    
+    if not h4_zone or not h1_zone:
+        return None
+    
+    h4_low, h4_high = h4_zone
+    h1_low, h1_high = h1_zone
+    
+    overlap_low = max(h4_low, h1_low)
+    overlap_high = min(h4_high, h1_high)
+    
+    if overlap_low < overlap_high:
+        return {
+            "type": h1_ob["type"],
+            "zone": (overlap_low, overlap_high),
+            "strength": "STACKED"
+        }
+    
+    return None
+
+
+def get_current_session() -> str:
+    from datetime import datetime
+    utc_now = datetime.utcnow()
+    hour = utc_now.hour
+    
+    if 7 <= hour <= 12:
+        return "LONDON"
+    elif 13 <= hour <= 20:
+        return "NY"
+    elif 1 <= hour <= 6:
+        return "ASIAN"
+    else:
+        return "OFF"
+
+
+def is_valid_trading_session() -> bool:
+    session = get_current_session()
+    return session in ["LONDON", "NY"]

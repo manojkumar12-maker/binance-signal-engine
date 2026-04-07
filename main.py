@@ -253,10 +253,10 @@ async def scanner_async_loop():
                             logger.info(f">>> REJECTED {pair}: sector {signal_sector} has {sector_count} open trades (max {config.MAX_PER_SECTOR})")
                             continue
                     
-                    entry_score = signal.get("entry_score", 0)
-                    if entry_score < config.MIN_ENTRY_SCORE:
-                        logger.info(f">>> REJECTED {pair}: entry_score {entry_score} < {config.MIN_ENTRY_SCORE}")
-                        continue
+                    entry_score = signal.get("entry_score", 70)
+                    
+                    if entry_score < 60:
+                        entry_score = 70
                     
                     sl = signal.get("sl", 0)
                     tp1 = signal.get("tp1", 0)
