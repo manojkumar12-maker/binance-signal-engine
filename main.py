@@ -260,13 +260,26 @@ async def scanner_async_loop():
                     
                     sl = signal.get("sl", 0)
                     tp1 = signal.get("tp1", 0)
+                    rr = 0
                     if sl > 0 and entry > 0 and tp1 > 0:
                         risk_pct = abs(entry - sl) / entry
                         reward_pct = abs(tp1 - entry) / entry
                         rr = reward_pct / risk_pct if risk_pct > 0 else 0
+                        
                         if rr < config.MIN_RR_FILTER:
                             logger.info(f">>> REJECTED {pair}: RR {rr:.1f} < {config.MIN_RR_FILTER}")
                             continue
+                        
+                        if rr >= 2.5:
+                            signal["confidence"] = min(100, signal.get("confidence", 0) + 10)
+                            risk_pct = min(risk_pct, 0.01)
+                        elif rr >= 2.0:
+                            signal["confidence"] = min(100, signal.get("confidence", 0) + 5)
+                            risk_pct = min(risk_pct, 0.008)
+                        elif rr >= 1.5:
+                            risk_pct = min(risk_pct, 0.005)
+                    
+                    signal["rr"] = rr
                     
                     if signal_lifecycle.is_signal_locked(pair):
                         locked = signal_lifecycle.get_stored_signal(pair)
