@@ -386,7 +386,9 @@
                 
                 const signals = await signalsRes.json();
                 const trades = await tradesRes.json();
+                console.log('Trades response:', trades);
                 let closed = await closedRes.json();
+                console.log('Closed response:', closed);
                 const analytics = await analyticsRes.json();
                 
                 const signalList = signals.signals || [];
