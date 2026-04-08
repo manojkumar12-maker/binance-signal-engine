@@ -414,6 +414,49 @@
                     }).join('');
                 }
                 
+                const openTrades = (trades.trades || []).filter(t => t.status === 'OPEN');
+                const activeBody = document.getElementById('activeBody');
+                if (openTrades.length === 0) {
+                    activeBody.innerHTML = '<tr><td colspan="9" class="empty">No active trades</td></tr>';
+                } else {
+                    activeBody.innerHTML = openTrades.map(t => {
+                        const side = t.type || 'BUY';
+                        return `<tr>
+                            <td class="pair">${t.pair}</td>
+                            <td class="${side.toLowerCase()}">${side}</td>
+                            <td>${fmt(t.entry)}</td>
+                            <td>${fmt(t.current_price || t.entry)}</td>
+                            <td>${fmt(t.sl)}</td>
+                            <td>${fmt(t.tp1)}</td>
+                            <td>${fmt(t.tp2)}</td>
+                            <td>${fmt(t.tp3)}</td>
+                            <td class="${(t.pnl || 0) >= 0 ? 'positive' : 'negative'}">${(t.pnl || 0).toFixed(2)}%</td>
+                        </tr>`;
+                    }).join('');
+                }
+                
+                const closedTrades = (closed.trades || []).filter(t => t.status && t.status !== 'OPEN');
+                const closedBody = document.getElementById('closedBody');
+                if (closedTrades.length === 0) {
+                    closedBody.innerHTML = '<tr><td colspan="10" class="empty">No closed trades</td></tr>';
+                } else {
+                    closedBody.innerHTML = closedTrades.slice(0, 20).map(t => {
+                        const side = t.type || 'BUY';
+                        return `<tr>
+                            <td class="pair">${t.pair}</td>
+                            <td class="${side.toLowerCase()}">${side}</td>
+                            <td>${fmt(t.entry)}</td>
+                            <td>${fmt(t.current_price)}</td>
+                            <td>${fmt(t.sl)}</td>
+                            <td>${fmt(t.tp1)}</td>
+                            <td>${fmt(t.tp2)}</td>
+                            <td>${fmt(t.tp3)}</td>
+                            <td>${t.status}</td>
+                            <td class="${(t.pnl_pct || 0) >= 0 ? 'positive' : 'negative'}">${(t.pnl_pct || 0).toFixed(2)}%</td>
+                        </tr>`;
+                    }).join('');
+                }
+                
                 closed.trades = (closed.trades || []).filter(t => 
                     isToday(t.created_at) || isToday(t.closed_at)
                 );

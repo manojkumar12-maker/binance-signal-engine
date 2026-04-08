@@ -84,7 +84,10 @@ def store_signal(signal: Dict, state: str = "PENDING") -> Optional[Dict]:
         "is_reversal": signal.get("is_reversal"),
         "fake_breakout": signal.get("fake_breakout"),
         "atr_ratio": signal.get("atr_ratio"),
-        "entry_score": signal.get("entry_score")
+        "entry_score": signal.get("entry_score"),
+        "tp1": signal.get("tp1"),
+        "tp2": signal.get("tp2"),
+        "tp3": signal.get("tp3")
     }
     
     if r:
