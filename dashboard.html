@@ -386,9 +386,7 @@
                 
                 const signals = await signalsRes.json();
                 const trades = await tradesRes.json();
-                console.log('Trades response:', trades);
                 let closed = await closedRes.json();
-                console.log('Closed response:', closed);
                 const analytics = await analyticsRes.json();
                 
                 const signalList = signals.signals || [];
@@ -417,11 +415,13 @@
                 }
                 
                 const openTrades = (trades.trades || []).filter(t => t.status === 'OPEN');
+                console.log('Open trades:', openTrades);
                 const activeBody = document.getElementById('activeBody');
                 if (openTrades.length === 0) {
                     activeBody.innerHTML = '<tr><td colspan="9" class="empty">No active trades</td></tr>';
                 } else {
                     activeBody.innerHTML = openTrades.map(t => {
+                        console.log('Trade:', t.pair, 'tp2:', t.tp2, 'tp3:', t.tp3);
                         const side = t.type || 'BUY';
                         return `<tr>
                             <td class="pair">${t.pair}</td>
