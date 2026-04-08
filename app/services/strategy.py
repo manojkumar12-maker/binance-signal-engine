@@ -630,15 +630,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 tp2 = entry_primary * (1 - config.TP2_PERCENT)
                 tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
-        entry_score, entry_breakdown = entry_quality.calculate_entry_quality_score(
-            candles, signal_type, entry_primary, sl, tp1
-        )
-        
-        is_compressed, compression_details = volatility_compression.detect_volatility_compression(candles)
-        if is_compressed:
-            confidence += 10
-        
-        entry_primary, entry_limit = refine_entry(candles, trend, pair)
+        is_compressed, _ = volatility_compression.detect_volatility_compression(candles)
         
         sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
         
@@ -829,7 +821,6 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "is_extended": is_extended,
             "extension_distance_pct": extension_distance,
             "fake_breakout_trap": is_trap,
-            "compression_signal": is_compressed,
             "tier": tier,
             "structure_score": structure_score,
             "execution_score": execution_score,
@@ -969,14 +960,30 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             "atr_ratio": atr_ratio
         })
         
-        if signal_type == "BUY":
-            tp1 = entry_primary * (1 + config.TP1_PERCENT)
-            tp2 = entry_primary * (1 + config.TP2_PERCENT)
-            tp3 = entry_primary * (1 + config.TP3_PERCENT)
+        atr = calculate_atr(candles)
+        
+        if config.ATR_BASED_TP_SL and atr > 0:
+            tp1_distance = atr * config.ATR_TP1_MULTIPLIER
+            tp2_distance = atr * config.ATR_TP2_MULTIPLIER
+            tp3_distance = atr * config.ATR_TP3_MULTIPLIER
+            
+            if signal_type == "BUY":
+                tp1 = entry_primary + tp1_distance
+                tp2 = entry_primary + tp2_distance
+                tp3 = entry_primary + tp3_distance
+            else:
+                tp1 = entry_primary - tp1_distance
+                tp2 = entry_primary - tp2_distance
+                tp3 = entry_primary - tp3_distance
         else:
-            tp1 = entry_primary * (1 - config.TP1_PERCENT)
-            tp2 = entry_primary * (1 - config.TP2_PERCENT)
-            tp3 = entry_primary * (1 - config.TP3_PERCENT)
+            if signal_type == "BUY":
+                tp1 = entry_primary * (1 + config.TP1_PERCENT)
+                tp2 = entry_primary * (1 + config.TP2_PERCENT)
+                tp3 = entry_primary * (1 + config.TP3_PERCENT)
+            else:
+                tp1 = entry_primary * (1 - config.TP1_PERCENT)
+                tp2 = entry_primary * (1 - config.TP2_PERCENT)
+                tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
         if not is_valid:
             return {
@@ -992,7 +999,7 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
                 "trend": trend,
                 "liquidity": sweep,
                 "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
+                "risk_pct": round(abs(entry_primary - sl) / entry_primary * 100, 2),
                 "regime": detected_regime,
                 "signal_type": signal_type_value,
                 "timestamp": datetime.utcnow().isoformat(),
@@ -1012,7 +1019,7 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             "trend": trend,
             "liquidity": sweep,
             "atr_ratio": atr_ratio,
-            "risk_pct": risk_pct,
+            "risk_pct": round(abs(entry_primary - sl) / entry_primary * 100, 2),
             "regime": detected_regime,
             "signal_type": signal_type_value,
             "is_reversal": is_reversal,
