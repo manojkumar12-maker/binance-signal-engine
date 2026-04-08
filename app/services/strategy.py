@@ -934,6 +934,21 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         entry_primary, entry_limit = refine_entry(candles, trend, pair)
         sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
         
+        entry_score = 70
+        if liquidity_aligned:
+            entry_score += 5
+        if order_flow > 0.6:
+            entry_score += 10
+        elif order_flow > 0.4:
+            entry_score += 5
+        if fake_breakout:
+            entry_score += 10
+        if is_reversal:
+            entry_score += 10
+        entry_score = min(100, entry_score)
+        
+        tier = get_confidence_tier(int(confidence), int(entry_score))
+        
         if not config.validate_trade(entry_primary, sl):
             return {
                 "pair": pair,
@@ -1016,6 +1031,8 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             "tp2": config.round_to_tick(pair, tp2),
             "tp3": config.round_to_tick(pair, tp3),
             "confidence": confidence,
+            "entry_score": entry_score,
+            "tier": tier,
             "trend": trend,
             "liquidity": sweep,
             "atr_ratio": atr_ratio,

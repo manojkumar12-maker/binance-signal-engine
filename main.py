@@ -180,7 +180,7 @@ async def scanner_async_loop():
                                     fake_breakout = signal.get("fake_breakout", False)
                                     
                                     if liquidity != "SWEEP_LOW_REJECTION" and liquidity != "SWEEP_HIGH_REJECTION":
-                                        if not fake_breakout and order_flow < 0.6:
+                                        if not fake_breakout and order_flow < 0.3:
                                             logger.info(f">>> SKIPPED (weak_setup): {pair}")
                                             continue
                                     
