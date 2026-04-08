@@ -1034,6 +1034,7 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             "entry_score": entry_score,
             "tier": tier,
             "trend": trend,
+            "setup_type": "CONTINUATION" if trend != "RANGE" else "RANGE",
             "liquidity": sweep,
             "atr_ratio": atr_ratio,
             "risk_pct": round(abs(entry_primary - sl) / entry_primary * 100, 2),
@@ -1043,6 +1044,8 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             "fake_breakout": fake_breakout,
             "whale_signal": whale_signal,
             "order_flow": round(order_flow, 2),
+            "bos": "CONTINUATION" if trend != "RANGE" else "RANGE",
+            "choch": "REVERSAL" if is_reversal else None,
             "timestamp": datetime.utcnow().isoformat()
         }
 
