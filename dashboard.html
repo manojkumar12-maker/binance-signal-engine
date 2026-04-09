@@ -413,7 +413,7 @@
                             <td>${fmt(s.tp2)}</td>
                             <td>${fmt(s.tp3)}</td>
                             <td>${s.confidence || 0}</td>
-                            <td>${s.risk_percent || '--'}</td>
+                            <td>${s.risk_pct || s.risk_percent || '--'}</td>
                             <td>${s.signal_state || 'NEW'}</td>
                         </tr>`;
                     }).join('');
