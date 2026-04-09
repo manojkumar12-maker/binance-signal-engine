@@ -459,8 +459,8 @@ def get_momentum_pairs(limit: int = 10):
         gainers = [p['symbol'] for p in usdt_pairs[:limit]]
         losers = [p['symbol'] for p in usdt_pairs[-limit:]][::-1]
         
-        logger.info(f"[CONFIG] Top gainers: {gainers[:5]}...")
-        logger.info(f"[CONFIG] Top losers: {losers[:5]}...")
+        logger.info(f"[CONFIG] Top gainers (24h): {gainers[:5]}...")
+        logger.info(f"[CONFIG] Top losers (24h): {losers[:5]}...")
         
         return gainers + losers
     except Exception as e:
@@ -468,12 +468,57 @@ def get_momentum_pairs(limit: int = 10):
         return []
 
 
+def get_intraday_momentum_pairs(limit: int = 10, lookback_hours: int = 4):
+    try:
+        top_volume = get_top_usdt_pairs_by_volume(30)
+        
+        momentum_data = []
+        for symbol in top_volume[:40]:
+            try:
+                klines_url = f"{config.FUTURES_API_URL}/fapi/v1/klines?symbol={symbol}&interval=1h&limit={lookback_hours + 1}"
+                resp = requests.get(klines_url, timeout=5)
+                klines = resp.json()
+                
+                if klines and len(klines) >= 2:
+                    start_price = float(klines[0][4])
+                    end_price = float(klines[-1][4])
+                    change_pct = ((end_price - start_price) / start_price) * 100
+                    
+                    volume = float(klines[-1][7])
+                    if volume > 0:
+                        momentum_data.append({
+                            'symbol': symbol,
+                            'change_pct': change_pct,
+                            'volume': volume
+                        })
+            except Exception:
+                continue
+        
+        if not momentum_data:
+            return []
+        
+        momentum_data.sort(key=lambda x: x['change_pct'], reverse=True)
+        
+        gainers = [p['symbol'] for p in momentum_data[:limit]]
+        losers = [p['symbol'] for p in momentum_data[-limit:]][::-1]
+        
+        logger.info(f"[CONFIG] Intraday gainers ({lookback_hours}h): {gainers[:5]}...")
+        logger.info(f"[CONFIG] Intraday losers ({lookback_hours}h): {losers[:5]}...")
+        
+        return gainers + losers
+    except Exception as e:
+        logger.error(f"[CONFIG] Error fetching intraday momentum: {e}")
+        return []
+
+
 TOP_PAIRS_LIMIT = 50
 MOMENTUM_PAIRS_LIMIT = 10
 
 TRADING_PAIRS = get_top_usdt_pairs_by_volume(TOP_PAIRS_LIMIT)
-momentum_pairs = get_momentum_pairs(MOMENTUM_PAIRS_LIMIT)
-all_pairs = TRADING_PAIRS + [p for p in momentum_pairs if p not in TRADING_PAIRS]
+momentum_24h = get_momentum_pairs(MOMENTUM_PAIRS_LIMIT)
+momentum_intraday = get_intraday_momentum_pairs(MOMENTUM_PAIRS_LIMIT, lookback_hours=4)
+all_momentum = list(set(momentum_24h + momentum_intraday))
+all_pairs = TRADING_PAIRS + [p for p in all_momentum if p not in TRADING_PAIRS]
 TRADING_PAIRS = all_pairs[:70]
 
 logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}...")
