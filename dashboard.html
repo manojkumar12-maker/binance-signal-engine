@@ -420,6 +420,7 @@
                 }
                 
                 const openTrades = (trades.trades || []).filter(t => t.status === 'OPEN');
+                document.getElementById('activeCount').textContent = openTrades.length;
                 console.log('Open trades:', openTrades);
                 const activeBody = document.getElementById('activeBody');
                 if (openTrades.length === 0) {
@@ -445,6 +446,7 @@
                 const closedTrades = (closed.trades || []).filter(t => 
                     t.status && t.status !== 'OPEN' && (isToday(t.created_at) || isToday(t.closed_at))
                 );
+                document.getElementById('closedCount').textContent = closedTrades.length;
                 const closedBody = document.getElementById('closedBody');
                 if (closedTrades.length === 0) {
                     closedBody.innerHTML = '<tr><td colspan="10" class="empty">No closed trades</td></tr>';
