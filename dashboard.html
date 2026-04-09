@@ -229,6 +229,8 @@
         .sell { color: var(--red); font-weight: 600; }
         .pnl-pos { color: var(--green); font-weight: 700; }
         .pnl-neg { color: var(--red); font-weight: 700; }
+        td.positive { color: var(--green); font-weight: 600; }
+        td.negative { color: var(--red); font-weight: 600; }
         
         .state-badge { 
             font-size: 10px; 
@@ -398,7 +400,7 @@
                 
                 const signalsBody = document.getElementById('signalsBody');
                 if (signalList.length === 0) {
-                    signalsBody.innerHTML = '<tr><td colspan="7" class="empty">No signals in pipeline</td></tr>';
+                    signalsBody.innerHTML = '<tr><td colspan="10" class="empty">No signals in pipeline</td></tr>';
                 } else {
                     signalsBody.innerHTML = signalList.slice(0, 10).map(s => {
                         const side = s.signal || 'BUY';
@@ -408,7 +410,10 @@
                             <td>${fmt(s.entry_primary)}</td>
                             <td>${fmt(s.sl)}</td>
                             <td>${fmt(s.tp1)}</td>
+                            <td>${fmt(s.tp2)}</td>
+                            <td>${fmt(s.tp3)}</td>
                             <td>${s.confidence || 0}</td>
+                            <td>${s.risk_percent || '--'}</td>
                             <td>${s.signal_state || 'NEW'}</td>
                         </tr>`;
                     }).join('');
@@ -437,7 +442,9 @@
                     }).join('');
                 }
                 
-                const closedTrades = (closed.trades || []).filter(t => t.status && t.status !== 'OPEN');
+                const closedTrades = (closed.trades || []).filter(t => 
+                    t.status && t.status !== 'OPEN' && (isToday(t.created_at) || isToday(t.closed_at))
+                );
                 const closedBody = document.getElementById('closedBody');
                 if (closedTrades.length === 0) {
                     closedBody.innerHTML = '<tr><td colspan="10" class="empty">No closed trades</td></tr>';
@@ -459,19 +466,19 @@
                     }).join('');
                 }
                 
-                closed.trades = (closed.trades || []).filter(t => 
+                const todayClosed = (closed.trades || []).filter(t => 
                     isToday(t.created_at) || isToday(t.closed_at)
                 );
                 
-                document.getElementById('wins').textContent = closed.trades.filter(t => (t.pnl_pct || 0) > 0).length;
-                document.getElementById('losses').textContent = closed.trades.filter(t => (t.pnl_pct || 0) < 0).length;
+                document.getElementById('wins').textContent = todayClosed.filter(t => (t.pnl_pct || 0) > 0).length;
+                document.getElementById('losses').textContent = todayClosed.filter(t => (t.pnl_pct || 0) < 0).length;
                 
-                const dayWinRate = closed.trades.length > 0 
-                    ? Math.round((closed.trades.filter(t => (t.pnl_pct || 0) > 0).length / closed.trades.length) * 100) 
+                const dayWinRate = todayClosed.length > 0 
+                    ? Math.round((todayClosed.filter(t => (t.pnl_pct || 0) > 0).length / todayClosed.length) * 100) 
                     : 0;
                 document.getElementById('winrate').textContent = dayWinRate + '%';
                 
-                const dayPnl = closed.trades.reduce((sum, t) => sum + (t.pnl_pct || 0), 0);
+                const dayPnl = todayClosed.reduce((sum, t) => sum + (t.pnl_pct || 0), 0);
                 const pnlEl = document.getElementById('totalPnl');
                 pnlEl.textContent = (dayPnl >= 0 ? '+' : '') + dayPnl.toFixed(2) + '%';
                 pnlEl.className = 'stat-value ' + (dayPnl >= 0 ? 'positive' : 'negative');
