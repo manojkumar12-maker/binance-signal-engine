@@ -4,6 +4,7 @@ import os
 import logging
 import sys
 import requests
+from typing import List
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -395,20 +396,12 @@ BLACKLIST = [
     "GALAUSDT", "AXSUSDT", "APEUSDT", "FTMUSDT", "OPUSDT"
 ]
 
-TOP_PAIRS_LIMIT = 50
-
 FALLBACK_PAIRS = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT",
-    "LINKUSDT", "UNIUSDT", "ATOMUSDT", "LTCUSDT", "ETCUSDT",
-    "XLMUSDT", "ALGOUSDT", "VETUSDT", "FILUSDT", "TRXUSDT",
-    "NEARUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "SUIUSDT",
-    "SEIUSDT", "INJUSDT", "TIAUSDT", "RNDRUSDT", "FTMUSDT",
-    "SANDUSDT", "MANAUSDT", "AXSUSDT", "AAVEUSDT", "GRTUSDT",
-    "MKRUSDT", "SNXUSDT", "DYDXUSDT", "IMXUSDT", "LDOUSDT",
-    "QNTUSDT", "RUNEUSDT", "KAVAUSDT", "ZECUSDT", "DASHUSDT",
-    "COMPUSDT", "BATUSDT", "ENJUSDT", "CHZUSDT", "1INCHUSDT"
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
+    "DOGEUSDT", "SOLUSDT", "DOTUSDT", "MATICUSDT", "AVAXUSDT",
+    "LINKUSDT", "ATOMUSDT", "UNIUSDT", "LTCUSDT", "ETCUSDT"
 ]
+
 
 def get_top_usdt_pairs_by_volume(limit: int = 50):
     try:
@@ -417,78 +410,72 @@ def get_top_usdt_pairs_by_volume(limit: int = 50):
         data = response.json()
         
         if not data or not isinstance(data, list):
-            logger.warning(f"[CONFIG] Invalid response from ticker API: {type(data)}")
-            logger.info(f"[CONFIG] Using fallback pairs list")
+            logger.warning(f"[CONFIG] Invalid response from ticker API")
             return FALLBACK_PAIRS[:limit]
-        
-        logger.debug(f"[CONFIG] Raw ticker response sample: {data[:2] if len(data) >= 2 else data}")
         
         usdt_pairs = []
         for item in data:
             symbol = item.get('symbol', '')
-            if (
-                symbol.endswith('USDT') and
-                symbol not in BLACKLIST and
-                item.get('status') == 'TRADING'
-            ):
+            if symbol.endswith('USDT') and symbol not in BLACKLIST:
                 try:
                     volume = float(item.get('quoteVolume', 0))
                     if volume > 0:
-                        usdt_pairs.append({
-                            'symbol': symbol,
-                            'volume': volume
-                        })
-                except (ValueError, TypeError) as e:
-                    logger.debug(f"[CONFIG] Skip {symbol}: volume parse error - {e}")
+                        usdt_pairs.append({'symbol': symbol, 'volume': volume})
+                except (ValueError, TypeError):
                     continue
         
         if not usdt_pairs:
-            logger.warning(f"[CONFIG] No USDT pairs found after filtering")
-            logger.info(f"[CONFIG] Using fallback pairs list")
             return FALLBACK_PAIRS[:limit]
         
         usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
-        
-        top_symbols = [p['symbol'] for p in usdt_pairs[:limit]]
-        logger.info(f"[CONFIG] Top {len(top_symbols)} pairs by volume: {top_symbols[:10]}...")
-        return top_symbols
-    except requests.exceptions.Timeout:
-        logger.error(f"[CONFIG] Timeout fetching volume pairs - using fallback")
-        return FALLBACK_PAIRS[:limit]
-    except requests.exceptions.RequestException as e:
-        logger.error(f"[CONFIG] Network error fetching volume pairs: {e} - using fallback")
-        return FALLBACK_PAIRS[:limit]
+        return [p['symbol'] for p in usdt_pairs[:limit]]
     except Exception as e:
-        logger.error(f"[CONFIG] Error fetching volume pairs: {e} - using fallback")
+        logger.error(f"[CONFIG] Error fetching volume pairs: {e}")
         return FALLBACK_PAIRS[:limit]
 
-def get_all_usdt_pairs():
+
+def get_momentum_pairs(limit: int = 10):
     try:
-        url = f"{config.FUTURES_API_URL}/fapi/v1/exchangeInfo"
+        url = f"{config.FUTURES_API_URL}/fapi/v1/ticker/24hr"
         response = requests.get(url, timeout=10)
         data = response.json()
         
-        pairs = []
-        for symbol in data.get('symbols', []):
-            if (
-                symbol.get('status') == 'TRADING' and
-                symbol.get('quoteAsset') == 'USDT' and
-                symbol.get('contractType') == 'PERPETUAL' and
-                symbol.get('marginAsset') == 'USDT' and
-                symbol.get('symbol') not in BLACKLIST
-            ):
-                pairs.append(symbol.get('symbol'))
+        if not data or not isinstance(data, list):
+            return []
         
-        logger.info(f"[CONFIG] Found {len(pairs)} USDT pairs from Binance")
-        return pairs[:200]
+        usdt_pairs = []
+        for item in data:
+            symbol = item.get('symbol', '')
+            if symbol.endswith('USDT') and symbol not in BLACKLIST:
+                try:
+                    volume = float(item.get('quoteVolume', 0))
+                    price_change = float(item.get('priceChangePercent', 0))
+                    if volume > 1000000:
+                        usdt_pairs.append({'symbol': symbol, 'price_change_pct': price_change, 'volume': volume})
+                except (ValueError, TypeError):
+                    continue
+        
+        usdt_pairs.sort(key=lambda x: x['price_change_pct'], reverse=True)
+        gainers = [p['symbol'] for p in usdt_pairs[:limit]]
+        losers = [p['symbol'] for p in usdt_pairs[-limit:]][::-1]
+        
+        logger.info(f"[CONFIG] Top gainers: {gainers[:5]}...")
+        logger.info(f"[CONFIG] Top losers: {losers[:5]}...")
+        
+        return gainers + losers
     except Exception as e:
-        logger.error(f"[CONFIG] Error fetching pairs: {e}")
-        return [
-            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-            "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"
-        ]
+        logger.error(f"[CONFIG] Error fetching momentum pairs: {e}")
+        return []
+
+
+TOP_PAIRS_LIMIT = 50
+MOMENTUM_PAIRS_LIMIT = 10
 
 TRADING_PAIRS = get_top_usdt_pairs_by_volume(TOP_PAIRS_LIMIT)
+momentum_pairs = get_momentum_pairs(MOMENTUM_PAIRS_LIMIT)
+all_pairs = TRADING_PAIRS + [p for p in momentum_pairs if p not in TRADING_PAIRS]
+TRADING_PAIRS = all_pairs[:70]
+
 logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}...")
 
 scanner_thread = threading.Thread(target=start_async_scanner, daemon=True)
