@@ -997,8 +997,22 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
                 tp3 = entry_primary * (1 + config.TP3_PERCENT)
             else:
                 tp1 = entry_primary * (1 - config.TP1_PERCENT)
-                tp2 = entry_primary * (1 - config.TP2_PERCENT)
-                tp3 = entry_primary * (1 - config.TP3_PERCENT)
+            tp2 = entry_primary * (1 - config.TP2_PERCENT)
+            tp3 = entry_primary * (1 - config.TP3_PERCENT)
+        
+        from app.services.structure import get_liquidity_targets
+        liq_targets = get_liquidity_targets(candles, signal_type, 20)
+        liq_target = liq_targets.get("target")
+        
+        if liq_target:
+            if signal_type == "BUY" and liq_target > entry_primary:
+                tp1 = min(liq_target * 0.95, entry_primary * (1 + config.TP1_PERCENT))
+                tp2 = liq_target * 0.90
+                tp3 = liq_target * 0.85
+            elif signal_type == "SELL" and liq_target < entry_primary:
+                tp1 = max(liq_target * 1.05, entry_primary * (1 - config.TP1_PERCENT))
+                tp2 = liq_target * 1.10
+                tp3 = liq_target * 1.15
         
         if not is_valid:
             return {

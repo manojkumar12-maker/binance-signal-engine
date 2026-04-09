@@ -261,14 +261,22 @@ async def scanner_async_loop():
                     sl = signal.get("sl", 0)
                     tp1 = signal.get("tp1", 0)
                     rr = 0
+                    regime = signal.get("regime", "NORMAL")
                     if sl > 0 and entry > 0 and tp1 > 0:
                         risk_pct = abs(entry - sl) / entry
                         reward_pct = abs(tp1 - entry) / entry
                         rr = reward_pct / risk_pct if risk_pct > 0 else 0
                         
-                        if rr < config.MIN_RR_FILTER:
-                            logger.info(f">>> REJECTED {pair}: RR {rr:.1f} < {config.MIN_RR_FILTER}")
-                            continue
+                        min_rr = config.MIN_RR_FILTER
+                        if regime == "LOW_VOL":
+                            min_rr = 1.3
+                        elif regime == "HIGH_VOL":
+                            min_rr = 2.0
+                        
+                        if rr < min_rr:
+                            penalty = int((min_rr - rr) * 10)
+                            signal["confidence"] = max(0, signal.get("confidence", 0) - penalty)
+                            logger.info(f">>> RR ADJUST: {pair} RR={rr:.2f} < min={min_rr}, confidence -{penalty}")
                         
                         if rr >= 2.5:
                             signal["confidence"] = min(100, signal.get("confidence", 0) + 10)
