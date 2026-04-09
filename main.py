@@ -54,13 +54,24 @@ async def fetch_klines_async(session, symbol, interval="1h", limit=100):
 
 
 async def scanner_async_loop():
-    global SIGNALS_CACHE, SCANNER_RUNNING, SCANNER_ERROR_COUNT, CONSECUTIVE_LOSSES, LOSS_STREAK_START
+    global SIGNALS_CACHE, SCANNER_RUNNING, SCANNER_ERROR_COUNT, CONSECUTIVE_LOSSES, LOSS_STREAK_START, TRADING_PAIRS, last_momentum_refresh
     
     logger.info(">>> ASYNC SCANNER: Started")
     SCANNER_RUNNING = True
     
     while True:
         try:
+            if time.time() - last_momentum_refresh > MOMENTUM_REFRESH_INTERVAL:
+                logger.info(">>> REFRESHING MOMENTUM PAIRS...")
+                new_volume = get_top_usdt_pairs_by_volume(50)
+                new_24h = get_momentum_pairs(10)
+                new_intraday = get_intraday_momentum_pairs(10, 4)
+                all_m = list(set(new_24h + new_intraday))
+                new_pairs = new_volume + [p for p in all_m if p not in new_volume]
+                TRADING_PAIRS = new_pairs[:70]
+                last_momentum_refresh = time.time()
+                logger.info(f">>> MOMENTUM REFRESHED: {len(TRADING_PAIRS)} pairs")
+            
             if CONSECUTIVE_LOSSES >= 3:
                 if time.time() - LOSS_STREAK_START < 3600:
                     logger.info(f">>> LOSS STREAK ACTIVE: Waiting (3 losses in row)")
@@ -520,6 +531,9 @@ momentum_intraday = get_intraday_momentum_pairs(MOMENTUM_PAIRS_LIMIT, lookback_h
 all_momentum = list(set(momentum_24h + momentum_intraday))
 all_pairs = TRADING_PAIRS + [p for p in all_momentum if p not in TRADING_PAIRS]
 TRADING_PAIRS = all_pairs[:70]
+
+last_momentum_refresh = time.time()
+MOMENTUM_REFRESH_INTERVAL = 1800
 
 logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}...")
 
