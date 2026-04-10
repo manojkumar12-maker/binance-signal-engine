@@ -447,31 +447,40 @@ def get_top_usdt_pairs_by_volume(limit: int = 50):
 
 def get_momentum_pairs(limit: int = 10):
     try:
-        url = f"{config.FUTURES_API_URL}/fapi/v1/ticker/24hr"
-        response = requests.get(url, timeout=10)
-        data = response.json()
+        top_volume = get_top_usdt_pairs_by_volume(50)
         
-        if not data or not isinstance(data, list):
+        momentum_data = []
+        for symbol in top_volume[:50]:
+            try:
+                klines_url = f"{config.FUTURES_API_URL}/fapi/v1/klines?symbol={symbol}&interval=1h&limit=2"
+                resp = requests.get(klines_url, timeout=5)
+                klines = resp.json()
+                
+                if klines and len(klines) >= 2:
+                    start_price = float(klines[0][4])
+                    end_price = float(klines[-1][4])
+                    change_pct = ((end_price - start_price) / start_price) * 100
+                    
+                    volume = float(klines[-1][7])
+                    if volume > 0:
+                        momentum_data.append({
+                            'symbol': symbol,
+                            'change_pct': change_pct,
+                            'volume': volume
+                        })
+            except Exception:
+                continue
+        
+        if not momentum_data:
             return []
         
-        usdt_pairs = []
-        for item in data:
-            symbol = item.get('symbol', '')
-            if symbol.endswith('USDT') and symbol not in BLACKLIST:
-                try:
-                    volume = float(item.get('quoteVolume', 0))
-                    price_change = float(item.get('priceChangePercent', 0))
-                    if volume > 1000000:
-                        usdt_pairs.append({'symbol': symbol, 'price_change_pct': price_change, 'volume': volume})
-                except (ValueError, TypeError):
-                    continue
+        momentum_data.sort(key=lambda x: x['change_pct'], reverse=True)
         
-        usdt_pairs.sort(key=lambda x: x['price_change_pct'], reverse=True)
-        gainers = [p['symbol'] for p in usdt_pairs[:limit]]
-        losers = [p['symbol'] for p in usdt_pairs[-limit:]][::-1]
+        gainers = [p['symbol'] for p in momentum_data[:limit]]
+        losers = [p['symbol'] for p in momentum_data[-limit:]][::-1]
         
-        logger.info(f"[CONFIG] Top gainers (24h): {gainers[:5]}...")
-        logger.info(f"[CONFIG] Top losers (24h): {losers[:5]}...")
+        logger.info(f"[CONFIG] Top gainers (1h): {gainers[:5]}...")
+        logger.info(f"[CONFIG] Top losers (1h): {losers[:5]}...")
         
         return gainers + losers
     except Exception as e:
