@@ -124,7 +124,13 @@ def classify_setup_type(bos: Optional[str], choch: Optional[str], sweep: Optiona
     if bos and "BOS" in bos and trend != "RANGE":
         return "CONTINUATION"
     
-    return "INVALID"
+    if bos and "BOS" in bos:
+        return "CONTINUATION"
+    
+    if sweep:
+        return "SWEEP_PLAY"
+    
+    return "WEAK_SETUP"
 
 
 def validate_retest(candles_5m: list, trend: str) -> bool:
@@ -248,20 +254,11 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         htf_trend = structure.detect_htf_trend(htf_candles) if htf_candles else "RANGE"
         htf_trend_4h = structure.detect_htf_trend(htf_candles_4h) if htf_candles_4h else "RANGE"
         
+        htf_aligned = True
+        htf_mismatch_penalty = 0
         if htf_trend_4h != "RANGE" and htf_trend_4h != trend:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": current_price, "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend}/{htf_trend_4h})",
-                "liquidity": None,
-                "volume": False,
-                "atr_ratio": 0,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "H4_H1_MISMATCH"
-            }
+            htf_aligned = False
+            htf_mismatch_penalty = 25
         
         ltf_trend = structure.detect_trend(ltf_candles_15m) if ltf_candles_15m else "RANGE"
         
@@ -286,21 +283,6 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         setup_type = classify_setup_type(bos, choch, sweep, trend)
         
-        if setup_type == "REVERSAL_WEAK":
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": current_price, "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend}/{htf_trend_4h})",
-                "liquidity": sweep,
-                "volume": False,
-                "atr_ratio": 0,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "REVERSAL_WEAK_REJECTED"
-            }
-        
         volume_result = volume.check_volume_confirmation(oi_data, candles)
         
         if isinstance(volume_result, tuple):
@@ -317,88 +299,28 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         htf_aligned = htf_trend == "RANGE" or htf_trend == trend
         
+        chop_penalty = 0
         if not htf_aligned and htf_trend != "RANGE":
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": current_price, "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "HTF_LTF_MISMATCH"
-            }
+            htf_mismatch_penalty = 30
         
         if is_chop:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": current_price, "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "CHOP_MARKET"
-            }
+            chop_penalty = 35
         
         if not ltf_entry_trigger:
             logger.warning(f"[LTF] {pair}: No entry trigger ({ltf_trigger_type}) - allowing with penalty")
         
         if not liquidity_targets.get("rr_viable", True):
-            logger.warning(f"[RR] {pair}: Poor liquidity target RR - allowing with penalty")
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": current_price, "entry_limit": 0,
-                "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": 0,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "POOR_LIQUIDITY_TARGET_RR"
-            }
+            logger.warning(f"[RR] {pair}: Poor liquidity target RR - applying penalty")
         
+        vwap_penalty = 0
         if vwap_bias != "NEUTRAL":
             signal_direction = "BUY" if trend == "UPTREND" else "SELL"
             if vwap_bias == "BEARISH" and signal_direction == "BUY":
-                return {
-                    "pair": pair,
-                    "signal": "NO TRADE",
-                    "entry_primary": current_price, "entry_limit": 0,
-                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                    "confidence": 0,
-                    "trend": f"{trend} ({htf_trend})",
-                    "liquidity": sweep,
-                    "volume": volume_confirmed,
-                    "atr_ratio": atr_ratio,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "reason": f"VWAP_MISMATCH: price={vwap_bias}"
-                }
+                vwap_penalty = 20
             if vwap_bias == "BULLISH" and signal_direction == "SELL":
-                return {
-                    "pair": pair,
-                    "signal": "NO TRADE",
-                    "entry_primary": current_price, "entry_limit": 0,
-                    "sl": 0, "tp1": 0, "tp2": 0, "tp3": 0,
-                    "confidence": 0,
-                    "trend": f"{trend} ({htf_trend})",
-                    "liquidity": sweep,
-                    "volume": volume_confirmed,
-                    "atr_ratio": atr_ratio,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "reason": f"VWAP_MISMATCH: price={vwap_bias}"
-                }
+                vwap_penalty = 20
         
         is_reversal = scoring.detect_reversal(candles, sweep)
-        
         fake_breakout = scoring.detect_fake_breakout(candles)
         market_mode = scoring.get_market_mode(atr_ratio)
         
@@ -408,7 +330,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         order_flow = whale.order_flow_strength(candles[-1])
         is_fake = whale.is_fake_breakout(candles)
         
-        if total_strength < 5:
+        if total_strength < 3:
             return {
                 "pair": pair,
                 "signal": "NO TRADE",
@@ -447,6 +369,11 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         if reject_reason:
             logger.warning(f"[SCORING] {pair}: {reject_reason} - structure={structure_score}, execution={execution_score}")
         
+        if not liquidity_targets.get("rr_viable", True):
+            structure_score -= 15
+        
+        structure_score -= vwap_penalty
+        
         confidence = int(structure_score * 0.65 + execution_score * 0.35)
         
         current_session = structure.get_current_session()
@@ -473,6 +400,9 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         if adaptive_conf > confidence:
             confidence = adaptive_conf
+        
+        confidence -= htf_mismatch_penalty
+        confidence -= chop_penalty
         
         market_bias = None
         
@@ -538,42 +468,10 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         is_extended, extension_distance = extension_filter.check_extension(candles, timeframe)
         
         if is_extended:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": entry_primary,
-                "entry_limit": entry_limit,
-                "sl": sl,
-                "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "is_extended": True,
-                "extension_distance_pct": extension_distance,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": f"MARKET EXTENDED: price {extension_distance}% from EMA25"
-            }
+            confidence -= 20
         
         if atr_ratio < 0.005:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": entry_primary,
-                "entry_limit": entry_limit,
-                "sl": sl,
-                "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "CHOP MARKET: low volatility"
-            }
+            confidence -= 25
         
         is_trap, trap_details = fake_breakout_filter.detect_fake_breakout_trap(candles)
         if is_trap:
@@ -581,22 +479,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         no_trade, zone_details = no_trade_zones.check_no_trade_zones(candles)
         if no_trade:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": entry_primary,
-                "entry_limit": entry_limit,
-                "sl": sl,
-                "tp1": 0, "tp2": 0, "tp3": 0,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": f"NO_TRADE_ZONE: {zone_details.get('status')}"
-            }
+            confidence -= 15
         
         entry_score, entry_breakdown = entry_quality.calculate_entry_quality_score(
             candles, signal_type, entry_primary, sl, 0
@@ -670,66 +553,15 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         regime_config = regime.get_regime_config(detected_regime)
         
         if detected_regime == "LOW_VOL":
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": entry_primary,
-                "entry_limit": entry_limit,
-                "sl": sl,
-                "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "regime": detected_regime,
-                "signal_type": "CONTINUATION",
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": "LOW_VOL regime - insufficient volatility"
-            }
+            confidence -= 30
         
         location_ok, location_reason = check_location_filter(candles, signal_type, entry_primary)
         if not location_ok:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": entry_primary,
-                "entry_limit": entry_limit,
-                "sl": sl,
-                "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "regime": detected_regime,
-                "signal_type": signal_type,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": f"LOCATION_FILTER: {location_reason}"
-            }
+            confidence -= 15
         
         regime_ok, regime_reason = get_regime_enforcement(detected_regime, signal_type, is_reversal)
         if not regime_ok:
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": entry_primary,
-                "entry_limit": entry_limit,
-                "sl": sl,
-                "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "regime": detected_regime,
-                "signal_type": signal_type,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": f"REGIME_ENFORCEMENT: {regime_reason}"
-            }
+            confidence -= 15
         
         current_session = structure.get_current_session()
         
@@ -738,25 +570,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         tier = get_confidence_tier(int(confidence), int(entry_score))
         
         if config.SNIPER_MODE_ONLY and tier != "SNIPER":
-            return {
-                "pair": pair,
-                "signal": "NO TRADE",
-                "entry_primary": entry_primary,
-                "entry_limit": entry_limit,
-                "sl": sl,
-                "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                "confidence": confidence,
-                "trend": f"{trend} ({htf_trend})",
-                "liquidity": sweep,
-                "volume": volume_confirmed,
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "regime": detected_regime,
-                "signal_type": signal_type,
-                "tier": tier,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": f"TIER_REJECT: {tier} requires SNIPER for execution"
-            }
+            confidence -= 20
         
         signal_type_value = validation.classify_signal_type({
             "is_reversal": is_reversal,
@@ -774,6 +588,13 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         })
         
         if not is_valid:
+            confidence -= 20
+        
+        confidence = max(0, min(100, confidence))
+        
+        logger.info(f"[SIGNAL] {pair}: confidence={confidence}, tier={tier}, setup={setup_type}, trend={trend}")
+        
+        if confidence < 20:
             return {
                 "pair": pair,
                 "signal": "NO TRADE",
@@ -785,6 +606,15 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "trend": f"{trend} ({htf_trend})",
                 "liquidity": sweep,
                 "volume": volume_confirmed,
+                "atr_ratio": atr_ratio,
+                "risk_pct": risk_pct,
+                "regime": detected_regime,
+                "signal_type": signal_type_value,
+                "timestamp": datetime.utcnow().isoformat(),
+                "reason": "Confidence below threshold"
+            }
+        
+        return {
                 "atr_ratio": atr_ratio,
                 "risk_pct": risk_pct,
                 "regime": detected_regime,
