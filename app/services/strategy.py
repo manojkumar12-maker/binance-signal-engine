@@ -438,9 +438,6 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         else:
             confidence -= 5
         
-        if atr_ratio < 0.005:
-            confidence -= 20
-        
         price_change = (candles[-1].get('close', 0) - candles[-2].get('close', 0)) / candles[-2].get('close', 1) if len(candles) >= 2 and candles[-2].get('close') else 0
         oi_change = 0
         if oi_data and isinstance(oi_data, list) and len(oi_data) >= 2:
@@ -451,13 +448,13 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 pass
         
         if price_change > 0 and oi_change < 0:
-            confidence -= 15
+            confidence -= 10
         elif price_change > 0 and oi_change > 0:
-            confidence += 10
+            confidence += 5
         elif price_change < 0 and oi_change > 0:
-            confidence -= 15
+            confidence -= 10
         elif price_change < 0 and oi_change > 0:
-            confidence += 10
+            confidence += 5
         
         signal_type = "BUY" if trend == "UPTREND" else "SELL"
         
@@ -468,18 +465,15 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         is_extended, extension_distance = extension_filter.check_extension(candles, timeframe)
         
         if is_extended:
-            confidence -= 20
-        
-        if atr_ratio < 0.005:
-            confidence -= 25
+            confidence -= 15
         
         is_trap, trap_details = fake_breakout_filter.detect_fake_breakout_trap(candles)
         if is_trap:
-            confidence = max(0, confidence - 25)
+            confidence = max(0, confidence - 15)
         
         no_trade, zone_details = no_trade_zones.check_no_trade_zones(candles)
         if no_trade:
-            confidence -= 15
+            confidence -= 10
         
         entry_score, entry_breakdown = entry_quality.calculate_entry_quality_score(
             candles, signal_type, entry_primary, sl, 0
@@ -594,7 +588,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         logger.info(f"[SIGNAL] {pair}: confidence={confidence}, tier={tier}, setup={setup_type}, trend={trend}")
         
-        if confidence < 20:
+        if confidence < 15:
             return {
                 "pair": pair,
                 "signal": "NO TRADE",

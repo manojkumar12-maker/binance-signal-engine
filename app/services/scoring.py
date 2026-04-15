@@ -427,7 +427,7 @@ def calculate_structure_score(
     choch: Optional[str],
     setup_type: str = "INVALID"
 ) -> int:
-    score = 0
+    score = 30
     
     if trend != "RANGE":
         score += STRUCTURE_WEIGHTS["trend"]
@@ -461,7 +461,7 @@ def calculate_execution_score(
     ltf_trigger: bool,
     entry_score: int = 0
 ) -> int:
-    score = 0
+    score = 30
     
     if volume_spike:
         score += EXECUTION_WEIGHTS["volume_spike"]
@@ -504,11 +504,13 @@ def calculate_split_confidence(
     fake_breakout: Optional[str] = None,
     market_bias_aligned: bool = True
 ) -> tuple:
+    fake_breakout_penalty = 0
     if fake_breakout:
-        return 0, 0, "FAKE_BREAKOUT_REJECT"
+        fake_breakout_penalty = 25
     
+    htf_penalty = 0
     if not htf_aligned:
-        return 0, 0, "HTF_MISMATCH_REJECT"
+        htf_penalty = 20
     
     structure_score = calculate_structure_score(
         trend, liquidity, htf_aligned, bos, choch, setup_type
@@ -517,6 +519,12 @@ def calculate_split_confidence(
     execution_score = calculate_execution_score(
         volume_spike, whale_signal, order_flow, fvg, ltf_trigger, entry_score
     )
+    
+    structure_score -= htf_penalty
+    execution_score -= fake_breakout_penalty
+    
+    structure_score = max(0, structure_score)
+    execution_score = max(0, execution_score)
     
     final_score = int(structure_score * 0.65 + execution_score * 0.35)
     final_score = max(0, min(100, final_score))
