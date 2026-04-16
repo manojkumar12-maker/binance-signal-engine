@@ -251,13 +251,14 @@ async def scanner_async_loop():
                     
                     if config.MAX_PER_SECTOR > 0:
                         signal_sector = config.get_sector(pair)
+                        max_for_sector = config.MAX_PER_SECTOR if signal_sector != "OTHER" else 5
                         sector_count = 0
                         for open_t in open_trades:
                             open_sector = config.get_sector(open_t.get("pair", ""))
                             if open_sector == signal_sector:
                                 sector_count += 1
-                        if sector_count >= config.MAX_PER_SECTOR:
-                            logger.info(f">>> REJECTED {pair}: sector {signal_sector} has {sector_count} open trades (max {config.MAX_PER_SECTOR})")
+                        if sector_count >= max_for_sector:
+                            logger.info(f">>> REJECTED {pair}: sector {signal_sector} has {sector_count} open trades (max {max_for_sector})")
                             continue
                     
                     entry_score = signal.get("entry_score", 70)
