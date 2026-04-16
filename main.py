@@ -196,11 +196,6 @@ async def scanner_async_loop():
                                             signal["confidence"] = max(0, signal.get("confidence", 0) - 10)
                                             logger.info(f">>> WEAK SETUP: {pair} - applying penalty")
                                     
-                                    current_hour = datetime.utcnow().hour
-                                    if current_hour < 6 or current_hour > 23:
-                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 5)
-                                        logger.info(f">>> DEAD HOURS: {pair} - applying penalty")
-                                    
                                     results.append(signal)
                         else:
                             SCANNER_ERROR_COUNT += 1
