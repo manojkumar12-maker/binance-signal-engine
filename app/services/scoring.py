@@ -58,6 +58,7 @@ def calculate_confidence(
     if liquidity is not None:
         if "REJECTION" in liquidity:
             score += WEIGHTS["liquidity"]
+            score += 10
         else:
             score += 5
     else:
@@ -284,14 +285,14 @@ def get_signal_quality(score: int) -> str:
 
 
 def get_confidence_tier(confidence: int, entry_score: int = 0) -> str:
-    if confidence >= 85 and entry_score >= 80:
+    if confidence >= 75:
         return "SNIPER"
-    elif confidence >= 78 and entry_score >= 70:
-        return "A"
-    elif confidence >= 70:
-        return "B"
+    elif confidence >= 65:
+        return "HIGH"
+    elif confidence >= 55:
+        return "MEDIUM"
     else:
-        return "REJECT"
+        return "LOW"
 
 
 def check_location_filter(candles: list, signal_type: str, current_price: float) -> tuple:

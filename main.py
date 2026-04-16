@@ -164,22 +164,20 @@ async def scanner_async_loop():
                                     if market_bias == signal_direction:
                                         signal["confidence"] = min(100, signal.get("confidence", 0) + 10)
                                     
-                                    tier = signal.get("tier", "REJECT")
+                                    tier = signal.get("tier", "LOW")
                                     
                                     open_trades = tracker.get_open_trades()
                                     active_trades = len(open_trades)
                                     
-                                    if config.SNIPER_MODE_ONLY:
-                                        if tier == "SNIPER":
-                                            logger.info(f">>> SNIPER: {pair} tier={tier}")
-                                        elif tier == "A":
-                                            logger.info(f">>> A-TIER: {pair} tier={tier}")
-                                        elif tier == "B" and active_trades < 2:
-                                            logger.info(f">>> B-TIER: {pair} tier={tier}")
-                                        else:
-                                            logger.info(f">>> FILTERED: {pair} tier={tier}")
+                                    if tier in ["SNIPER", "HIGH"]:
+                                        logger.info(f">>> EXECUTE: {pair} tier={tier} conf={signal.get('confidence')}")
+                                    elif tier == "MEDIUM" and active_trades < 2:
+                                        logger.info(f">>> MEDIUM ALLOW: {pair} tier={tier} conf={signal.get('confidence')}")
+                                    elif tier == "LOW" and active_trades < 1:
+                                        logger.info(f">>> LOW ALLOW: {pair} tier={tier} conf={signal.get('confidence')}")
                                     else:
-                                        logger.info(f">>> ALLOW: {pair} tier={tier} conf={signal.get('confidence')}")
+                                        logger.info(f">>> FILTERED: {pair} tier={tier} conf={signal.get('confidence')}")
+                                        continue
                                     
                                     whale_signal = signal.get("whale_signal", "NEUTRAL")
                                     if whale_signal == "DISTRIBUTION" and signal_direction == "BUY":
@@ -200,8 +198,8 @@ async def scanner_async_loop():
                                     
                                     current_hour = datetime.utcnow().hour
                                     if current_hour < 6 or current_hour > 23:
-                                        logger.info(f">>> SKIPPED (dead_hours): {pair}")
-                                        continue
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 5)
+                                        logger.info(f">>> DEAD HOURS: {pair} - applying penalty")
                                     
                                     results.append(signal)
                         else:
