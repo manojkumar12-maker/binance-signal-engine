@@ -753,6 +753,8 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         
         confidence = max(0, min(confidence, 100))
         
+        logger.info(f"[SIGNAL_GEN] {pair}: trend={trend}, confidence={confidence}, liquidity={sweep}, vol_pass={volatility_pass}, atr={atr_ratio:.6f}")
+        
         signal_type = "BUY" if trend == "UPTREND" else "SELL"
         
         entry_primary, entry_limit = refine_entry(candles, trend, pair)

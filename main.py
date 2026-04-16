@@ -171,30 +171,32 @@ async def scanner_async_loop():
                                     
                                     if config.SNIPER_MODE_ONLY:
                                         if tier == "SNIPER":
-                                            pass
-                                        elif tier == "A" and active_trades < 3:
+                                            logger.info(f">>> SNIPER: {pair} tier={tier}")
+                                        elif tier == "A":
                                             logger.info(f">>> A-TIER: {pair} tier={tier}")
-                                        elif tier != "SNIPER":
-                                            logger.info(f">>> SKIPPED (not_sniper): {pair} tier={tier}")
+                                        elif tier == "B" and active_trades < 2:
+                                            logger.info(f">>> B-TIER: {pair} tier={tier}")
+                                        else:
+                                            logger.info(f">>> FILTERED: {pair} tier={tier}")
                                     else:
                                         logger.info(f">>> ALLOW: {pair} tier={tier} conf={signal.get('confidence')}")
                                     
                                     whale_signal = signal.get("whale_signal", "NEUTRAL")
                                     if whale_signal == "DISTRIBUTION" and signal_direction == "BUY":
-                                        logger.info(f">>> SKIPPED (whale_mismatch): {pair}")
-                                        continue
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
+                                        logger.info(f">>> WHALE MISMATCH: {pair} - applying penalty")
                                     if whale_signal == "ACCUMULATION" and signal_direction == "SELL":
-                                        logger.info(f">>> SKIPPED (whale_mismatch): {pair}")
-                                        continue
+                                        signal["confidence"] = max(0, signal.get("confidence", 0) - 15)
+                                        logger.info(f">>> WHALE MISMATCH: {pair} - applying penalty")
                                     
                                     liquidity = signal.get("liquidity")
                                     order_flow = signal.get("order_flow", 0.5)
                                     fake_breakout = signal.get("fake_breakout", False)
                                     
                                     if liquidity != "SWEEP_LOW_REJECTION" and liquidity != "SWEEP_HIGH_REJECTION":
-                                        if not fake_breakout and order_flow < 0.3:
-                                            logger.info(f">>> SKIPPED (weak_setup): {pair}")
-                                            continue
+                                        if not fake_breakout and order_flow < 0.2:
+                                            signal["confidence"] = max(0, signal.get("confidence", 0) - 10)
+                                            logger.info(f">>> WEAK SETUP: {pair} - applying penalty")
                                     
                                     current_hour = datetime.utcnow().hour
                                     if current_hour < 6 or current_hour > 23:
@@ -281,12 +283,12 @@ async def scanner_async_loop():
                         
                         min_rr = config.MIN_RR_FILTER
                         if regime == "LOW_VOL":
-                            min_rr = 1.3
+                            min_rr = 1.0
                         elif regime == "HIGH_VOL":
-                            min_rr = 2.0
+                            min_rr = 1.5
                         
                         if rr < min_rr:
-                            penalty = int((min_rr - rr) * 10)
+                            penalty = int((min_rr - rr) * 5)
                             signal["confidence"] = max(0, signal.get("confidence", 0) - penalty)
                             logger.info(f">>> RR ADJUST: {pair} RR={rr:.2f} < min={min_rr}, confidence -{penalty}")
                         
