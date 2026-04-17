@@ -756,6 +756,9 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             if is_reversal or sweep:
                 confidence = min(100, confidence + 10)
         
+        if trend != "RANGE":
+            confidence = min(100, confidence + 5)
+        
         confidence = max(0, min(confidence, 100))
         
         logger.info(f"[SIGNAL_GEN] {pair}: trend={trend}, confidence={confidence}, liquidity={sweep}, vol_pass={volatility_pass}, atr={atr_ratio:.6f}")

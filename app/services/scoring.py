@@ -285,11 +285,11 @@ def get_signal_quality(score: int) -> str:
 
 
 def get_confidence_tier(confidence: int, entry_score: int = 0) -> str:
-    if confidence >= 75:
+    if confidence >= 70:
         return "SNIPER"
-    elif confidence >= 65:
+    elif confidence >= 60:
         return "HIGH"
-    elif confidence >= 55:
+    elif confidence >= 50:
         return "MEDIUM"
     else:
         return "LOW"

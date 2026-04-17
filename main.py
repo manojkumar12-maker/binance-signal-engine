@@ -171,9 +171,9 @@ async def scanner_async_loop():
                                     
                                     if tier in ["SNIPER", "HIGH"]:
                                         logger.info(f">>> EXECUTE: {pair} tier={tier} conf={signal.get('confidence')}")
-                                    elif tier == "MEDIUM" and active_trades < 2:
+                                    elif tier == "MEDIUM" and active_trades < 3:
                                         logger.info(f">>> MEDIUM ALLOW: {pair} tier={tier} conf={signal.get('confidence')}")
-                                    elif tier == "LOW" and active_trades < 1:
+                                    elif tier == "LOW" and active_trades < 2:
                                         logger.info(f">>> LOW ALLOW: {pair} tier={tier} conf={signal.get('confidence')}")
                                     else:
                                         logger.info(f">>> FILTERED: {pair} tier={tier} conf={signal.get('confidence')}")
