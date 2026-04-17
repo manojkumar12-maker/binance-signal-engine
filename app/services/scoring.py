@@ -6,11 +6,11 @@ logger = logging.getLogger("scoring_debug")
 
 WEIGHTS = {
     "trend": 10,
-    "liquidity": 20,
-    "volume": 15,
-    "fake_breakout": 25,
-    "whale": 20,
-    "order_flow": 10
+    "liquidity": 25,
+    "volume": 10,
+    "fake_breakout": 10,
+    "whale": 15,
+    "order_flow": 8
 }
 
 WEIGHTED_WEIGHTS = {
@@ -45,7 +45,7 @@ def calculate_confidence(
         score += WEIGHTS["trend"]
     else:
         reasons.append("RANGE_TREND")
-        score -= 20
+        score -= 10
     
     if htf_aligned:
         score += 8

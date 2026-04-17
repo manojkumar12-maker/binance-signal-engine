@@ -754,8 +754,8 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         confidence = max(0, min(confidence, 100))
         
         if trend == "RANGE" and not is_reversal:
-            confidence = max(0, confidence - 15)
-            logger.info(f"[SIGNAL_GEN] {pair}: RANGE detected - applying penalty, was conf={confidence + 15}")
+            confidence = max(0, confidence - 10)
+            logger.info(f"[SIGNAL_GEN] {pair}: RANGE detected - applying penalty, was conf={confidence + 10}")
         elif trend == "RANGE" and is_reversal:
             confidence = min(100, confidence + 10)
             logger.info(f"[SIGNAL_GEN] {pair}: RANGE+REVERSAL - bonus applied")
