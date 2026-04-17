@@ -38,7 +38,7 @@ def calculate_confidence(
     signal_type: str = "CONTINUATION",
     debug: bool = False
 ) -> int:
-    score = 30
+    score = 40
     reasons = []
     
     if trend != "RANGE":

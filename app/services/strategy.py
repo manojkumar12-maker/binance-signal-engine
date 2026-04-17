@@ -745,20 +745,18 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         elif atr_ratio > 0.01:
             confidence += 5
         
-        if trend == "RANGE" and not is_reversal:
-            confidence = max(0, confidence - 25)
-        
-        if trend == "RANGE" and is_reversal:
-            confidence += 10
+        if trend == "RANGE":
+            if is_reversal or sweep:
+                confidence += 10
+                logger.info(f"[SIGNAL_GEN] {pair}: RANGE with reversal/liq - bonus")
+            else:
+                confidence = max(0, confidence - 10)
+                logger.info(f"[SIGNAL_GEN] {pair}: RANGE flat - penalty")
+        else:
+            if is_reversal or sweep:
+                confidence = min(100, confidence + 10)
         
         confidence = max(0, min(confidence, 100))
-        
-        if trend == "RANGE" and not is_reversal:
-            confidence = max(0, confidence - 10)
-            logger.info(f"[SIGNAL_GEN] {pair}: RANGE detected - applying penalty, was conf={confidence + 10}")
-        elif trend == "RANGE" and is_reversal:
-            confidence = min(100, confidence + 10)
-            logger.info(f"[SIGNAL_GEN] {pair}: RANGE+REVERSAL - bonus applied")
         
         logger.info(f"[SIGNAL_GEN] {pair}: trend={trend}, confidence={confidence}, liquidity={sweep}, vol_pass={volatility_pass}, atr={atr_ratio:.6f}")
         
