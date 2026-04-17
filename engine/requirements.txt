@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+websockets
+redis
+requests
+asyncio
+python-dotenv
+aiohttp

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Signal Engine</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0a0e17;
+            --bg-card: #111827;
+            --bg-card-hover: #1a2332;
+            --border: #1e3a5f;
+            --accent: #00d4ff;
+            --accent-glow: rgba(0, 212, 255, 0.3);
+            --green: #00ff88;
+            --red: #ff3366;
+            --yellow: #ffd700;
+            --blue: #4d9fff;
+            --purple: #a855f7;
+            --text: #e2e8f0;
+            --text-dim: #64748b;
+        }
+        body { 
+            font-family: 'JetBrains Mono', monospace; 
+            background: var(--bg); 
+            color: var(--text); 
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(ellipse at top, rgba(0, 212, 255, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom right, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        
+        header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 32px;
+            padding: 20px 28px;
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(17, 24, 39, 0.8) 100%);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+        }
+        .logo { 
+            font-family: 'Orbitron', sans-serif; 
+            font-size: 22px; 
+            font-weight: 800; 
+            background: linear-gradient(135deg, var(--accent) 0%, #00ff88 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px var(--accent-glow);
+            letter-spacing: 3px;
+        }
+        .refresh { 
+            font-size: 12px; 
+            color: var(--green); 
+            padding: 8px 16px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--green);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .refresh::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+        .refresh.error { 
+            color: var(--red); 
+            border-color: var(--red);
+        }
+        .refresh.error::before {
+            background: var(--red);
+            animation: none;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .stats-grid { 
+            display: grid; 
+            grid-template-columns: repeat(4, 1fr); 
+            gap: 16px; 
+            margin-bottom: 24px; 
+        }
+        .stat { 
+            background: linear-gradient(145deg, var(--bg-card) 0%, #0d1520 100%);
+            padding: 20px 24px; 
+            border-radius: 16px; 
+            text-align: center; 
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .stat::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .stat:hover { 
+            transform: translateY(-2px);
+            border-color: var(--accent);
+            box-shadow: 0 8px 32px rgba(0, 212, 255, 0.15);
+        }
+        .stat:hover::before { opacity: 1; }
+        .stat-label { 
+            font-size: 11px; 
+            color: var(--text-dim); 
+            text-transform: uppercase; 
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+        }
+        .stat-value { 
+            font-family: 'Orbitron', sans-serif; 
+            font-size: 32px; 
+            font-weight: 700; 
+        }
+        .stat.wins .stat-value { color: var(--green); text-shadow: 0 0 20px rgba(0,255,136,0.4); }
+        .stat.losses .stat-value { color: var(--red); text-shadow: 0 0 20px rgba(255,51,102,0.4); }
+        .stat.winrate .stat-value { color: var(--blue); text-shadow: 0 0 20px rgba(77,159,255,0.4); }
+        .stat.pnl .stat-value.positive { color: var(--green); text-shadow: 0 0 20px rgba(0,255,136,0.4); }
+        .stat.pnl .stat-value.negative { color: var(--red); text-shadow: 0 0 20px rgba(255,51,102,0.4); }
+        
+        .pipeline { 
+            display: grid; 
+            grid-template-columns: repeat(4, 1fr); 
+            gap: 16px; 
+            margin-bottom: 24px; 
+        }
+        .pipe { 
+            background: var(--bg-card); 
+            padding: 20px; 
+            border-radius: 16px; 
+            text-align: center; 
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+        }
+        .pipe:hover { border-color: var(--accent); }
+        .pipe-label { 
+            font-size: 10px; 
+            color: var(--text-dim); 
+            text-transform: uppercase; 
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+        }
+        .pipe-value { 
+            font-family: 'Orbitron', sans-serif; 
+            font-size: 36px; 
+            font-weight: 800; 
+        }
+        .pipe-value.pending { color: var(--yellow); text-shadow: 0 0 20px rgba(255,215,0,0.4); }
+        .pipe-value.confirmed { color: var(--green); text-shadow: 0 0 20px rgba(0,255,136,0.4); }
+        .pipe-value.executed { color: var(--blue); text-shadow: 0 0 20px rgba(77,159,255,0.4); }
+        .pipe-value.rejected { color: var(--red); text-shadow: 0 0 20px rgba(255,51,102,0.4); }
+        
+        .section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .section-header { 
+            padding: 16px 24px; 
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(180deg, rgba(30, 58, 95, 0.3) 0%, transparent 100%);
+        }
+        .section-title { 
+            font-family: 'Orbitron', sans-serif; 
+            font-size: 14px; 
+            font-weight: 600; 
+            color: var(--accent);
+            letter-spacing: 2px;
+        }
+        .section-count {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-left: auto;
+            padding: 4px 12px;
+            background: var(--bg);
+            border-radius: 20px;
+        }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { 
+            padding: 14px 20px; 
+            text-align: left; 
+            font-size: 10px; 
+            text-transform: uppercase; 
+            font-weight: 600;
+            color: var(--text-dim);
+            letter-spacing: 1.5px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid var(--border);
+        }
+        td { 
+            padding: 14px 20px; 
+            font-size: 13px;
+            border-bottom: 1px solid rgba(30, 58, 95, 0.3);
+            transition: background 0.2s;
+        }
+        tr:hover td { background: var(--bg-card-hover); }
+        .pair { font-weight: 600; color: var(--text); }
+        .buy { color: var(--green); font-weight: 600; }
+        .sell { color: var(--red); font-weight: 600; }
+        .pnl-pos { color: var(--green); font-weight: 700; }
+        .pnl-neg { color: var(--red); font-weight: 700; }
+        td.positive { color: var(--green); font-weight: 600; }
+        td.negative { color: var(--red); font-weight: 600; }
+        
+        .state-badge { 
+            font-size: 10px; 
+            font-weight: 600;
+            padding: 5px 12px; 
+            border-radius: 6px; 
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .state-badge.pending { background: rgba(255, 215, 0, 0.15); color: var(--yellow); }
+        .state-badge.confirmed { background: rgba(0, 255, 136, 0.15); color: var(--green); }
+        .state-badge.executed { background: rgba(77, 159, 255, 0.15); color: var(--blue); }
+        .state-badge.rejected { background: rgba(255, 51, 102, 0.15); color: var(--red); }
+        
+        .empty { 
+            text-align: center; 
+            color: var(--text-dim); 
+            padding: 48px; 
+            font-size: 13px;
+        }
+        
+        @media (max-width: 1024px) {
+            .stats-grid, .pipeline { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 640px) {
+            .stats-grid, .pipeline { grid-template-columns: 1fr; }
+            header { flex-direction: column; gap: 16px; text-align: center; }
+            .logo { font-size: 18px; }
+            th, td { padding: 10px 12px; font-size: 11px; }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .loading { animation: pulse 1.5s infinite; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">⚡ BINANCE SIGNAL ENGINE</div>
+            <div class="refresh" id="lastUpdate">Initializing...</div>
+        </header>
+        
+        <div class="stats-grid">
+            <div class="stat wins">
+                <div class="stat-label">Wins</div>
+                <div class="stat-value" id="wins">0</div>
+            </div>
+            <div class="stat losses">
+                <div class="stat-label">Losses</div>
+                <div class="stat-value" id="losses">0</div>
+            </div>
+            <div class="stat winrate">
+                <div class="stat-label">Win Rate</div>
+                <div class="stat-value" id="winrate">0%</div>
+            </div>
+            <div class="stat pnl">
+                <div class="stat-label">Total P&L</div>
+                <div class="stat-value" id="totalPnl">0%</div>
+            </div>
+        </div>
+        
+        <div class="pipeline">
+            <div class="pipe">
+                <div class="pipe-label">Pending</div>
+                <div class="pipe-value pending" id="pending">0</div>
+            </div>
+            <div class="pipe">
+                <div class="pipe-label">Confirmed</div>
+                <div class="pipe-value confirmed" id="confirmed">0</div>
+            </div>
+            <div class="pipe">
+                <div class="pipe-label">Executed</div>
+                <div class="pipe-value executed" id="executed">0</div>
+            </div>
+            <div class="pipe">
+                <div class="pipe-label">Rejected</div>
+                <div class="pipe-value rejected" id="rejected">0</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">
+                <span class="section-title">🎯 LIVE SIGNALS</span>
+                <span class="section-count" id="signalsCount">0</span>
+            </div>
+            <table id="signalsTable">
+                <thead><tr><th>Pair</th><th>Signal</th><th>Entry</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Conf%</th><th>Risk%</th><th>State</th></tr></thead>
+                <tbody id="signalsBody"></tbody>
+            </table>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">
+                <span class="section-title">📊 ACTIVE TRADES</span>
+                <span class="section-count" id="activeCount">0</span>
+            </div>
+            <table id="activeTable">
+                <thead><tr><th>Pair</th><th>Type</th><th>Entry</th><th>Current</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>P/L</th></tr></thead>
+                <tbody id="activeBody"></tbody>
+            </table>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">
+                <span class="section-title">🔒 CLOSED TRADES</span>
+                <span class="section-count" id="closedCount">0</span>
+            </div>
+            <table id="closedTable">
+                <thead><tr><th>Pair</th><th>Type</th><th>Entry</th><th>Exit</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Status</th><th>P/L</th></tr></thead>
+                <tbody id="closedBody"></tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        const API = 'https://binance-signal-engine-production.up.railway.app/api';
+        
+        function fmt(num) {
+            if (!num || num === 0) return '--';
+            return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: num < 1 ? 6 : 2 });
+        }
+        
+        function isToday(timestamp) {
+            if (!timestamp) return false;
+            const date = new Date(timestamp.replace('Z', '+00:00'));
+            const today = new Date();
+            return date.toDateString() === today.toDateString();
+        }
+        
+        function checkMidnightReset() {
+            const now = new Date();
+            const nextMidnight = new Date(now);
+            nextMidnight.setDate(nextMidnight.getDate() + 1);
+            nextMidnight.setHours(0, 0, 1, 0);
+            const msUntilMidnight = nextMidnight - now;
+            
+            if (msUntilMidnight < 60000) {
+                setTimeout(() => {
+                    location.reload();
+                }, msUntilMidnight);
+            }
+        }
+        
+        async function fetchAll() {
+            try {
+                const [signalsRes, tradesRes, closedRes, analyticsRes] = await Promise.all([
+                    fetch(API + '/signal-states'),
+                    fetch(API + '/trades?status=open'),
+                    fetch(API + '/trades?status=closed'),
+                    fetch(API + '/analytics')
+                ]);
+                
+                const signals = await signalsRes.json();
+                const trades = await tradesRes.json();
+                let closed = await closedRes.json();
+                const analytics = await analyticsRes.json();
+                
+                const signalList = signals.signals || [];
+                document.getElementById('signalsCount').textContent = signalList.length;
+                document.getElementById('pending').textContent = signalList.filter(s => s.signal_state === 'PENDING').length;
+                document.getElementById('confirmed').textContent = signalList.filter(s => s.signal_state === 'CONFIRMED').length;
+                document.getElementById('executed').textContent = signalList.filter(s => s.signal_state === 'EXECUTED').length;
+                document.getElementById('rejected').textContent = signalList.filter(s => s.signal_state === 'REJECTED').length;
+                
+                const signalsBody = document.getElementById('signalsBody');
+                if (signalList.length === 0) {
+                    signalsBody.innerHTML = '<tr><td colspan="10" class="empty">No signals in pipeline</td></tr>';
+                } else {
+                    signalsBody.innerHTML = signalList.slice(0, 10).map(s => {
+                        const side = s.signal || 'BUY';
+                        return `<tr>
+                            <td class="pair">${s.pair || 'N/A'}</td>
+                            <td class="${side.toLowerCase()}">${side}</td>
+                            <td>${fmt(s.entry_primary)}</td>
+                            <td>${fmt(s.sl)}</td>
+                            <td>${fmt(s.tp1)}</td>
+                            <td>${fmt(s.tp2)}</td>
+                            <td>${fmt(s.tp3)}</td>
+                            <td>${s.confidence || 0}</td>
+                            <td>${s.risk_pct || s.risk_percent || '--'}</td>
+                            <td>${s.signal_state || 'NEW'}</td>
+                        </tr>`;
+                    }).join('');
+                }
+                
+                const openTrades = (trades.trades || []).filter(t => t.status === 'OPEN');
+                document.getElementById('activeCount').textContent = openTrades.length;
+                console.log('Open trades:', openTrades);
+                const activeBody = document.getElementById('activeBody');
+                if (openTrades.length === 0) {
+                    activeBody.innerHTML = '<tr><td colspan="9" class="empty">No active trades</td></tr>';
+                } else {
+                    activeBody.innerHTML = openTrades.map(t => {
+                        console.log('Trade:', t.pair, 'tp2:', t.tp2, 'tp3:', t.tp3);
+                        const side = t.type || 'BUY';
+                        return `<tr>
+                            <td class="pair">${t.pair}</td>
+                            <td class="${side.toLowerCase()}">${side}</td>
+                            <td>${fmt(t.entry)}</td>
+                            <td>${fmt(t.current_price || t.entry)}</td>
+                            <td>${fmt(t.sl)}</td>
+                            <td>${fmt(t.tp1)}</td>
+                            <td>${fmt(t.tp2)}</td>
+                            <td>${fmt(t.tp3)}</td>
+                            <td class="${(t.pnl || 0) >= 0 ? 'positive' : 'negative'}">${(t.pnl || 0).toFixed(2)}%</td>
+                        </tr>`;
+                    }).join('');
+                }
+                
+                const closedTrades = (closed.trades || []).filter(t => 
+                    t.status && t.status !== 'OPEN' && (isToday(t.created_at) || isToday(t.closed_at))
+                );
+                document.getElementById('closedCount').textContent = closedTrades.length;
+                const closedBody = document.getElementById('closedBody');
+                if (closedTrades.length === 0) {
+                    closedBody.innerHTML = '<tr><td colspan="10" class="empty">No closed trades</td></tr>';
+                } else {
+                    closedBody.innerHTML = closedTrades.slice(0, 20).map(t => {
+                        const side = t.type || 'BUY';
+                        return `<tr>
+                            <td class="pair">${t.pair}</td>
+                            <td class="${side.toLowerCase()}">${side}</td>
+                            <td>${fmt(t.entry)}</td>
+                            <td>${fmt(t.current_price)}</td>
+                            <td>${fmt(t.sl)}</td>
+                            <td>${fmt(t.tp1)}</td>
+                            <td>${fmt(t.tp2)}</td>
+                            <td>${fmt(t.tp3)}</td>
+                            <td>${t.status}</td>
+                            <td class="${(t.pnl_pct || 0) >= 0 ? 'positive' : 'negative'}">${(t.pnl_pct || 0).toFixed(2)}%</td>
+                        </tr>`;
+                    }).join('');
+                }
+                
+                const todayClosed = (closed.trades || []).filter(t => 
+                    isToday(t.created_at) || isToday(t.closed_at)
+                );
+                
+                document.getElementById('wins').textContent = todayClosed.filter(t => (t.pnl_pct || 0) > 0).length;
+                document.getElementById('losses').textContent = todayClosed.filter(t => (t.pnl_pct || 0) < 0).length;
+                
+                const dayWinRate = todayClosed.length > 0 
+                    ? Math.round((todayClosed.filter(t => (t.pnl_pct || 0) > 0).length / todayClosed.length) * 100) 
+                    : 0;
+                document.getElementById('winrate').textContent = dayWinRate + '%';
+                
+                const dayPnl = todayClosed.reduce((sum, t) => sum + (t.pnl_pct || 0), 0);
+                const pnlEl = document.getElementById('totalPnl');
+                pnlEl.textContent = (dayPnl >= 0 ? '+' : '') + dayPnl.toFixed(2) + '%';
+                pnlEl.className = 'stat-value ' + (dayPnl >= 0 ? 'positive' : 'negative');
+                
+                document.getElementById('lastUpdate').textContent = '● ' + new Date().toLocaleTimeString();
+                document.getElementById('lastUpdate').className = 'refresh';
+            } catch(e) {
+                console.error(e);
+                document.getElementById('lastUpdate').textContent = '● OFFLINE';
+                document.getElementById('lastUpdate').className = 'refresh error';
+            }
+        }
+        
+        fetchAll();
+        setInterval(fetchAll, 5000);
+        checkMidnightReset();
+    </script>
+</body>
+</html>

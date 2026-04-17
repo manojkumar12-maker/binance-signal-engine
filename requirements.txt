@@ -1,0 +1,13 @@
+flask
+flask-cors
+gunicorn
+fastapi
+uvicorn
+websockets
+redis
+requests
+asyncio
+python-dotenv
+aiohttp
+flask-socketio
+eventlet
