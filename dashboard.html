@@ -349,7 +349,8 @@
     </div>
     
     <script>
-        const API = 'https://binance-signal-engine-production.up.railway.app/api';
+        // Configure API URL - change this to your EC2 IP or backend URL
+        const API = window.API_URL || 'http://localhost:8080/api';
         
         function fmt(num) {
             if (!num || num === 0) return '--';
