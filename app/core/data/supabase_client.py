@@ -34,6 +34,7 @@ try:
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
+    create_client = None  # type: ignore
     logger.warning("Supabase client not installed. Using mock implementation.")
 
 
@@ -47,7 +48,7 @@ class SupabaseClient:
         self.key = key
         self.client = None
         
-        if SUPABASE_AVAILABLE and url and key:
+        if SUPABASE_AVAILABLE and create_client and url and key:
             try:
                 self.client = create_client(url, key)
                 logger.info("✅ Supabase connected")
@@ -150,7 +151,7 @@ class SupabaseClient:
         
         try:
             query = self.client.table("trades").select("*").order("created_at", desc=True)
-            if status:
+            if status and status != "":
                 query = query.eq("status", status)
             response = query.limit(50).execute()
             return response.data if response else []
