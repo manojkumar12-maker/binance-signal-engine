@@ -351,6 +351,106 @@
     <script>
         // Configure API URL - change this to your EC2 IP or backend URL
         const API = window.API_URL || 'http://localhost:8080/api';
+        const DEMO_MODE = true; // Set to false when backend is ready
+        
+        // Demo data for testing
+        const DEMO_SIGNALS = [
+            {
+                pair: 'BTCUSDT',
+                signal: 'BUY',
+                entry_primary: 45000,
+                sl: 44100,
+                tp1: 46800,
+                tp2: 48600,
+                tp3: 50400,
+                confidence: 92,
+                risk_pct: 2,
+                signal_state: 'CONFIRMED',
+                tier: 'SNIPER'
+            },
+            {
+                pair: 'ETHUSDT',
+                signal: 'BUY',
+                entry_primary: 3200,
+                sl: 3136,
+                tp1: 3328,
+                tp2: 3456,
+                tp3: 3584,
+                confidence: 87,
+                risk_pct: 2,
+                signal_state: 'PENDING',
+                tier: 'ELITE'
+            },
+            {
+                pair: 'SOLUSDT',
+                signal: 'SELL',
+                entry_primary: 165,
+                sl: 168.3,
+                tp1: 161.7,
+                tp2: 158.4,
+                tp3: 155.1,
+                confidence: 85,
+                risk_pct: 2,
+                signal_state: 'EXECUTED',
+                tier: 'ELITE'
+            }
+        ];
+        
+        const DEMO_TRADES = [
+            {
+                pair: 'BTCUSDT',
+                type: 'BUY',
+                entry: 45000,
+                current_price: 46700,
+                sl: 44100,
+                tp1: 46800,
+                tp2: 48600,
+                tp3: 50400,
+                pnl: 3.78,
+                status: 'OPEN'
+            },
+            {
+                pair: 'SOLUSDT',
+                type: 'SELL',
+                entry: 165,
+                current_price: 162,
+                sl: 168.3,
+                tp1: 161.7,
+                tp2: 158.4,
+                tp3: 155.1,
+                pnl: 1.82,
+                status: 'OPEN'
+            }
+        ];
+        
+        const DEMO_CLOSED = [
+            {
+                pair: 'ETHUSDT',
+                type: 'BUY',
+                entry: 3200,
+                current_price: 3250,
+                sl: 3136,
+                tp1: 3328,
+                tp2: 3456,
+                tp3: 3584,
+                pnl_pct: 2.5,
+                status: 'TP1',
+                created_at: new Date().toISOString()
+            },
+            {
+                pair: 'ADAUSDT',
+                type: 'BUY',
+                entry: 0.45,
+                current_price: 0.44,
+                sl: 0.44,
+                tp1: 0.46,
+                tp2: 0.47,
+                tp3: 0.48,
+                pnl_pct: -1.2,
+                status: 'SL',
+                created_at: new Date().toISOString()
+            }
+        ];
         
         function fmt(num) {
             if (!num || num === 0) return '--';
@@ -358,7 +458,7 @@
         }
         
         function isToday(timestamp) {
-            if (!timestamp) return false;
+            if (!timestamp) return true; // Show demo data always
             const date = new Date(timestamp.replace('Z', '+00:00'));
             const today = new Date();
             return date.toDateString() === today.toDateString();
@@ -380,17 +480,25 @@
         
         async function fetchAll() {
             try {
-                const [signalsRes, tradesRes, closedRes, analyticsRes] = await Promise.all([
-                    fetch(API + '/signal-states'),
-                    fetch(API + '/trades?status=open'),
-                    fetch(API + '/trades?status=closed'),
-                    fetch(API + '/analytics')
-                ]);
+                let signals, trades, closed;
                 
-                const signals = await signalsRes.json();
-                const trades = await tradesRes.json();
-                let closed = await closedRes.json();
-                const analytics = await analyticsRes.json();
+                if (DEMO_MODE) {
+                    // Use demo data
+                    signals = { signals: DEMO_SIGNALS };
+                    trades = { trades: DEMO_TRADES };
+                    closed = { trades: DEMO_CLOSED };
+                } else {
+                    // Try to fetch from real API
+                    const [signalsRes, tradesRes, closedRes] = await Promise.all([
+                        fetch(API + '/signal-states'),
+                        fetch(API + '/trades?status=open'),
+                        fetch(API + '/trades?status=closed')
+                    ]);
+                    
+                    signals = await signalsRes.json();
+                    trades = await tradesRes.json();
+                    closed = await closedRes.json();
+                }
                 
                 const signalList = signals.signals || [];
                 document.getElementById('signalsCount').textContent = signalList.length;
@@ -405,30 +513,30 @@
                 } else {
                     signalsBody.innerHTML = signalList.slice(0, 10).map(s => {
                         const side = s.signal || 'BUY';
+                        const stateClass = s.signal_state === 'SNIPER' || s.signal_state === 'ELITE' ? 'confirmed' : 
+                                         s.signal_state === 'PENDING' ? 'pending' : 'executed';
                         return `<tr>
                             <td class="pair">${s.pair || 'N/A'}</td>
                             <td class="${side.toLowerCase()}">${side}</td>
-                            <td>${fmt(s.entry_primary)}</td>
+                            <td>${fmt(s.entry_primary || s.entry)}</td>
                             <td>${fmt(s.sl)}</td>
                             <td>${fmt(s.tp1)}</td>
                             <td>${fmt(s.tp2)}</td>
                             <td>${fmt(s.tp3)}</td>
                             <td>${s.confidence || 0}</td>
                             <td>${s.risk_pct || s.risk_percent || '--'}</td>
-                            <td>${s.signal_state || 'NEW'}</td>
+                            <td><span class="state-badge ${stateClass.toLowerCase()}">${s.signal_state || 'NEW'}</span></td>
                         </tr>`;
                     }).join('');
                 }
                 
                 const openTrades = (trades.trades || []).filter(t => t.status === 'OPEN');
                 document.getElementById('activeCount').textContent = openTrades.length;
-                console.log('Open trades:', openTrades);
                 const activeBody = document.getElementById('activeBody');
                 if (openTrades.length === 0) {
                     activeBody.innerHTML = '<tr><td colspan="9" class="empty">No active trades</td></tr>';
                 } else {
                     activeBody.innerHTML = openTrades.map(t => {
-                        console.log('Trade:', t.pair, 'tp2:', t.tp2, 'tp3:', t.tp3);
                         const side = t.type || 'BUY';
                         return `<tr>
                             <td class="pair">${t.pair}</td>
@@ -445,7 +553,7 @@
                 }
                 
                 const closedTrades = (closed.trades || []).filter(t => 
-                    t.status && t.status !== 'OPEN' && (isToday(t.created_at) || isToday(t.closed_at))
+                    t.status && t.status !== 'OPEN'
                 );
                 document.getElementById('closedCount').textContent = closedTrades.length;
                 const closedBody = document.getElementById('closedBody');
@@ -458,7 +566,7 @@
                             <td class="pair">${t.pair}</td>
                             <td class="${side.toLowerCase()}">${side}</td>
                             <td>${fmt(t.entry)}</td>
-                            <td>${fmt(t.current_price)}</td>
+                            <td>${fmt(t.current_price || t.exit)}</td>
                             <td>${fmt(t.sl)}</td>
                             <td>${fmt(t.tp1)}</td>
                             <td>${fmt(t.tp2)}</td>
@@ -469,15 +577,15 @@
                     }).join('');
                 }
                 
-                const todayClosed = (closed.trades || []).filter(t => 
-                    isToday(t.created_at) || isToday(t.closed_at)
-                );
+                const todayClosed = (closed.trades || []).filter(t => t.status !== 'OPEN');
                 
-                document.getElementById('wins').textContent = todayClosed.filter(t => (t.pnl_pct || 0) > 0).length;
-                document.getElementById('losses').textContent = todayClosed.filter(t => (t.pnl_pct || 0) < 0).length;
+                const wins = todayClosed.filter(t => (t.pnl_pct || 0) > 0).length;
+                const losses = todayClosed.filter(t => (t.pnl_pct || 0) < 0).length;
+                document.getElementById('wins').textContent = wins;
+                document.getElementById('losses').textContent = losses;
                 
                 const dayWinRate = todayClosed.length > 0 
-                    ? Math.round((todayClosed.filter(t => (t.pnl_pct || 0) > 0).length / todayClosed.length) * 100) 
+                    ? Math.round((wins / todayClosed.length) * 100) 
                     : 0;
                 document.getElementById('winrate').textContent = dayWinRate + '%';
                 
@@ -486,8 +594,13 @@
                 pnlEl.textContent = (dayPnl >= 0 ? '+' : '') + dayPnl.toFixed(2) + '%';
                 pnlEl.className = 'stat-value ' + (dayPnl >= 0 ? 'positive' : 'negative');
                 
-                document.getElementById('lastUpdate').textContent = '● ' + new Date().toLocaleTimeString();
-                document.getElementById('lastUpdate').className = 'refresh';
+                if (DEMO_MODE) {
+                    document.getElementById('lastUpdate').textContent = '● DEMO MODE';
+                    document.getElementById('lastUpdate').style.color = 'var(--yellow)';
+                } else {
+                    document.getElementById('lastUpdate').textContent = '● ' + new Date().toLocaleTimeString();
+                    document.getElementById('lastUpdate').className = 'refresh';
+                }
             } catch(e) {
                 console.error(e);
                 document.getElementById('lastUpdate').textContent = '● OFFLINE';
