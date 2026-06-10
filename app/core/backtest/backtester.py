@@ -44,7 +44,7 @@ class Trade:
     tp3: float
     confidence: float
     entry_time: datetime
-    exit_time: datetime = None
+    exit_time: datetime = None  # type: ignore
     exit_price: float = 0
     pnl: float = 0
     status: str = "OPEN"

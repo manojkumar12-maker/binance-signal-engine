@@ -63,9 +63,9 @@ class ConfidenceEngine:
     }
     
     def calculate(self, trend: float = 50, rsi: float = 50, macd: float = 50,
-                  volume_profile: Dict = None, oi: Dict = None,
-                  liquidation: Dict = None, whale: Dict = None,
-                  smc: Dict = None, regime: Dict = None) -> Dict:
+                  volume_profile: Dict = {}, oi: Dict = {},
+                  liquidation: Dict = {}, whale: Dict = {},
+                  smc: Dict = {}, regime: Dict = {}) -> Dict:
         """
         Calculate multi-layer confidence score.
         

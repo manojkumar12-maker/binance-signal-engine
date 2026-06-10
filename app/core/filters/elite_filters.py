@@ -42,7 +42,7 @@ class EliteFilter:
     
     def check(self, pair: str, candles: List[Dict], regime: Dict,
               funding_rate: float = 0.0, btc_dominance: float = 0.0,
-              correlation_pairs: List[Dict] = None) -> Dict:
+              correlation_pairs: List[Dict] = []) -> Dict:
         """
         Run all elite filters.
         

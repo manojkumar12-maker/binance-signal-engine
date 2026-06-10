@@ -81,7 +81,7 @@ class WhaleDetector:
     ABSORPTION_THRESHOLD = 0.6
     CVD_DIVERGENCE_THRESHOLD = 0.5
     
-    def detect(self, candles: List[Dict], oi_data: List[float] = None) -> WhaleResult:
+    def detect(self, candles: List[Dict], oi_data: List[float] = []) -> WhaleResult:
         if len(candles) < 20:
             return WhaleResult(
                 whale_signal=WhaleSignal.NEUTRAL,
@@ -277,6 +277,6 @@ def get_detector() -> WhaleDetector:
     return _whale_detector
 
 
-def detect_whale(candles: List[Dict], oi_data: List[float] = None) -> Dict:
+def detect_whale(candles: List[Dict], oi_data: List[float] = []) -> Dict:
     detector = get_detector()
     return detector.detect(candles, oi_data).to_dict()
