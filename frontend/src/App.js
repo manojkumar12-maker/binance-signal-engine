@@ -67,7 +67,6 @@ function App() {
           });
           setLastUpdate(new Date());
           setLoading(false);
-        }
       } catch (error) {
         console.error('Fetch error:', error);
         setError(error.message);
