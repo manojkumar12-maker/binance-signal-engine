@@ -1,8 +1,0 @@
-{
-  "name": "binance-signal-dashboard",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "build": "echo 'No build needed for static files'"
-  }
-}

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 
-const API_URL = process.env.REACT_APP_API_URL || window.location.hostname === 'localhost' 
-  ? 'http://localhost:8080/api' 
-  : 'https://binance-signal-engine-production.up.railway.app/api';
+const API_URL = process.env.REACT_APP_API_URL || (window.location.hostname === 'localhost'
+  ? 'http://localhost:8080/api'
+  : 'https://binance-signal-engine.fly.dev/api');
 
 const formatPrice = (price) => {
   if (!price || price === 0) return '--';

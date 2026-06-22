@@ -2,9 +2,11 @@ __pycache__/
 *.pyc
 *.pyo
 .env
-.venv
-env/
+.venv/
 venv/
-*.egg-info/
-.pytest_cache/
+env/
 trades.json
+node_modules/
+frontend/build/
+*.log
+.DS_Store

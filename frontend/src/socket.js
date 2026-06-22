@@ -1,6 +1,6 @@
 import { io } from "socket.io-client";
 
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'https://binance-signal-engine-production.up.railway.app';
+const SOCKET_URL = process.env.REACT_APP_API_URL || 'https://binance-signal-engine.fly.dev';
 const socket = io(SOCKET_URL, {
   path: '/socket.io',
   transports: ['websocket', 'polling'],
