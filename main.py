@@ -36,6 +36,7 @@ import asyncio
 import aiohttp
 from datetime import datetime
 
+STATE_LOCK = threading.Lock()
 SIGNALS_CACHE = []
 SCANNER_RUNNING = False
 SCANNER_ERROR_COUNT = 0
@@ -72,14 +73,18 @@ async def scanner_async_loop():
                 last_momentum_refresh = time.time()
                 logger.info(f">>> MOMENTUM REFRESHED: {len(TRADING_PAIRS)} pairs")
             
-            if CONSECUTIVE_LOSSES >= 3:
-                if time.time() - LOSS_STREAK_START < 3600:
+            with STATE_LOCK:
+                streak_losses = CONSECUTIVE_LOSSES
+                streak_start = LOSS_STREAK_START
+            if streak_losses >= 3:
+                if time.time() - streak_start < 3600:
                     logger.info(f">>> LOSS STREAK ACTIVE: Waiting (3 losses in row)")
                     await asyncio.sleep(60)
                     continue
                 else:
-                    CONSECUTIVE_LOSSES = 0
-                    LOSS_STREAK_START = 0
+                    with STATE_LOCK:
+                        CONSECUTIVE_LOSSES = 0
+                        LOSS_STREAK_START = 0
             
             trades = tracker.load_trades()
             recent_trades = [t for t in trades if t.get("status") == "OPEN" or 
@@ -198,12 +203,15 @@ async def scanner_async_loop():
                                     
                                     results.append(signal)
                         else:
-                            SCANNER_ERROR_COUNT += 1
+                            with STATE_LOCK:
+                                SCANNER_ERROR_COUNT += 1
                     except Exception as e:
-                        SCANNER_ERROR_COUNT += 1
+                        with STATE_LOCK:
+                            SCANNER_ERROR_COUNT += 1
             
             results = cooldown_manager.filter_diversity(results, max_per_pair=1)
-            SIGNALS_CACHE = cooldown_manager.process_signals(results)
+            with STATE_LOCK:
+                SIGNALS_CACHE = cooldown_manager.process_signals(results)
             set_cache("top_signals", SIGNALS_CACHE, ttl=60)
             
             from app.services import signal_lifecycle
@@ -876,12 +884,14 @@ def close_trade(trade_id):
     )
     if result:
         if result.get('pnl_pct', 0) < 0:
-            CONSECUTIVE_LOSSES += 1
-            if CONSECUTIVE_LOSSES == 1:
-                LOSS_STREAK_START = time.time()
+            with STATE_LOCK:
+                CONSECUTIVE_LOSSES += 1
+                if CONSECUTIVE_LOSSES == 1:
+                    LOSS_STREAK_START = time.time()
         else:
-            CONSECUTIVE_LOSSES = 0
-            LOSS_STREAK_START = 0
+            with STATE_LOCK:
+                CONSECUTIVE_LOSSES = 0
+                LOSS_STREAK_START = 0
         logger.info(f"[TRADE] Closed: {result['pair']} {result['type']} | PnL: {result['pnl_pct']}% | {result['remarks']}")
         return jsonify({"success": True, "trade": result})
     return jsonify({"success": False, "error": "Trade not found"}), 404

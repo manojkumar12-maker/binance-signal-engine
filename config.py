@@ -153,7 +153,8 @@ def load_precision_map():
                     precision_map[pair] = get_precision_from_tick(tick_size)
                     break
         return precision_map
-    except Exception:
+    except Exception as e:
+        print(f"[CONFIG] WARNING: Failed to load precision map from Binance: {e}. Using fallback precision.")
         return {}
 
 

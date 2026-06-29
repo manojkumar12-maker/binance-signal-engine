@@ -453,7 +453,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             confidence += 5
         elif price_change < 0 and oi_change > 0:
             confidence -= 10
-        elif price_change < 0 and oi_change > 0:
+        elif price_change < 0 and oi_change < 0:
             confidence += 5
         
         signal_type = "BUY" if trend == "UPTREND" else "SELL"
@@ -507,9 +507,9 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 tp2 = entry_primary * (1 - config.TP2_PERCENT)
                 tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
-        is_compressed, _ = volatility_compression.detect_volatility_compression(candles)
+        risk_pct = round(abs(entry_primary - sl) / entry_primary * 100, 2)
         
-        sl, risk_pct = calculate_atr_based_sl(entry_primary, candles, signal_type, pair)
+        is_compressed, _ = volatility_compression.detect_volatility_compression(candles)
         
         if not config.validate_trade(entry_primary, sl):
             return {
@@ -532,15 +532,6 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "timestamp": datetime.utcnow().isoformat(),
                 "reason": "Invalid trade parameters"
             }
-        
-        if signal_type == "BUY":
-            tp1 = entry_primary * (1 + config.TP1_PERCENT)
-            tp2 = entry_primary * (1 + config.TP2_PERCENT)
-            tp3 = entry_primary * (1 + config.TP3_PERCENT)
-        else:
-            tp1 = entry_primary * (1 - config.TP1_PERCENT)
-            tp2 = entry_primary * (1 - config.TP2_PERCENT)
-            tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
         trend_strength = structure.detect_trend_strength(candles)
         detected_regime = regime.detect_market_regime(atr_ratio, trend, trend_strength)
@@ -606,15 +597,6 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "signal_type": signal_type_value,
                 "timestamp": datetime.utcnow().isoformat(),
                 "reason": "Confidence below threshold"
-            }
-        
-        return {
-                "atr_ratio": atr_ratio,
-                "risk_pct": risk_pct,
-                "regime": detected_regime,
-                "signal_type": signal_type_value,
-                "timestamp": datetime.utcnow().isoformat(),
-                "reason": validation_reason
             }
         
         return {
