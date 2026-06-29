@@ -969,6 +969,69 @@ def get_system_status():
     })
 
 
+@app.route('/api/broker-mode', methods=['GET', 'POST'])
+def get_set_broker_mode():
+    if request.method == 'POST':
+        data = request.json
+        if 'broker_enabled' in data:
+            config.BROKER_ENABLED = data['broker_enabled']
+            logger.info(f">>> BROKER MODE: {'ENABLED' if data['broker_enabled'] else 'DISABLED'}")
+        if 'use_testnet' in data:
+            config.USE_TESTNET = data['use_testnet']
+            logger.info(f">>> TESTNET: {'ENABLED' if data['use_testnet'] else 'DISABLED'}")
+        from app.services.broker import _reset_client
+        _reset_client()
+    return jsonify({
+        "broker_enabled": config.BROKER_ENABLED,
+        "use_testnet": config.USE_TESTNET,
+        "futures_url": config.FUTURES_TESTNET_URL if config.USE_TESTNET else config.FUTURES_API_URL
+    })
+
+
+@app.route('/api/account')
+def get_account():
+    try:
+        from app.services.broker import get_account_balance_sync, get_position_sync
+        balance = get_account_balance_sync()
+        return jsonify({
+            "balance": balance,
+            "currency": "USDT",
+            "broker_enabled": config.BROKER_ENABLED,
+            "use_testnet": config.USE_TESTNET
+        })
+    except Exception as e:
+        logger.error(f"[API] account error: {e}")
+        return jsonify({"balance": config.INITIAL_BALANCE, "currency": "USDT",
+                        "broker_enabled": config.BROKER_ENABLED, "use_testnet": config.USE_TESTNET,
+                        "error": str(e)})
+
+
+@app.route('/api/audit')
+def get_audit():
+    try:
+        from app.services import tracker
+        from app.services.broker import get_position_sync
+        analytics = tracker.get_analytics()
+        open_trades = tracker.get_open_trades()
+        positions = []
+        for t in open_trades:
+            pair = t.get("pair", "")
+            pos = get_position_sync(pair)
+            pos["trade_pnl_pct"] = t.get("pnl_pct")
+            pos["trade_entry"] = t.get("entry")
+            positions.append(pos)
+        return jsonify({
+            "analytics": analytics,
+            "positions": positions,
+            "open_trades_count": len(open_trades),
+            "broker_enabled": config.BROKER_ENABLED,
+            "use_testnet": config.USE_TESTNET
+        })
+    except Exception as e:
+        logger.error(f"[API] audit error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/self-learning')
 def get_self_learning():
     logger.info("[API] /api/self-learning")

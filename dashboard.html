@@ -24,6 +24,7 @@
             --purple: #a855f7;
             --text: #e2e8f0;
             --text-dim: #64748b;
+            --orange: #ff8c00;
         }
         body { 
             font-family: 'JetBrains Mono', monospace; 
@@ -48,6 +49,7 @@
             border-radius: 16px;
             box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.05);
         }
+        .header-left { display: flex; align-items: center; gap: 20px; }
         .logo { 
             font-family: 'Orbitron', sans-serif; 
             font-size: 22px; 
@@ -58,6 +60,59 @@
             text-shadow: 0 0 30px var(--accent-glow);
             letter-spacing: 3px;
         }
+        .header-right { display: flex; align-items: center; gap: 20px; }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
+            background: var(--bg);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .toggle-container .label-testnet { color: var(--orange); }
+        .toggle-container .label-realtrade { color: var(--green); }
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 26px;
+            cursor: pointer;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--orange);
+            border-radius: 26px;
+            transition: 0.3s;
+        }
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--green);
+        }
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(22px);
+        }
+
         .refresh { 
             font-size: 12px; 
             color: var(--green); 
@@ -68,6 +123,7 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            white-space: nowrap;
         }
         .refresh::before {
             content: '';
@@ -85,15 +141,22 @@
             background: var(--red);
             animation: none;
         }
-        
+        .refresh.testnet { 
+            color: var(--orange); 
+            border-color: var(--orange);
+        }
+        .refresh.testnet::before {
+            background: var(--orange);
+        }
+
         @keyframes blink {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
-        
+
         .stats-grid { 
             display: grid; 
-            grid-template-columns: repeat(4, 1fr); 
+            grid-template-columns: repeat(5, 1fr); 
             gap: 16px; 
             margin-bottom: 24px; 
         }
@@ -133,14 +196,18 @@
         }
         .stat-value { 
             font-family: 'Orbitron', sans-serif; 
-            font-size: 32px; 
+            font-size: 26px; 
             font-weight: 700; 
         }
+        .stat-value.small { font-size: 20px; }
         .stat.wins .stat-value { color: var(--green); text-shadow: 0 0 20px rgba(0,255,136,0.4); }
         .stat.losses .stat-value { color: var(--red); text-shadow: 0 0 20px rgba(255,51,102,0.4); }
         .stat.winrate .stat-value { color: var(--blue); text-shadow: 0 0 20px rgba(77,159,255,0.4); }
         .stat.pnl .stat-value.positive { color: var(--green); text-shadow: 0 0 20px rgba(0,255,136,0.4); }
         .stat.pnl .stat-value.negative { color: var(--red); text-shadow: 0 0 20px rgba(255,51,102,0.4); }
+        .stat.balance .stat-value { color: var(--yellow); text-shadow: 0 0 20px rgba(255,215,0,0.4); }
+        .balance-card { border-color: rgba(255, 215, 0, 0.3) !important; }
+        .balance-card .stat-value { font-size: 22px; }
         
         .pipeline { 
             display: grid; 
@@ -244,6 +311,7 @@
         .state-badge.confirmed { background: rgba(0, 255, 136, 0.15); color: var(--green); }
         .state-badge.executed { background: rgba(77, 159, 255, 0.15); color: var(--blue); }
         .state-badge.rejected { background: rgba(255, 51, 102, 0.15); color: var(--red); }
+        .state-badge.live { background: rgba(0, 212, 255, 0.15); color: var(--accent); }
         
         .empty { 
             text-align: center; 
@@ -251,13 +319,52 @@
             padding: 48px; 
             font-size: 13px;
         }
+
+        .audit-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            padding: 20px 24px;
+        }
+        .audit-item {
+            background: var(--bg);
+            padding: 16px 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        .audit-item .label {
+            font-size: 10px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 6px;
+        }
+        .audit-item .value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .audit-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 24px;
+            border-bottom: 1px solid rgba(30, 58, 95, 0.2);
+            font-size: 13px;
+        }
+        .audit-row:last-child { border-bottom: none; }
+        .audit-row .label { color: var(--text-dim); }
+        .audit-row .value { font-weight: 600; }
         
         @media (max-width: 1024px) {
-            .stats-grid, .pipeline { grid-template-columns: repeat(2, 1fr); }
+            .stats-grid { grid-template-columns: repeat(3, 1fr); }
+            .pipeline { grid-template-columns: repeat(2, 1fr); }
+            .audit-grid { grid-template-columns: 1fr; }
         }
         @media (max-width: 640px) {
-            .stats-grid, .pipeline { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .pipeline { grid-template-columns: 1fr; }
             header { flex-direction: column; gap: 16px; text-align: center; }
+            .header-left, .header-right { flex-direction: column; gap: 12px; }
             .logo { font-size: 18px; }
             th, td { padding: 10px 12px; font-size: 11px; }
         }
@@ -272,8 +379,20 @@
 <body>
     <div class="container">
         <header>
-            <div class="logo">⚡ BINANCE SIGNAL ENGINE</div>
-            <div class="refresh" id="lastUpdate">Initializing...</div>
+            <div class="header-left">
+                <div class="logo">⚡ BINANCE SIGNAL ENGINE</div>
+            </div>
+            <div class="header-right">
+                <div class="toggle-container">
+                    <span class="label-testnet">TESTNET</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="modeToggle" onchange="toggleBrokerMode()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="label-realtrade">REAL</span>
+                </div>
+                <div class="refresh" id="lastUpdate">Initializing...</div>
+            </div>
         </header>
         
         <div class="stats-grid">
@@ -292,6 +411,10 @@
             <div class="stat pnl">
                 <div class="stat-label">Total P&L</div>
                 <div class="stat-value" id="totalPnl">0%</div>
+            </div>
+            <div class="stat balance" id="balanceCard" style="display:none;">
+                <div class="stat-label">Account Balance</div>
+                <div class="stat-value small" id="accountBalance">$0</div>
             </div>
         </div>
         
@@ -346,167 +469,186 @@
                 <tbody id="closedBody"></tbody>
             </table>
         </div>
+
+        <div class="section" id="auditSection" style="display:none;">
+            <div class="section-header">
+                <span class="section-title">🔍 AUDIT & RECONCILIATION</span>
+                <span class="section-count">LIVE</span>
+            </div>
+            <div id="auditContent">
+                <div class="empty">Loading audit data...</div>
+            </div>
+        </div>
     </div>
     
     <script>
-        // Configure API URL - change this to your EC2 IP or backend URL
         const API = window.API_URL || 'http://localhost:8080/api';
-        const DEMO_MODE = true; // Set to false when backend is ready
-        
-        // Demo data for testing
-        const DEMO_SIGNALS = [
-            {
-                pair: 'BTCUSDT',
-                signal: 'BUY',
-                entry_primary: 45000,
-                sl: 44100,
-                tp1: 46800,
-                tp2: 48600,
-                tp3: 50400,
-                confidence: 92,
-                risk_pct: 2,
-                signal_state: 'CONFIRMED',
-                tier: 'SNIPER'
-            },
-            {
-                pair: 'ETHUSDT',
-                signal: 'BUY',
-                entry_primary: 3200,
-                sl: 3136,
-                tp1: 3328,
-                tp2: 3456,
-                tp3: 3584,
-                confidence: 87,
-                risk_pct: 2,
-                signal_state: 'PENDING',
-                tier: 'ELITE'
-            },
-            {
-                pair: 'SOLUSDT',
-                signal: 'SELL',
-                entry_primary: 165,
-                sl: 168.3,
-                tp1: 161.7,
-                tp2: 158.4,
-                tp3: 155.1,
-                confidence: 85,
-                risk_pct: 2,
-                signal_state: 'EXECUTED',
-                tier: 'ELITE'
-            }
-        ];
-        
-        const DEMO_TRADES = [
-            {
-                pair: 'BTCUSDT',
-                type: 'BUY',
-                entry: 45000,
-                current_price: 46700,
-                sl: 44100,
-                tp1: 46800,
-                tp2: 48600,
-                tp3: 50400,
-                pnl: 3.78,
-                status: 'OPEN'
-            },
-            {
-                pair: 'SOLUSDT',
-                type: 'SELL',
-                entry: 165,
-                current_price: 162,
-                sl: 168.3,
-                tp1: 161.7,
-                tp2: 158.4,
-                tp3: 155.1,
-                pnl: 1.82,
-                status: 'OPEN'
-            }
-        ];
-        
-        const DEMO_CLOSED = [
-            {
-                pair: 'ETHUSDT',
-                type: 'BUY',
-                entry: 3200,
-                current_price: 3250,
-                sl: 3136,
-                tp1: 3328,
-                tp2: 3456,
-                tp3: 3584,
-                pnl_pct: 2.5,
-                status: 'TP1',
-                created_at: new Date().toISOString()
-            },
-            {
-                pair: 'ADAUSDT',
-                type: 'BUY',
-                entry: 0.45,
-                current_price: 0.44,
-                sl: 0.44,
-                tp1: 0.46,
-                tp2: 0.47,
-                tp3: 0.48,
-                pnl_pct: -1.2,
-                status: 'SL',
-                created_at: new Date().toISOString()
-            }
-        ];
-        
+        let brokerMode = { broker_enabled: false, use_testnet: true };
+        let DEMO_MODE = true;
+
         function fmt(num) {
             if (!num || num === 0) return '--';
             return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: num < 1 ? 6 : 2 });
         }
-        
-        function isToday(timestamp) {
-            if (!timestamp) return true; // Show demo data always
-            const date = new Date(timestamp.replace('Z', '+00:00'));
-            const today = new Date();
-            return date.toDateString() === today.toDateString();
+
+        function fmtDollars(num) {
+            if (num === undefined || num === null) return '--';
+            return '$' + Number(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
-        
+
+        function isToday(timestamp) {
+            if (!timestamp) return true;
+            try {
+                const date = new Date(timestamp.replace('Z', '+00:00'));
+                const today = new Date();
+                return date.toDateString() === today.toDateString();
+            } catch { return true; }
+        }
+
         function checkMidnightReset() {
             const now = new Date();
             const nextMidnight = new Date(now);
             nextMidnight.setDate(nextMidnight.getDate() + 1);
             nextMidnight.setHours(0, 0, 1, 0);
             const msUntilMidnight = nextMidnight - now;
-            
             if (msUntilMidnight < 60000) {
-                setTimeout(() => {
-                    location.reload();
-                }, msUntilMidnight);
+                setTimeout(() => location.reload(), msUntilMidnight);
             }
         }
-        
+
+        async function toggleBrokerMode() {
+            const toggle = document.getElementById('modeToggle');
+            const enabled = toggle.checked;
+            const useTestnet = !enabled;
+            try {
+                const res = await fetch(API + '/broker-mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ broker_enabled: enabled, use_testnet: useTestnet })
+                });
+                brokerMode = await res.json();
+                DEMO_MODE = !brokerMode.broker_enabled;
+                updateUI();
+                fetchAll();
+            } catch(e) {
+                console.error('Toggle failed:', e);
+            }
+        }
+
+        async function fetchBrokerMode() {
+            try {
+                const res = await fetch(API + '/broker-mode');
+                brokerMode = await res.json();
+                DEMO_MODE = !brokerMode.broker_enabled;
+                document.getElementById('modeToggle').checked = brokerMode.broker_enabled;
+                updateUI();
+            } catch(e) {
+                console.error('Fetch broker mode failed:', e);
+            }
+        }
+
+        async function fetchAccount() {
+            if (DEMO_MODE) return;
+            try {
+                const res = await fetch(API + '/account');
+                const data = await res.json();
+                document.getElementById('accountBalance').textContent = fmtDollars(data.balance);
+            } catch(e) {
+                console.error('Fetch account failed:', e);
+            }
+        }
+
+        async function fetchAudit() {
+            if (DEMO_MODE) return;
+            try {
+                const res = await fetch(API + '/audit');
+                const data = await res.json();
+                renderAudit(data);
+            } catch(e) {
+                console.error('Fetch audit failed:', e);
+            }
+        }
+
+        function renderAudit(data) {
+            const auditEl = document.getElementById('auditContent');
+            const analytics = data.analytics || {};
+            const positions = data.positions || [];
+            let html = '<div class="audit-grid">';
+            html += `<div class="audit-item"><div class="label">Win Rate</div><div class="value">${analytics.win_rate || 0}%</div></div>`;
+            html += `<div class="audit-item"><div class="label">Avg Win</div><div class="value positive">+${analytics.avg_win || 0}%</div></div>`;
+            html += `<div class="audit-item"><div class="label">Avg Loss</div><div class="value negative">-${analytics.avg_loss || 0}%</div></div>`;
+            html += `<div class="audit-item"><div class="label">Avg R:R</div><div class="value">${analytics.avg_rr || 0}</div></div>`;
+            html += `<div class="audit-item"><div class="label">Total Trades</div><div class="value">${analytics.total_trades || 0}</div></div>`;
+            html += `<div class="audit-item"><div class="label">Open Positions</div><div class="value">${data.open_trades_count || 0}</div></div>`;
+            html += '</div>';
+
+            if (positions.length > 0) {
+                html += '<div style="padding:0 24px 16px;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px;">Position Reconciliation</div>';
+                positions.forEach(p => {
+                    const side = p.positionAmt > 0 ? 'LONG' : p.positionAmt < 0 ? 'SHORT' : 'FLAT';
+                    html += `<div class="audit-row">
+                        <span class="label">${p.pair}</span>
+                        <span class="value">${side} | Size: ${Math.abs(p.positionAmt || 0).toFixed(4)} | Entry: ${fmt(p.entryPrice)} | P&L: ${fmt(p.unRealizedProfit)}</span>
+                    </div>`;
+                });
+            }
+            auditEl.innerHTML = html;
+        }
+
+        function updateUI() {
+            const lastUpdate = document.getElementById('lastUpdate');
+            const balanceCard = document.getElementById('balanceCard');
+            const auditSection = document.getElementById('auditSection');
+
+            if (DEMO_MODE) {
+                lastUpdate.textContent = '● SIM MODE';
+                lastUpdate.className = 'refresh';
+                lastUpdate.style.color = 'var(--yellow)';
+                lastUpdate.style.borderColor = 'var(--yellow)';
+                lastUpdate.querySelector('::before') || true;
+                balanceCard.style.display = 'none';
+                auditSection.style.display = 'none';
+            } else if (brokerMode.use_testnet) {
+                lastUpdate.textContent = '● TESTNET';
+                lastUpdate.className = 'refresh testnet';
+                balanceCard.style.display = 'block';
+                auditSection.style.display = 'block';
+            } else {
+                lastUpdate.textContent = '● LIVE';
+                lastUpdate.className = 'refresh';
+                lastUpdate.style.color = 'var(--red)';
+                lastUpdate.style.borderColor = 'var(--red)';
+                balanceCard.style.display = 'block';
+                auditSection.style.display = 'block';
+            }
+        }
+
         async function fetchAll() {
             try {
                 let signals, trades, closed;
-                
+
                 if (DEMO_MODE) {
-                    // Use demo data
-                    signals = { signals: DEMO_SIGNALS };
-                    trades = { trades: DEMO_TRADES };
-                    closed = { trades: DEMO_CLOSED };
+                    signals = { signals: [] };
+                    trades = { trades: [] };
+                    closed = { trades: [] };
                 } else {
-                    // Try to fetch from real API
                     const [signalsRes, tradesRes, closedRes] = await Promise.all([
                         fetch(API + '/signal-states'),
                         fetch(API + '/trades?status=open'),
                         fetch(API + '/trades?status=closed')
                     ]);
-                    
                     signals = await signalsRes.json();
                     trades = await tradesRes.json();
                     closed = await closedRes.json();
                 }
-                
+
                 const signalList = signals.signals || [];
                 document.getElementById('signalsCount').textContent = signalList.length;
                 document.getElementById('pending').textContent = signalList.filter(s => s.signal_state === 'PENDING').length;
                 document.getElementById('confirmed').textContent = signalList.filter(s => s.signal_state === 'CONFIRMED').length;
                 document.getElementById('executed').textContent = signalList.filter(s => s.signal_state === 'EXECUTED').length;
                 document.getElementById('rejected').textContent = signalList.filter(s => s.signal_state === 'REJECTED').length;
-                
+
                 const signalsBody = document.getElementById('signalsBody');
                 if (signalList.length === 0) {
                     signalsBody.innerHTML = '<tr><td colspan="10" class="empty">No signals in pipeline</td></tr>';
@@ -514,7 +656,8 @@
                     signalsBody.innerHTML = signalList.slice(0, 10).map(s => {
                         const side = s.signal || 'BUY';
                         const stateClass = s.signal_state === 'SNIPER' || s.signal_state === 'ELITE' ? 'confirmed' : 
-                                         s.signal_state === 'PENDING' ? 'pending' : 'executed';
+                                         s.signal_state === 'PENDING' ? 'pending' : 
+                                         s.signal_state === 'EXECUTED' ? 'executed' : 'rejected';
                         return `<tr>
                             <td class="pair">${s.pair || 'N/A'}</td>
                             <td class="${side.toLowerCase()}">${side}</td>
@@ -529,7 +672,7 @@
                         </tr>`;
                     }).join('');
                 }
-                
+
                 const openTrades = (trades.trades || []).filter(t => t.status === 'OPEN');
                 document.getElementById('activeCount').textContent = openTrades.length;
                 const activeBody = document.getElementById('activeBody');
@@ -551,7 +694,7 @@
                         </tr>`;
                     }).join('');
                 }
-                
+
                 const closedTrades = (closed.trades || []).filter(t => 
                     t.status && t.status !== 'OPEN'
                 );
@@ -576,30 +719,26 @@
                         </tr>`;
                     }).join('');
                 }
-                
+
                 const todayClosed = (closed.trades || []).filter(t => t.status !== 'OPEN');
-                
                 const wins = todayClosed.filter(t => (t.pnl_pct || 0) > 0).length;
                 const losses = todayClosed.filter(t => (t.pnl_pct || 0) < 0).length;
                 document.getElementById('wins').textContent = wins;
                 document.getElementById('losses').textContent = losses;
-                
+
                 const dayWinRate = todayClosed.length > 0 
                     ? Math.round((wins / todayClosed.length) * 100) 
                     : 0;
                 document.getElementById('winrate').textContent = dayWinRate + '%';
-                
+
                 const dayPnl = todayClosed.reduce((sum, t) => sum + (t.pnl_pct || 0), 0);
                 const pnlEl = document.getElementById('totalPnl');
                 pnlEl.textContent = (dayPnl >= 0 ? '+' : '') + dayPnl.toFixed(2) + '%';
                 pnlEl.className = 'stat-value ' + (dayPnl >= 0 ? 'positive' : 'negative');
-                
-                if (DEMO_MODE) {
-                    document.getElementById('lastUpdate').textContent = '● DEMO MODE';
-                    document.getElementById('lastUpdate').style.color = 'var(--yellow)';
-                } else {
-                    document.getElementById('lastUpdate').textContent = '● ' + new Date().toLocaleTimeString();
-                    document.getElementById('lastUpdate').className = 'refresh';
+
+                if (!DEMO_MODE) {
+                    const lastUpdate = document.getElementById('lastUpdate');
+                    lastUpdate.textContent = '● ' + new Date().toLocaleTimeString();
                 }
             } catch(e) {
                 console.error(e);
@@ -607,9 +746,16 @@
                 document.getElementById('lastUpdate').className = 'refresh error';
             }
         }
-        
+
+        fetchBrokerMode();
         fetchAll();
-        setInterval(fetchAll, 5000);
+        setInterval(() => {
+            fetchAll();
+            if (!DEMO_MODE) {
+                fetchAccount();
+                fetchAudit();
+            }
+        }, 5000);
         checkMidnightReset();
     </script>
 </body>

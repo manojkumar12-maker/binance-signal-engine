@@ -38,6 +38,11 @@ def _get_client():
     logger.info(f"[BROKER] Initialized {'testnet' if config.USE_TESTNET else 'mainnet'} client")
     return _client
 
+def _reset_client():
+    global _client
+    _client = None
+    logger.info("[BROKER] Client reset (testnet/mainnet switch)")
+
 def _rate_limit():
     global _last_order_ts
     now = time.time()
