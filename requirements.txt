@@ -1,14 +1,8 @@
 flask
 flask-cors
 gunicorn
-fastapi
-uvicorn
-websockets
 redis
 requests
-asyncio
 python-dotenv
 aiohttp
-flask-socketio
-eventlet
 python-binance>=1.0.19

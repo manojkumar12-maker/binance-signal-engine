@@ -3,8 +3,8 @@ from datetime import datetime
 import logging
 import config
 from app.services import market, structure, liquidity, volume, scoring, bias_engine, regime, validation, whale
-from app.services import extension_filter, entry_quality, fake_breakout_filter, mtf_alignment
-from app.services import sniper_filter, volatility_compression, no_trade_zones, risk_engine
+from app.services import extension_filter, entry_quality, fake_breakout_filter
+from app.services import volatility_compression, no_trade_zones, risk_engine
 from app.services import data_consistency
 from app.services.scoring import get_confidence_tier, check_location_filter, get_regime_enforcement
 

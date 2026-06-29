@@ -108,7 +108,6 @@ export USE_TESTNET=false
 | `MAX_OPEN_TRADES` | 3 | Maximum open positions |
 | `MAX_PER_SECTOR` | 1 | Maximum per sector |
 | `SNIPER_MODE_ONLY` | false | Only execute SNIPER tier |
-| `CORRELATION_CHECK` | true | Filter correlated trades |
 | `BROKER_ENABLED` | false | Enable real Binance orders |
 | `USE_TESTNET` | true | Route orders to testnet |
 | `RECONCILE_INTERVAL_SECONDS` | 30 | Position reconciliation interval |
