@@ -10,3 +10,7 @@ node_modules/
 frontend/build/
 *.log
 .DS_Store
+
+# Backtest data and results
+backtest/data/
+backtest/results/
