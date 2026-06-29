@@ -4,7 +4,13 @@ import math
 
 BINANCE_API_URL = "https://api.binance.com"
 FUTURES_API_URL = "https://fapi.binance.com"
+FUTURES_TESTNET_URL = "https://testnet.binancefuture.com"
 BINANCE_FUTURES_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+USE_TESTNET = os.getenv("USE_TESTNET", "false").lower() == "true"
+BROKER_ENABLED = os.getenv("BROKER_ENABLED", "false").lower() == "true"
 
 DEFAULT_TIMEFRAME = "1h"
 CANDLE_LIMIT = 100
@@ -132,6 +138,11 @@ MAX_TOTAL_RISK_PCT = 0.05
 NO_TRADE_PUMP_DUMP_THRESHOLD = 0.10
 
 OI_PAIRS_LIMIT = 60
+
+INITIAL_BALANCE = 10000
+RECONCILE_INTERVAL_SECONDS = 30
+MAX_RETRIES_PER_ORDER = 3
+ORDER_TIMEOUT_SECONDS = 15
 
 
 def get_precision_from_tick(tick_size: float) -> int:

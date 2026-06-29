@@ -11,3 +11,4 @@ python-dotenv
 aiohttp
 flask-socketio
 eventlet
+python-binance>=1.0.19
