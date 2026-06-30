@@ -28,7 +28,7 @@ def get_redis_client():
             rc.r.ping()
             return rc.r
         return None
-    except:
+    except Exception:
         return None
 
 

@@ -436,7 +436,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             try:
                 if all(isinstance(x, (int, float)) for x in oi_data):
                     oi_change = (oi_data[-1] - oi_data[-2]) / oi_data[-2] if oi_data[-2] > 0 else 0
-            except:
+            except (IndexError, TypeError, ZeroDivisionError):
                 pass
         
         if price_change > 0 and oi_change < 0:

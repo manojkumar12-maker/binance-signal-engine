@@ -11,7 +11,7 @@ def load_trades() -> List[Dict]:
         try:
             with open(TRADES_FILE, 'r') as f:
                 return json.load(f)
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     
     redis_trades = load_trades_from_redis()
@@ -63,7 +63,7 @@ def load_trades_from_redis():
             data = rc.r.get("trades:all")
             if data:
                 return json.loads(data)
-    except:
+    except Exception:
         pass
     return None
 
@@ -73,7 +73,7 @@ def save_trades_to_redis(trades: List[Dict]):
         from app.services import redis_client as rc
         if rc.r:
             rc.r.set("trades:all", json.dumps(trades), ex=86400)
-    except:
+    except Exception:
         pass
 
 def update_trade(trade_id: str, current_price: float) -> Optional[Dict]:

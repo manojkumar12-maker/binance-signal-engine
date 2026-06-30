@@ -12,7 +12,7 @@ try:
     else:
         r = None
         REDIS_AVAILABLE = False
-except:
+except Exception:
     r = None
     REDIS_AVAILABLE = False
 
@@ -25,7 +25,7 @@ def set_cache(key: str, value, ttl: int = 60):
     if REDIS_AVAILABLE and r:
         try:
             r.setex(key, ttl, json_val)
-        except:
+        except Exception:
             MEMORY_CACHE[key] = value
     else:
         MEMORY_CACHE[key] = value
@@ -36,7 +36,7 @@ def get_cache(key: str):
         try:
             data = r.get(key)
             return json.loads(data) if data else None
-        except:
+        except Exception:
             return MEMORY_CACHE.get(key)
     return MEMORY_CACHE.get(key)
 
@@ -45,6 +45,6 @@ def delete_cache(key: str):
     if REDIS_AVAILABLE and r:
         try:
             r.delete(key)
-        except:
+        except Exception:
             pass
     MEMORY_CACHE.pop(key, None)

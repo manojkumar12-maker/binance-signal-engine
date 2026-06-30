@@ -104,7 +104,7 @@ def load_performance_data():
                 regime_performance[k] = v
             
             logger.info(f">>> LOADED: {len(feature_performance)} features tracked")
-    except:
+    except Exception:
         pass
 
 
@@ -271,7 +271,7 @@ def detect_regime_shift() -> Tuple[bool, str]:
             return True, "NORMAL"
         
         return False, "STABLE"
-    except:
+    except Exception:
         return False, "ERROR"
 
 
