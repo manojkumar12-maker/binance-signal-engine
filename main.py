@@ -50,7 +50,8 @@ async def fetch_klines_async(session, symbol, interval="1h", limit=100):
     try:
         async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             return await resp.json()
-    except:
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+        logger.debug(f"[SCANNER] klines fetch failed for {symbol}: {type(e).__name__}: {e}")
         return None
 
 
@@ -752,7 +753,7 @@ def update_trade(trade_id):
     price_str = request.args.get('price', '0')
     try:
         current_price = float(price_str) if price_str and price_str != 'undefined' else 0
-    except:
+    except (ValueError, TypeError):
         current_price = 0
     if current_price > 0:
         result = tracker.update_trade(trade_id, current_price)
