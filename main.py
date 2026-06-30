@@ -264,7 +264,6 @@ async def scanner_async_loop():
             if total_risk >= config.MAX_TOTAL_RISK_PCT:
                 logger.warning(f">>> MAX EXPOSURE REACHED - skipping all signals")
             else:
-                processed = False
                 for signal in top_signals:
                     if signal.get("signal") == "NO TRADE":
                         continue
@@ -326,68 +325,15 @@ async def scanner_async_loop():
                     
                     if signal_lifecycle.is_signal_locked(pair):
                         locked = signal_lifecycle.get_stored_signal(pair)
-                        if locked and locked.get("signal_state") in ["CONFIRMED", "EXECUTED"]:
-                            logger.info(f">>> SKIP {pair}: already in progress (state={locked.get('signal_state')})")
-                            continue
-                        
-                        if locked and locked.get("signal_state") == "PENDING":
-                            is_valid, reason = signal_lifecycle.validate_stored_signal(pair, config.MIN_CONFIDENCE)
-                            if is_valid:
-                                signal_lifecycle.confirm_signal(pair)
-                                logger.info(f">>> CONFIRMED {pair}: passed validation")
-                                
-                                trade = tracker.create_trade(
-                                    pair=pair,
-                                    signal_type=signal_type,
-                                    entry=entry,
-                                    sl=signal.get("sl", 0) or 0,
-                                    tp1=signal.get("tp1", 0) or 0,
-                                    tp2=signal.get("tp2", 0) or 0,
-                                    tp3=signal.get("tp3", 0) or 0,
-                                    confidence=signal.get("confidence", 0),
-                                    entry_limit=signal.get("entry_limit")
-                                )
-                                tracker.add_trade(trade)
-                                signal_lifecycle.execute_signal(pair)
-                                logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
-                                
-                                alert_trade_entry(signal, {"leverage": 1, "risk_pct": 0.01, "rr": 2})
-                            else:
-                                logger.info(f">>> REJECTED {pair}: {reason}")
-                            continue
-                    
+                        state = locked.get("signal_state") if locked else "UNKNOWN"
+                        logger.info(f">>> SKIP {pair}: already in progress (state={state}) - execution worker will handle")
+                        continue
+
                     stored = signal_lifecycle.store_signal(signal, "PENDING")
                     if not stored:
                         logger.warning(f">>> FAILED TO STORE {pair}")
                         continue
-                    
-                    logger.info(f">>> LOCKED {pair}: state=PENDING, confidence={signal.get('confidence')}")
-                    
-                    is_valid, reason = signal_lifecycle.validate_stored_signal(pair, config.MIN_CONFIDENCE)
-                    if is_valid:
-                        signal_lifecycle.confirm_signal(pair)
-                        logger.info(f">>> CONFIRMED {pair}: passed validation")
-                        
-                        trade = tracker.create_trade(
-                            pair=pair,
-                            signal_type=signal_type,
-                            entry=entry,
-                            sl=signal.get("sl", 0) or 0,
-                            tp1=signal.get("tp1", 0) or 0,
-                            tp2=signal.get("tp2", 0) or 0,
-                            tp3=signal.get("tp3", 0) or 0,
-                            confidence=signal.get("confidence", 0),
-                            entry_limit=signal.get("entry_limit")
-                        )
-                        tracker.add_trade(trade)
-                        signal_lifecycle.execute_signal(pair)
-                        logger.info(f">>> AUTO TRADE: {pair} {signal_type} @ {entry}")
-                        
-                        alert_trade_entry(signal, {"leverage": 1, "risk_pct": 0.01, "rr": 2})
-                    else:
-                        logger.info(f">>> REJECTED {pair}: {reason}")
-                    
-                    processed = True
+                    logger.info(f">>> LOCKED {pair}: state=PENDING conf={signal.get('confidence')} - handed to execution worker")
             
             logger.info(f">>> ASYNC SCANNER: Cached {len(SIGNALS_CACHE)} signals | Errors: {SCANNER_ERROR_COUNT}")
             
@@ -403,6 +349,10 @@ async def scanner_async_loop():
 
 def start_async_scanner():
     asyncio.run(scanner_async_loop())
+
+
+def start_execution_worker_loop():
+    asyncio.run(start_execution_worker())
 
 
 def get_pairs_with_oi_limit(pairs, limit):
@@ -571,6 +521,10 @@ logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}
 
 scanner_thread = threading.Thread(target=start_async_scanner, daemon=True)
 scanner_thread.start()
+
+execution_worker_thread = threading.Thread(target=start_execution_worker_loop, daemon=True)
+execution_worker_thread.start()
+
 time.sleep(2)
 
 alert_bot_started()

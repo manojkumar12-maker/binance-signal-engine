@@ -7,6 +7,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 from app.services import signal_lifecycle, tracker, strategy
+from app.services.telegram_alerts import alert_trade_entry
 from app.services.broker import (
     place_market_order, place_limit_order, place_stop_loss, place_take_profit,
     cancel_order, get_account_balance, get_position, compute_position_size,
@@ -162,6 +163,10 @@ class ExecutionWorker:
 
         self.last_check[pair] = time.time()
         logger.info(f">>> EXECUTED {pair}: {signal_type} {quantity} {pair} @ {entry} mode={execution_mode}")
+        try:
+            alert_trade_entry(signal, {"leverage": 1, "risk_pct": signal.get("risk_pct", 0.01), "rr": signal.get("rr", 2)})
+        except Exception as e:
+            logger.warning(f">>> TELEGRAM ALERT FAILED {pair}: {e}")
 
     async def place_protection_orders(self, pair: str, signal: Dict, quantity: float):
         signal_type = signal.get("signal", "BUY")
