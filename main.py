@@ -108,15 +108,21 @@ async def scanner_async_loop():
             
             open_trades = [t for t in trades if t.get("status") == "OPEN"]
             if open_trades:
-                entry_prices = [t.get("entry", 0) for t in open_trades if t.get("entry", 0) > 0]
-                if entry_prices:
-                    current_equity = sum(entry_prices)
-                    avg_entry = sum(entry_prices) / len(entry_prices)
-                    worst_pnl = min([(t.get("entry", 0) - t.get("sl", 0)) / t.get("entry", 1) * 100 for t in open_trades if t.get("entry", 0) > 0], default=0)
-                    if worst_pnl <= -config.KILL_SWITCH_DRAWDOWN * 100:
-                        logger.warning(f">>> KILL SWITCH: Drawdown {abs(worst_pnl):.1f}% >= {config.KILL_SWITCH_DRAWDOWN*100}% - pausing")
-                        await asyncio.sleep(600)
-                        continue
+                worst_pnl_list = []
+                for t in open_trades:
+                    entry = t.get("entry", 0)
+                    sl = t.get("sl", 0)
+                    side = t.get("type", "BUY")
+                    if entry > 0 and sl > 0:
+                        if side == "BUY":
+                            worst_pnl_list.append((sl - entry) / entry * 100)
+                        else:
+                            worst_pnl_list.append((entry - sl) / entry * 100)
+                worst_pnl = min(worst_pnl_list, default=0)
+                if worst_pnl <= -config.KILL_SWITCH_DRAWDOWN * 100:
+                    logger.warning(f">>> KILL SWITCH: Drawdown {abs(worst_pnl):.1f}% >= {config.KILL_SWITCH_DRAWDOWN*100}% - pausing")
+                    await asyncio.sleep(600)
+                    continue
             
             results = []
             scan_count = 0

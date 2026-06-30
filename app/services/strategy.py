@@ -253,13 +253,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         trend = structure.detect_trend(candles)
         htf_trend = structure.detect_htf_trend(htf_candles) if htf_candles else "RANGE"
         htf_trend_4h = structure.detect_htf_trend(htf_candles_4h) if htf_candles_4h else "RANGE"
-        
-        htf_aligned = True
-        htf_mismatch_penalty = 0
-        if htf_trend_4h != "RANGE" and htf_trend_4h != trend:
-            htf_aligned = False
-            htf_mismatch_penalty = 25
-        
+
         ltf_trend = structure.detect_trend(ltf_candles_15m) if ltf_candles_15m else "RANGE"
         
         if ltf_candles_15m:
@@ -298,11 +292,9 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         volatility_pass, atr_ratio = check_volatility_filter(candles, current_price)
         
         htf_aligned = htf_trend == "RANGE" or htf_trend == trend
-        
+        htf_mismatch_penalty = 30 if (not htf_aligned and htf_trend != "RANGE") else 0
+
         chop_penalty = 0
-        if not htf_aligned and htf_trend != "RANGE":
-            htf_mismatch_penalty = 30
-        
         if is_chop:
             chop_penalty = 35
         
@@ -349,7 +341,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
         
         entry_score_val = 70
         
-        structure_score, execution_score, reject_reason = calculate_split_confidence(
+        structure_score, execution_score, split_final = calculate_split_confidence(
             trend=trend,
             liquidity=sweep,
             htf_aligned=htf_aligned,
@@ -365,9 +357,9 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             fake_breakout=fake_breakout,
             market_bias_aligned=True
         )
-        
-        if reject_reason:
-            logger.warning(f"[SCORING] {pair}: {reject_reason} - structure={structure_score}, execution={execution_score}")
+
+        if structure_score < 40:
+            logger.warning(f"[SCORING] {pair}: weak structure={structure_score}, execution={execution_score}, final={split_final}")
         
         if not liquidity_targets.get("rr_viable", True):
             structure_score -= 15
@@ -398,9 +390,9 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "setup_type": setup_type
         })
         
-        if adaptive_conf > confidence:
-            confidence = adaptive_conf
-        
+        adaptive_bonus = max(0, min(5, adaptive_conf - confidence))
+        confidence = min(100, confidence + adaptive_bonus)
+
         confidence -= htf_mismatch_penalty
         confidence -= chop_penalty
         
@@ -813,8 +805,8 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
                 tp3 = entry_primary * (1 + config.TP3_PERCENT)
             else:
                 tp1 = entry_primary * (1 - config.TP1_PERCENT)
-            tp2 = entry_primary * (1 - config.TP2_PERCENT)
-            tp3 = entry_primary * (1 - config.TP3_PERCENT)
+                tp2 = entry_primary * (1 - config.TP2_PERCENT)
+                tp3 = entry_primary * (1 - config.TP3_PERCENT)
         
         from app.services.structure import get_liquidity_targets
         liq_targets = get_liquidity_targets(candles, signal_type, 20)
