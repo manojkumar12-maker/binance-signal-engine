@@ -62,10 +62,10 @@ def _kill_switch_gate() -> None:
         raise KillSwitchError(
             f"Kill switch: drawdown {drawdown:.1f}% >= {config.KILL_SWITCH_DRAWDOWN * 100}%"
         )
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone as _tz
     closed = [t for t in tracker.load_trades() if t.get("closed_at") and t.get("status") != "OPEN"]
     today_loss = 0
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.now(_tz).replace(hour=0, minute=0, second=0, microsecond=0)
     for t in closed:
         try:
             closed_at = t.get("closed_at", "")

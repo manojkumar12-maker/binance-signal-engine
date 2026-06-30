@@ -1,5 +1,5 @@
 from typing import List, Dict, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import config
@@ -75,7 +75,7 @@ def _save_performance_data():
             "feature_performance": dict(feature_performance),
             "session_performance": dict(session_performance),
             "regime_performance": dict(regime_performance),
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
         
         with open(ADAPTIVE_WEIGHTS_FILE, 'w') as f:

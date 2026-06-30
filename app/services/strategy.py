@@ -1,5 +1,5 @@
 from typing import Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import config
 from app.services import market, structure, liquidity, volume, scoring, bias_engine, regime, validation, whale
@@ -214,7 +214,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "liquidity": None,
             "volume": False,
             "atr_ratio": 0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "reason": f"Error fetching data: {str(e)}"
         }
     
@@ -229,7 +229,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "liquidity": None,
             "volume": False,
             "atr_ratio": 0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "reason": "Insufficient market data"
         }
     
@@ -333,7 +333,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "liquidity": sweep,
                 "volume": volume_confirmed,
                 "atr_ratio": atr_ratio,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "reason": "Weak candle strength"
             }
         
@@ -521,7 +521,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "is_reversal": is_reversal,
                 "market_mode": market_mode,
                 "fake_breakout": fake_breakout,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "reason": "Invalid trade parameters"
             }
         
@@ -587,7 +587,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
                 "risk_pct": risk_pct,
                 "regime": detected_regime,
                 "signal_type": signal_type_value,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "reason": "Confidence below threshold"
             }
         
@@ -635,7 +635,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "m5_retest_valid": m5_retest_valid,
             "stacked_ob": stacked_ob.get("type") if stacked_ob else None,
             "current_session": current_session,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -651,7 +651,7 @@ def generate_signal(pair: str, timeframe: str = "1h", fetch_oi: bool = True, use
             "atr_ratio": 0,
             "market_bias": None,
             "is_reversal": False,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "reason": f"Processing error: {str(e)}"
         }
 
@@ -689,30 +689,40 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         order_flow = whale.order_flow_strength(candles[-1])
         is_fake = whale.is_fake_breakout(candles)
         
-        confidence = scoring.calculate_confidence(
-            trend, sweep, False, total_strength, False,
+        bos = structure.detect_bos(candles, trend)
+        choch = structure.detect_choch(candles, trend)
+        fvg = structure.detect_fvg(candles)
+        setup_type = classify_setup_type(bos, choch, sweep, trend)
+        
+        volume_result = volume.check_volume_confirmation(oi_data, candles)
+        if isinstance(volume_result, tuple):
+            volume_confirmed, volume_spike = volume_result
+        else:
+            volume_confirmed = volume_result
+            volume_spike = False
+        
+        structure_score, execution_score, split_confidence = scoring.calculate_split_confidence(
+            trend=trend,
+            liquidity=sweep,
             htf_aligned=True,
-            market_bias=None,
-            is_reversal=is_reversal
+            bos=bos,
+            choch=choch,
+            setup_type=setup_type,
+            volume_spike=volume_spike,
+            whale_signal=whale_signal,
+            order_flow=order_flow,
+            fvg=fvg,
+            ltf_trigger=True,
+            entry_score=70,
+            fake_breakout=fake_breakout,
+            market_bias_aligned=True
         )
         
-        confidence = scoring.apply_fake_breakout_bonus(confidence, fake_breakout, "BUY" if trend == "UPTREND" else "SELL")
-        confidence = scoring.apply_adaptive_scoring(confidence, market_mode, sweep, "BUY" if trend == "UPTREND" else "SELL")
-        
+        confidence = split_confidence
         confidence += whale_bonus
         
-        if order_flow < 0.4:
-            confidence -= 10
-        elif order_flow > 0.7:
-            confidence += 8
-        
-        if is_fake:
-            confidence -= 25
-        
         if not liquidity_aligned:
-            confidence = max(0, confidence - 20)
-        else:
-            confidence += 5
+            confidence = max(0, confidence - 15)
         
         if not volatility_pass:
             confidence -= 10
@@ -721,17 +731,13 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
         
         if trend == "RANGE":
             if is_reversal or sweep:
-                confidence += 10
+                confidence += 8
                 logger.info(f"[SIGNAL_GEN] {pair}: RANGE with reversal/liq - bonus")
             else:
                 confidence = max(0, confidence - 10)
                 logger.info(f"[SIGNAL_GEN] {pair}: RANGE flat - penalty")
-        else:
-            if is_reversal or sweep:
-                confidence = min(100, confidence + 10)
-        
-        if trend != "RANGE":
-            confidence = min(100, confidence + 5)
+        elif is_reversal or sweep:
+            confidence = min(100, confidence + 8)
         
         confidence = max(0, min(confidence, 100))
         
@@ -839,7 +845,7 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
                 "risk_pct": round(abs(entry_primary - sl) / entry_primary * 100, 2),
                 "regime": detected_regime,
                 "signal_type": signal_type_value,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "reason": validation_reason
             }
         
@@ -868,7 +874,7 @@ def generate_signal_from_candles(pair: str, candles: list) -> Dict:
             "order_flow": round(order_flow, 2),
             "bos": "CONTINUATION" if trend != "RANGE" else "RANGE",
             "choch": "REVERSAL" if is_reversal else None,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:

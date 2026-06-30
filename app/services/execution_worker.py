@@ -1,12 +1,15 @@
 import time
 import asyncio
+import threading
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-from app.services import signal_lifecycle, tracker, strategy
+SHUTDOWN_EVENT = threading.Event()
+
+from app.services import signal_lifecycle, tracker, strategy, market
 from app.services.telegram_alerts import alert_trade_entry
 from app.services.broker import (
     place_market_order, place_limit_order, place_stop_loss, place_take_profit,
@@ -32,7 +35,7 @@ class ExecutionWorker:
         self.running = True
         logger.info(">>> EXECUTION WORKER: Started")
 
-        while self.running:
+        while self.running and not SHUTDOWN_EVENT.is_set():
             try:
                 await self.process_signals()
             except Exception as e:
@@ -186,7 +189,11 @@ class ExecutionWorker:
 
     def revalidate_signal(self, pair: str) -> Optional[Dict]:
         try:
-            new_signal = strategy.generate_signal(pair, "1h", fetch_oi=True, use_bias=True)
+            candles = market.get_klines(pair, "1h", config.CANDLE_LIMIT)
+            if not candles or len(candles) < 20:
+                return None
+
+            new_signal = strategy.generate_signal_from_candles(pair, candles)
 
             if new_signal.get("signal") == "NO TRADE":
                 return None

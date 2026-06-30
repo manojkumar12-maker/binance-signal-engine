@@ -11,8 +11,10 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build"
+    "build": "react-scripts build",
+    "deploy": "npm run build && npx gh-pages -d build"
   },
+  "homepage": "https://YOUR_GITHUB_USERNAME.github.io/binance-signal-engine",
   "browserslist": {
     "production": [
       ">0.2%",

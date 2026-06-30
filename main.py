@@ -1,20 +1,71 @@
-from flask import Flask, jsonify, request, send_file
-from flask_cors import CORS, cross_origin
+import json
 import os
-import logging
 import sys
-import requests
+import signal
+import atexit
+import logging
+import threading
+import time
+import asyncio
 from typing import List
+from datetime import datetime, timezone
+
+import requests
+import aiohttp
+from flask import Flask, jsonify, request, send_file
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+class JSONFormatter(logging.Formatter):
+    def format(self, record):
+        log = {
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[0]:
+            log["exc"] = self.formatException(record.exc_info)
+        if hasattr(record, "request_id"):
+            log["request_id"] = record.request_id
+        return json.dumps(log)
+
+if os.environ.get("JSON_LOGGING", "false").lower() == "true":
+    for h in logging.root.handlers:
+        h.setFormatter(JSONFormatter())
+
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+_RATE_LIMIT_BUCKETS: dict = {}
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_MAX = int(os.environ.get("API_RATE_LIMIT", "60"))
+_RATE_LIMIT_WINDOW = 60.0
+
+def _check_rate_limit() -> bool:
+    key = request.remote_addr or "unknown"
+    now = time.time()
+    with _RATE_LIMIT_LOCK:
+        bucket = _RATE_LIMIT_BUCKETS.get(key)
+        if not bucket or now - bucket["reset"] > _RATE_LIMIT_WINDOW:
+            _RATE_LIMIT_BUCKETS[key] = {"tokens": _RATE_LIMIT_MAX - 1, "reset": now + _RATE_LIMIT_WINDOW}
+            return True
+        if bucket["tokens"] <= 0:
+            return False
+        bucket["tokens"] -= 1
+        return True
+
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
+    allowed = os.environ.get("CORS_ALLOWED_ORIGINS", "*")
+    if allowed != "*":
+        origin = request.headers.get("Origin", "")
+        if origin in allowed.split(","):
+            response.headers['Access-Control-Allow-Origin'] = origin
+    else:
+        response.headers['Access-Control-Allow-Origin'] = allowed
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-API-Key'
     return response
 
 app.after_request(add_cors_headers)
@@ -22,6 +73,7 @@ app.after_request(add_cors_headers)
 import config
 from app.services.strategy import generate_signal
 from app.services import tracker, market, bias_engine
+from app.services import database as db
 from app.services.redis_client import set_cache, get_cache
 from app.services.cooldown_manager import cooldown_manager
 from app.services.signal_lifecycle import (
@@ -29,12 +81,7 @@ from app.services.signal_lifecycle import (
     confirm_signal, execute_signal, clear_expired_signals, get_all_stored_signals
 )
 from app.services.telegram_alerts import alert_trade_entry, alert_bot_started
-from app.services.execution_worker import start_execution_worker
-import threading
-import time
-import asyncio
-import aiohttp
-from datetime import datetime
+from app.services.execution_worker import start_execution_worker, stop_execution_worker, SHUTDOWN_EVENT
 
 STATE_LOCK = threading.Lock()
 SIGNALS_CACHE = []
@@ -43,6 +90,8 @@ SCANNER_ERROR_COUNT = 0
 CONSECUTIVE_LOSSES = 0
 LOSS_STREAK_START = 0
 PRICE_CACHE = {}
+_SCANNER_THREAD: threading.Thread = None
+_WORKER_THREAD: threading.Thread = None
 
 def _fetch_klines_sync(symbol, interval, limit):
     url = f"{config.FUTURES_API_URL}/fapi/v1/klines"
@@ -73,7 +122,7 @@ async def scanner_async_loop():
     logger.info(">>> ASYNC SCANNER: Started")
     SCANNER_RUNNING = True
     
-    while True:
+    while not SHUTDOWN_EVENT.is_set():
         try:
             if time.time() - last_momentum_refresh > MOMENTUM_REFRESH_INTERVAL:
                 logger.info(">>> REFRESHING MOMENTUM PAIRS...")
@@ -102,7 +151,7 @@ async def scanner_async_loop():
             trades = tracker.load_trades()
             recent_trades = [t for t in trades if t.get("status") == "OPEN" or 
                            (t.get("closed_at") and 
-                            (datetime.utcnow() - datetime.fromisoformat(t["closed_at"].replace("Z", "+00:00"))).total_seconds() < 1800)]
+                            (datetime.now(timezone.utc) - datetime.fromisoformat(t["closed_at"].replace("Z", "+00:00"))).total_seconds() < 1800)]
             
             cooldowned_pairs = set()
             for t in recent_trades:
@@ -111,7 +160,7 @@ async def scanner_async_loop():
                     cooldowned_pairs.add(pair)
             
             closed_today = [t for t in trades if t.get("closed_at") and 
-                          (datetime.utcnow() - datetime.fromisoformat(t["closed_at"].replace("Z", "+00:00"))).total_seconds() < 86400]
+                          (datetime.now(timezone.utc) - datetime.fromisoformat(t["closed_at"].replace("Z", "+00:00"))).total_seconds() < 86400]
             daily_pnl = sum(t.get("pnl_pct", 0) for t in closed_today)
             
             if daily_pnl <= -config.KILL_SWITCH_DAILY_LOSS * 100:
@@ -519,11 +568,46 @@ MOMENTUM_REFRESH_INTERVAL = 1800
 
 logger.info(f"[CONFIG] Scanning {len(TRADING_PAIRS)} pairs: {TRADING_PAIRS[:10]}...")
 
-scanner_thread = threading.Thread(target=start_async_scanner, daemon=True)
-scanner_thread.start()
+db.init_db()
 
-execution_worker_thread = threading.Thread(target=start_execution_worker_loop, daemon=True)
-execution_worker_thread.start()
+if os.path.exists("trades.json"):
+    count = db.migrate_from_json("trades.json")
+    if count > 0:
+        logger.info("[STARTUP] Migrated %d trades from trades.json to SQLite", count)
+
+_config_errors = []
+if not config.BINANCE_API_KEY or not config.BINANCE_API_SECRET:
+    _config_errors.append("BINANCE_API_KEY/SECRET not set — live broker unavailable")
+if not os.environ.get("TELEGRAM_BOT_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
+    _config_errors.append("TELEGRAM_BOT_TOKEN/CHAT_ID not set — alerts disabled")
+for err in _config_errors:
+    logger.warning("[CONFIG] %s", err)
+
+@app.before_request
+def _before_request():
+    if not _check_rate_limit():
+        return jsonify({"error": "rate_limit_exceeded", "retry_after": _RATE_LIMIT_WINDOW}), 429
+    if request.method in ("POST", "PUT", "DELETE"):
+        api_key = os.environ.get("API_KEY", "")
+        if api_key and request.headers.get("X-API-Key", "") != api_key:
+            return jsonify({"error": "unauthorized"}), 401
+
+SHUTDOWN_EVENT.clear()
+_SCANNER_THREAD = threading.Thread(target=start_async_scanner, daemon=True)
+_SCANNER_THREAD.start()
+
+_WORKER_THREAD = threading.Thread(target=start_execution_worker_loop, daemon=True)
+_WORKER_THREAD.start()
+
+def _graceful_shutdown(*args):
+    logger.info("[SHUTDOWN] Initiating graceful shutdown...")
+    SHUTDOWN_EVENT.set()
+    stop_execution_worker()
+    time.sleep(2)
+    logger.info("[SHUTDOWN] Done")
+
+atexit.register(_graceful_shutdown)
+signal.signal(signal.SIGTERM, _graceful_shutdown)
 
 time.sleep(2)
 
@@ -904,7 +988,7 @@ def get_self_learning():
             "performance": summary,
             "suggestions": suggestions,
             "regime_shift": regime_shift,
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         })
     except Exception as e:
         logger.error(f"[API] self-learning error: {e}")

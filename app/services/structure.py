@@ -387,8 +387,8 @@ def detect_multi_tf_ob(h4_candles: List[Dict], h1_candles: List[Dict]) -> Option
 
 
 def get_current_session() -> str:
-    from datetime import datetime
-    utc_now = datetime.utcnow()
+    from datetime import datetime, timezone
+    utc_now = datetime.now(timezone.utc)
     hour = utc_now.hour
     
     if 7 <= hour <= 12:

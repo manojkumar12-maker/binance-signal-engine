@@ -6,6 +6,10 @@ __pycache__/
 venv/
 env/
 trades.json
+trades.db
+trades.db-shm
+trades.db-wal
+*.db
 node_modules/
 frontend/build/
 *.log

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: binance-signal-engine
+    runtime: docker
+    region: ohio
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:///data/trades.db
+      - key: JSON_LOGGING
+        value: "true"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PORT
+        value: "8080"
+      - key: BROKER_ENABLED
+        value: "true"
+      - key: USE_TESTNET
+        value: "true"
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+    disk:
+      name: trades_data
+      mountPath: /app/data
+      sizeGB: 1
