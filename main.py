@@ -44,6 +44,17 @@ CONSECUTIVE_LOSSES = 0
 LOSS_STREAK_START = 0
 PRICE_CACHE = {}
 
+def _fetch_klines_sync(symbol, interval, limit):
+    url = f"{config.FUTURES_API_URL}/fapi/v1/klines"
+    params = {"symbol": symbol, "interval": interval, "limit": limit}
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError):
+        return None
+
+
 async def fetch_klines_async(session, symbol, interval="1h", limit=100):
     url = f"{config.FUTURES_API_URL}/fapi/v1/klines"
     params = {"symbol": symbol, "interval": interval, "limit": limit}
@@ -51,8 +62,9 @@ async def fetch_klines_async(session, symbol, interval="1h", limit=100):
         async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             return await resp.json()
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
-        logger.debug(f"[SCANNER] klines fetch failed for {symbol}: {type(e).__name__}: {e}")
-        return None
+        logger.debug(f"[SCANNER] aiohttp failed for {symbol} ({type(e).__name__}); trying sync fallback")
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _fetch_klines_sync, symbol, interval, limit)
 
 
 async def scanner_async_loop():
