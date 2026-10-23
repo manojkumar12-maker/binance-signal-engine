@@ -47,13 +47,19 @@ def _auth(request: Request):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": settings.trading_mode, "live_authorized": settings.live_authorized}
+    hb = storage.get_heartbeat()
+    last = hb.get("last_beat")
+    healthy = last is not None and (time.time() - (last or 0)) < 300
+    return {"status": "ok" if healthy else "degraded", "mode": settings.trading_mode,
+            "live_authorized": settings.live_authorized, "worker_healthy": healthy}
 
 
 @app.get("/status")
 def status():
     halted, reason = kill.is_halted()
     hb = storage.get_heartbeat()
+    last = hb.get("last_beat")
+    worker_healthy = last is not None and (time.time() - (last or 0)) < 300
     return {
         "health": "ok",
         "trading_mode": settings.trading_mode,
@@ -69,6 +75,7 @@ def status():
         "halted": halted,
         "halt_reason": reason,
         "worker_heartbeat": hb,
+        "worker_healthy": worker_healthy,
     }
 
 

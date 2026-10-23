@@ -70,9 +70,10 @@ class ExecutionEngine:
             if not okf:
                 return False, f"filter rejected: {freason}"
 
-            # Live trading gate
-            if not settings.live_authorized:
-                # Demo/testnet simulation: record intent only, no real order
+            # Live trading gate (multiple independent checks + activation marker file)
+            import os
+            activation_marker = os.path.join("data", "LIVE_ACTIVATED")
+            if not (settings.live_authorized and os.path.exists(activation_marker)):
                 self.storage.save_signal(signal, accepted=False, reason="live not authorized; recorded only")
                 return True, "recorded (live disabled)"
 

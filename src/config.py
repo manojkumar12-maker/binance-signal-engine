@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     timeframe: str = Field(default="15m")
     signal_cooldown_seconds: int = Field(default=3600)
 
-    host: str = Field(default="0.0.0.0")
+    host: str = Field(default="127.0.0.1")
     port: int = Field(default=8000)
     log_level: str = Field(default="INFO")
 
