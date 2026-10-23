@@ -1,6 +1,6 @@
 """Deterministic signal generation (EMA/RSI) separated from execution."""
 from decimal import Decimal
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Optional
 import time
 
@@ -18,6 +18,14 @@ class Signal:
     gross_rr: Decimal
     net_rr: Decimal
     invalidation: str
+    rsi_value: Decimal = Decimal("0")
+    ema_fast: Decimal = Decimal("0")
+    ema_slow: Decimal = Decimal("0")
+    candle_close_time: int = 0
+
+    @property
+    def signal_id(self) -> str:
+        return f"{self.symbol}:{self.timeframe}:{self.candle_close_time}:{self.direction}"
 
 
 def ema(values: list[Decimal], period: int) -> list[Decimal]:
@@ -52,12 +60,29 @@ def rsi(values: list[Decimal], period: int = 14) -> Optional[Decimal]:
 
 
 class SignalEngine:
-    def __init__(self, cooldown_seconds: int = 3600):
-        self.cooldown_seconds = cooldown_seconds
-        self._last_signal_ts: dict[str, int] = {}
+    # Initial test parameters, not validated profitable thresholds.
+    RSI_LONG_MIN = Decimal("50")
+    RSI_LONG_MAX = Decimal("70")
+    RSI_SHORT_MIN = Decimal("30")
+    RSI_SHORT_MAX = Decimal("50")
+    WARMUP = 50
 
-    def evaluate(self, symbol: str, timeframe: str, closes: list[Decimal]) -> Optional[Signal]:
-        if len(closes) < 50:
+    def __init__(self, cooldown_seconds: int = 3600,
+                 rsi_long_min: Decimal = RSI_LONG_MIN,
+                 rsi_long_max: Decimal = RSI_LONG_MAX,
+                 rsi_short_min: Decimal = RSI_SHORT_MIN,
+                 rsi_short_max: Decimal = RSI_SHORT_MAX):
+        self.cooldown_seconds = cooldown_seconds
+        self.rsi_long_min = rsi_long_min
+        self.rsi_long_max = rsi_long_max
+        self.rsi_short_min = rsi_short_min
+        self.rsi_short_max = rsi_short_max
+        self._last_signal_ts: dict[str, int] = {}
+        self._seen_ids: set[str] = set()
+
+    def evaluate(self, symbol: str, timeframe: str, closes: list[Decimal],
+                candle_close_time: int = 0) -> Optional[Signal]:
+        if len(closes) < self.WARMUP:
             return None
         fast = ema(closes, 9)
         slow = ema(closes, 21)
@@ -70,9 +95,9 @@ class SignalEngine:
         prev_slow = slow[-2]
 
         direction = None
-        if prev_fast <= prev_slow and last_fast > last_slow and r < Decimal(70):
+        if prev_fast <= prev_slow and last_fast > last_slow and self.rsi_long_min <= r <= self.rsi_long_max:
             direction = "LONG"
-        elif prev_fast >= prev_slow and last_fast < last_slow and r > Decimal(30):
+        elif prev_fast >= prev_slow and last_fast < last_slow and self.rsi_short_min <= r <= self.rsi_short_max:
             direction = "SHORT"
 
         if direction is None:
@@ -84,7 +109,6 @@ class SignalEngine:
             return None
 
         entry = closes[-1]
-        # ATR-like stop using recent range
         recent = closes[-14:]
         hi = max(recent)
         lo = min(recent)
@@ -100,8 +124,9 @@ class SignalEngine:
             tp = entry - (atr_approx * Decimal("3.0"))
 
         gross_rr = abs(tp - entry) / abs(entry - stop) if abs(entry - stop) > 0 else Decimal(0)
-        net_rr = gross_rr  # fees handled in risk engine
+        net_rr = gross_rr
 
+        cct = candle_close_time or int(time.time())
         sig = Signal(
             symbol=symbol,
             direction=direction,
@@ -114,6 +139,13 @@ class SignalEngine:
             gross_rr=gross_rr,
             net_rr=net_rr,
             invalidation="EMA cross reversal or RSI extreme",
+            rsi_value=r,
+            ema_fast=last_fast,
+            ema_slow=last_slow,
+            candle_close_time=cct,
         )
+        if sig.signal_id in self._seen_ids:
+            return None
+        self._seen_ids.add(sig.signal_id)
         self._last_signal_ts[symbol] = now
         return sig

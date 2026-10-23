@@ -47,6 +47,20 @@ class Storage:
             day TEXT PRIMARY KEY,
             realized_loss TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS worker_heartbeat (
+            id INTEGER PRIMARY KEY CHECK (id=1),
+            last_beat REAL,
+            status TEXT
+        );
+        INSERT OR IGNORE INTO worker_heartbeat (id) VALUES (1);
+        CREATE TABLE IF NOT EXISTS reconciliation_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL,
+            result TEXT
+        );
+        CREATE TABLE IF NOT EXISTS seen_signals (
+            signal_id TEXT PRIMARY KEY
+        );
         """)
         self.conn.commit()
 
@@ -106,6 +120,37 @@ class Storage:
         cur = self.conn.cursor()
         cur.execute("INSERT INTO daily_loss (day, realized_loss) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET realized_loss=realized_loss+?",
                     (day, str(amount), str(amount)))
+        self.conn.commit()
+
+    def mark_signal_seen(self, signal_id: str) -> bool:
+        try:
+            self.conn.execute("INSERT INTO seen_signals (signal_id) VALUES (?)", (signal_id,))
+            self.conn.commit()
+            return True
+        except Exception:
+            return False
+
+    def is_signal_seen(self, signal_id: str) -> bool:
+        cur = self.conn.cursor()
+        cur.execute("SELECT 1 FROM seen_signals WHERE signal_id=?", (signal_id,))
+        return cur.fetchone() is not None
+
+    def update_heartbeat(self, status: str = "ok"):
+        import time
+        cur = self.conn.cursor()
+        cur.execute("UPDATE worker_heartbeat SET last_beat=?, status=? WHERE id=1", (time.time(), status))
+        self.conn.commit()
+
+    def get_heartbeat(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT last_beat, status FROM worker_heartbeat WHERE id=1")
+        r = cur.fetchone()
+        return {"last_beat": r[0], "status": r[1]} if r else {}
+
+    def log_reconciliation(self, result: str):
+        import time
+        cur = self.conn.cursor()
+        cur.execute("INSERT INTO reconciliation_log (ts, result) VALUES (?, ?)", (time.time(), result))
         self.conn.commit()
 
     def close(self):

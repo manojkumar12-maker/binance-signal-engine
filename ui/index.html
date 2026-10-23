@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Binance Signal Engine</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#0b0f19;color:#e8ecf4;padding:16px}
+h1{font-size:1.4rem;margin:0 0 12px}
+.card{background:#151b2b;border-radius:12px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.kpi{background:#1d2538;border-radius:8px;padding:10px}
+.kpi .label{font-size:.75rem;color:#9aa4bf}
+.kpi .val{font-size:1.1rem;font-weight:600;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{padding:6px;border-bottom:1px solid #2a3348;text-align:left}
+.badge{padding:2px 8px;border-radius:999px;font-size:.75rem}
+.ok{background:#1f6f4a}.halt{background:#8a2a2a}
+button{background:#00d4ff;border:none;border-radius:8px;padding:8px 12px;color:#000;font-weight:600;cursor:pointer;margin-right:8px}
+</style>
+</head>
+<body>
+<h1>Binance Signal Engine</h1>
+<div id="status" class="card">Loading...</div>
+<div class="card">
+<button onclick="halt()">Emergency Halt</button>
+<button onclick="resume()">Resume</button>
+</div>
+<div class="card">
+<h3>Recent Signals</h3>
+<div id="signals"></div>
+</div>
+<div class="card">
+<h3>Trades</h3>
+<div id="trades"></div>
+</div>
+<script>
+async function load(){
+  const s=await fetch('/status').then(r=>r.json());
+  document.getElementById('status').innerHTML=`
+    <div class="grid">
+      <div class="kpi"><div class="label">Mode</div><div class="val">${s.trading_mode}</div></div>
+      <div class="kpi"><div class="label">Live Auth</div><div class="val">${s.live_authorized}</div></div>
+      <div class="kpi"><div class="label">Sim Balance</div><div class="val">${s.simulated_starting_balance} USDT</div></div>
+      <div class="kpi"><div class="label">Open Positions</div><div class="val">${s.open_positions}</div></div>
+      <div class="kpi"><div class="label">Daily Loss Used</div><div class="val">${s.daily_loss_used}</div></div>
+      <div class="kpi"><div class="label">Remaining Budget</div><div class="val">${s.daily_loss_remaining}</div></div>
+      <div class="kpi"><div class="label">Kill Switch</div><div class="val"><span class="badge ${s.halted?'halt':'ok'}">${s.halted?'HALTED':'OK'}</span></div></div>
+      <div class="kpi"><div class="label">Worker HB</div><div class="val">${s.worker_heartbeat?.status||'n/a'}</div></div>
+    </div>`;
+  const sig=await fetch('/signals').then(r=>r.json());
+  document.getElementById('signals').innerHTML=renderTable(sig.signals,['direction','symbol','entry_price','accepted','rejection_reason']);
+  const tr=await fetch('/trades').then(r=>r.json());
+  document.getElementById('trades').innerHTML=renderTable(tr.trades,['id','symbol','direction','quantity','status','realized_pnl']);
+}
+function renderTable(rows,cols){
+  if(!rows||!rows.length) return '<p>No data.</p>';
+  let h='<table><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr>';
+  for(const r of rows){h+='<tr>'+cols.map(c=>'<td>'+(r[c]??'')+'</td>').join('')+'</tr>';}
+  return h+'</table>';
+}
+async function halt(){await fetch('/halt',{method:'POST'});load();}
+async function resume(){await fetch('/resume',{method:'POST'});load();}
+load();setInterval(load,10000);
+</script>
+</body>
+</html>
+EOF
+echo done
