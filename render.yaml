@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: binance-signal-engine-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: TRADING_MODE
+        value: demo
+      - key: BROKER_ENABLED
+        value: "false"
+      - key: AUTO_TRADE
+        value: "false"
+      - key: LIVE_TRADING_ENABLED
+        value: "false"
+      - key: USE_TESTNET
+        value: "true"
+      - key: ADMIN_TOKEN
+        generateValue: true
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
