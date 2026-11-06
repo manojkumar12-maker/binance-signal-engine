@@ -22,7 +22,7 @@ INTERVAL_MS = {"1m": 60000, "3m": 180000, "5m": 300000, "15m": 900000, "30m": 18
 
 def build_client() -> BinanceClient:
     key, secret = settings.credentials
-    testnet = settings.use_testnet or settings.trading_mode != "live"
+    testnet = settings.market_data_testnet
     c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
     try:
         c.sync_time()

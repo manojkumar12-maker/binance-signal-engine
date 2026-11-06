@@ -81,6 +81,15 @@ class Settings(BaseSettings):
         return self.normalized_mode == "testnet"
 
     @property
+    def market_data_testnet(self) -> bool:
+        # Paper mode scans real mainnet public market data (no orders are placed).
+        if self.normalized_mode == "paper":
+            return False
+        if self.normalized_mode == "testnet":
+            return True
+        return self.use_testnet
+
+    @property
     def live_mode(self) -> bool:
         return self.normalized_mode == "live"
 
