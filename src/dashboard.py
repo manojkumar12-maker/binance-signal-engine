@@ -382,7 +382,7 @@ def api_equity():
     try:
         from .binance_client import BinanceClient
         key, secret = settings.credentials
-        testnet = settings.market_data_testnet
+        testnet = settings.use_testnet or settings.trading_mode != "live"
         c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
         c.sync_time()
         for p in storage.open_positions():
@@ -582,7 +582,7 @@ def api_rug_check(symbol: str):
     from .binance_client import BinanceClient
     # build client
     key, secret = settings.credentials
-    testnet = settings.market_data_testnet
+    testnet = settings.use_testnet or settings.trading_mode != "live"
     client = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
     try:
         client.sync_time()
@@ -604,7 +604,7 @@ async def api_rug_check_scan(request: Request):
     _auth(request)
     from .binance_client import BinanceClient
     key, secret = settings.credentials
-    testnet = settings.market_data_testnet
+    testnet = settings.use_testnet or settings.trading_mode != "live"
     client = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
     try:
         client.sync_time()
@@ -700,7 +700,7 @@ def api_paper_account():
     client = None
     try:
         key, secret = settings.credentials
-        testnet = settings.market_data_testnet
+        testnet = settings.use_testnet or settings.trading_mode != "live"
         c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
         c.sync_time()
         client = c
@@ -718,7 +718,7 @@ def api_paper_positions():
     client = None
     try:
         key, secret = settings.credentials
-        testnet = settings.market_data_testnet
+        testnet = settings.use_testnet or settings.trading_mode != "live"
         c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
         c.sync_time()
         client = c
@@ -792,7 +792,7 @@ async def api_paper_execute(request: Request):
     client = None
     try:
         key, secret = settings.credentials
-        testnet = settings.market_data_testnet
+        testnet = settings.use_testnet or settings.trading_mode != "live"
         c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
         c.sync_time()
         client = c
@@ -830,7 +830,7 @@ async def api_paper_close(trade_id: int, request: Request):
         if trade:
             try:
                 key, secret = settings.credentials
-                testnet = settings.market_data_testnet
+                testnet = settings.use_testnet or settings.trading_mode != "live"
                 c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
                 c.sync_time()
                 price = c.ticker_price(trade["symbol"])
@@ -855,7 +855,7 @@ def api_equity_full():
     try:
         from .binance_client import BinanceClient
         key, secret = settings.credentials
-        testnet = settings.market_data_testnet
+        testnet = settings.use_testnet or settings.trading_mode != "live"
         c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
         c.sync_time()
         for p in storage.open_positions():
@@ -889,7 +889,7 @@ def api_equity_analytics():
     try:
         from .binance_client import BinanceClient
         key, secret = settings.credentials
-        testnet = settings.market_data_testnet
+        testnet = settings.use_testnet or settings.trading_mode != "live"
         c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
         c.sync_time()
         for p in storage.open_positions():
