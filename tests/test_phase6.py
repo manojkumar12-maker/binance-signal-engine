@@ -85,8 +85,16 @@ def test_settings_validation_symbols():
     assert res2["ok"] is True
 
 # API tests
+import pytest
+
+@pytest.fixture(autouse=True)
+def _enable_auth(monkeypatch):
+    monkeypatch.setenv("FORCE_AUTH", "true")
+    yield
+
 from fastapi.testclient import TestClient
-from src.dashboard import app
+from src.dashboard import app, storage as _gstorage, auth as _gauth
+_gauth.setup_admin_from_env()
 api_client = TestClient(app)
 
 def _login(client, username="admin", password="NewPass456!"):

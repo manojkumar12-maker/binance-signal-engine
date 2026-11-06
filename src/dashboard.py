@@ -24,6 +24,8 @@ def api_error_handler(func):
         async def wrapper(*args, **kwargs):
             try:
                 return await func(*args, **kwargs)
+            except HTTPException:
+                raise
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
         return wrapper
@@ -31,6 +33,8 @@ def api_error_handler(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
+        except HTTPException:
+            raise
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
     return wrapper
@@ -67,7 +71,7 @@ async def rl_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-PUBLIC_PATHS = {"/api/health", "/api/auth/login", "/api/auth/status", "/api/auth/logout", "/api/auth/change-password"}
+PUBLIC_PATHS = {"/api/health", "/api/auth/login", "/api/auth/status", "/api/auth/logout", "/api/auth/change-password", "/health"}
 
 
 @app.middleware("http")
@@ -75,19 +79,26 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
     if path in PUBLIC_PATHS or path.startswith("/ui") or path == "/" or path.startswith("/static"):
         return await call_next(request)
-    # if no admin exists, allow (setup mode)
-    if not storage.has_admin():
+    force_auth = os.getenv("FORCE_AUTH", "").lower() in ("1", "true", "yes")
+    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
+    if auth_disabled and not force_auth:
         return await call_next(request)
+    # Fail closed: if no admin configured, do not expose data
+    if not storage.has_admin():
+        return JSONResponse({"error": "setup required"}, status_code=503)
     token = request.cookies.get("session")
     user = auth.validate_session(token)
     if user is None:
-        if path.startswith("/api/"):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
     request.state.user = user
     return await call_next(request)
 
 
 def _auth(request: Request):
+    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
+    force_auth = os.getenv("FORCE_AUTH", "").lower() in ("1", "true", "yes")
+    if auth_disabled and not force_auth:
+        return
     # Prefer session auth when an admin exists
     if storage.has_admin():
         token = request.cookies.get("session")
@@ -181,6 +192,24 @@ def agents():
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    # auth check
+    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
+    force_auth = os.getenv("FORCE_AUTH", "").lower() in ("1", "true", "yes")
+    if storage.has_admin() and not (auth_disabled and not force_auth):
+        token = None
+        try:
+            token = ws.cookies.get("session")
+        except Exception:
+            token = None
+        if token is None:
+            cookie_header = dict(ws.scope.get("headers", [])).get(b"cookie", b"").decode()
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if part.startswith("session="):
+                    token = part.split("=", 1)[1]
+        if auth.validate_session(token) is None:
+            await ws.close(code=4401)
+            return
     await ws.accept()
     last_id = 0
     try:
@@ -454,6 +483,23 @@ def api_system_kill(request: Request):
 
 @app.websocket("/api/ws")
 async def api_websocket(ws: WebSocket):
+    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
+    force_auth = os.getenv("FORCE_AUTH", "").lower() in ("1", "true", "yes")
+    if storage.has_admin() and not (auth_disabled and not force_auth):
+        token = None
+        try:
+            token = ws.cookies.get("session")
+        except Exception:
+            token = None
+        if token is None:
+            cookie_header = dict(ws.scope.get("headers", [])).get(b"cookie", b"").decode()
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if part.startswith("session="):
+                    token = part.split("=", 1)[1]
+        if auth.validate_session(token) is None:
+            await ws.close(code=4401)
+            return
     await ws.accept()
     last_id = 0
     try:

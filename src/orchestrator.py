@@ -2,6 +2,7 @@
 import time
 import json
 import logging
+import threading
 from decimal import Decimal
 from dataclasses import dataclass, asdict
 from .storage import Storage
@@ -52,6 +53,7 @@ class Orchestrator:
         self.equity = EquityAgent(storage)
         self.recon = ReconciliationService(client, storage)
         self._stage = "idle"
+        self._cycle_lock = threading.Lock()
 
     def set_stage(self, stage):
         self._stage = stage
@@ -71,8 +73,8 @@ class Orchestrator:
 
     def run_cycle(self) -> list[TaskResult]:
         results = []
-        if not self.lock.acquire():
-            self.logger.warning("ORCHESTRATOR", "cycle", "another worker running; skipping")
+        if not self._cycle_lock.acquire(blocking=False):
+            self.logger.warning("ORCHESTRATOR", "cycle", "cycle already running; skipping")
             return results
 
         try:
@@ -227,6 +229,6 @@ class Orchestrator:
             self.logger.info("ORCHESTRATOR", "cycle", "cycle completed")
             self.storage.update_heartbeat("running")
         finally:
-            self.lock.release()
+            self._cycle_lock.release()
 
         return results

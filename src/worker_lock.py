@@ -17,11 +17,20 @@ class WorkerLock:
             try:
                 with open(self.path) as f:
                     pid, ts = f.read().split(",")
+                pid = int(pid)
                 ts = float(ts)
-                if time.time() - ts < stale_seconds:
-                    return False
+                if time.time() - ts >= stale_seconds:
+                    raise ValueError("stale")
+                try:
+                    os.kill(pid, 0)
+                except (OSError, ProcessLookupError, PermissionError):
+                    raise ValueError("dead")
+                return False
             except Exception:
-                pass
+                try:
+                    os.remove(self.path)
+                except Exception:
+                    pass
         try:
             with open(self.path, "w") as f:
                 f.write(f"{os.getpid()},{time.time()}")
