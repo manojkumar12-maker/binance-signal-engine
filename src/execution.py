@@ -1,6 +1,5 @@
 """Execution lifecycle and protective-order verification."""
 from decimal import Decimal
-from typing import Optional, Dict
 from .binance_client import BinanceClient
 from .config import settings
 from .risk_engine import size_position, TradeProposal
@@ -43,6 +42,7 @@ class ExecutionEngine:
         try:
             ok, reason = self.can_enter(symbol)
             if not ok:
+                self.storage.log_event("EXECUTER", symbol, "can_enter", "rejected", reason)
                 return False, reason
 
             available = get_available_equity(self.client)
@@ -56,7 +56,9 @@ class ExecutionEngine:
             )
             decision = size_position(proposal, available)
             if not decision.approved:
+                self.storage.log_event("SIZER", symbol, "size", "rejected", decision.reason)
                 return False, f"risk rejected: {decision.reason}"
+            self.storage.log_event("SIZER", symbol, "size", "approved", f"qty={decision.quantity} risk={decision.estimated_loss}")
 
             from src.exchange_filters import get_lot_size_filter, round_quantity
             from decimal import Decimal as _D
@@ -68,6 +70,7 @@ class ExecutionEngine:
             # validate quantity with exchange filters
             okf, freason = validate_order(self.exchange_info, symbol, qty, signal.entry_price)
             if not okf:
+                self.storage.log_event("EXECUTER", symbol, "filter", "rejected", freason)
                 return False, f"filter rejected: {freason}"
 
             # Live trading gate (multiple independent checks + activation marker file)
@@ -75,6 +78,7 @@ class ExecutionEngine:
             activation_marker = os.path.join("data", "LIVE_ACTIVATED")
             if not (settings.live_authorized and os.path.exists(activation_marker)):
                 self.storage.save_signal(signal, accepted=False, reason="live not authorized; recorded only")
+                self.storage.log_event("EXECUTER", symbol, "execution", "recorded", "live not authorized")
                 return True, "recorded (live disabled)"
 
             # Place entry order (market)
@@ -123,6 +127,7 @@ class ExecutionEngine:
             }
             self.storage.open_trade(trade)
             self.storage.save_signal(signal, accepted=True)
+            self.storage.log_event("EXECUTER", symbol, "execution", "executed", f"order={order_id} qty={filled_qty}")
             return True, "executed"
         except Exception as e:
             return False, f"execution error: {e}"

@@ -3,7 +3,7 @@ from decimal import Decimal
 from dataclasses import dataclass
 from typing import Optional
 import time
-
+from . import indicators as ind
 
 @dataclass
 class Signal:
@@ -21,6 +21,12 @@ class Signal:
     rsi_value: Decimal = Decimal("0")
     ema_fast: Decimal = Decimal("0")
     ema_slow: Decimal = Decimal("0")
+    ema_50: Decimal = Decimal("0")
+    macd: Decimal = Decimal("0")
+    atr: Decimal = Decimal("0")
+    volume_ratio: Decimal = Decimal("0")
+    score: float = 0.0
+    explanation: str = ""
     candle_close_time: int = 0
 
     @property
@@ -142,6 +148,118 @@ class SignalEngine:
             rsi_value=r,
             ema_fast=last_fast,
             ema_slow=last_slow,
+            candle_close_time=cct,
+        )
+        if sig.signal_id in self._seen_ids:
+            return None
+        self._seen_ids.add(sig.signal_id)
+        self._last_signal_ts[symbol] = now
+        return sig
+
+    def evaluate_klines(self, symbol: str, timeframe: str, klines: list, candle_close_time: int = 0) -> Optional[Signal]:
+        # Use completed candles only (exclude last potentially open candle)
+        if not klines or len(klines) < 60:
+            return None
+        completed = klines[:-1]
+        if len(completed) < 50:
+            return None
+        closes = [Decimal(str(k[4])) for k in completed]
+        highs = [Decimal(str(k[2])) for k in completed]
+        lows = [Decimal(str(k[3])) for k in completed]
+        volumes = [Decimal(str(k[5])) for k in completed]
+
+        fast_ema = ind.ema(closes, 9)
+        slow_ema = ind.ema(closes, 21)
+        ema50 = ind.ema(closes, 50)
+        r = ind.rsi(closes, 14)
+        macd_line, macd_sig, macd_hist = ind.macd(closes)
+        atr_val = ind.atr(highs, lows, closes, 14)
+        vr = ind.volume_ratio(volumes, 20)
+
+        if r is None or atr_val is None or macd_hist is None:
+            return None
+
+        last_fast = fast_ema[-1]
+        prev_fast = fast_ema[-2]
+        last_slow = slow_ema[-1]
+        prev_slow = slow_ema[-2]
+        last_ema50 = ema50[-1]
+
+        now = int(time.time())
+        last = self._last_signal_ts.get(symbol, 0)
+        if now - last < self.cooldown_seconds:
+            return None
+
+        direction = None
+        score = 0.0
+        reasons = []
+        # LONG conditions
+        long_cond = (
+            last_fast > last_slow and last_slow > last_ema50 and
+            prev_fast <= prev_slow and
+            Decimal("40") <= r <= Decimal("70") and
+            macd_hist > 0 and
+            (vr is not None and vr >= Decimal("1.2"))
+        )
+        short_cond = (
+            last_fast < last_slow and last_slow < last_ema50 and
+            prev_fast >= prev_slow and
+            Decimal("30") <= r <= Decimal("60") and
+            macd_hist < 0 and
+            (vr is not None and vr >= Decimal("1.2"))
+        )
+        if long_cond:
+            direction = "LONG"
+            score = 70.0
+            reasons.append("EMA9>EMA21>EMA50")
+            reasons.append("RSI in range")
+            reasons.append("MACD hist positive")
+            reasons.append("volume spike")
+        elif short_cond:
+            direction = "SHORT"
+            score = 70.0
+            reasons.append("EMA9<EMA21<EMA50")
+            reasons.append("RSI in range")
+            reasons.append("MACD hist negative")
+            reasons.append("volume spike")
+        else:
+            return None
+
+        entry = closes[-1]
+        atr = atr_val
+        if direction == "LONG":
+            stop = entry - (atr * Decimal("1.5"))
+            tp = entry + (atr * Decimal("3.0"))
+        else:
+            stop = entry + (atr * Decimal("1.5"))
+            tp = entry - (atr * Decimal("3.0"))
+
+        gross_rr = abs(tp - entry) / abs(entry - stop) if abs(entry - stop) > 0 else Decimal(0)
+
+        cct = candle_close_time or int(completed[-1][0]) + 0
+        if cct == 0:
+            cct = int(time.time())
+        sig = Signal(
+            symbol=symbol,
+            direction=direction,
+            timestamp=now,
+            timeframe=timeframe,
+            entry_price=entry,
+            stop_loss=stop,
+            take_profit=tp,
+            confidence=float(r) / 100.0,
+            gross_rr=gross_rr,
+            net_rr=gross_rr,
+            invalidation="EMA cross reversal or RSI extreme",
+            rsi_value=r,
+            ema_fast=last_fast,
+            ema_slow=last_slow,
+            ema_50=last_ema50,
+            macd=macd_hist,
+            atr=atr,
+            volume_ratio=vr if vr is not None else Decimal(0),
+            score=score,
+            explanation="; ".join(reasons),
             candle_close_time=cct,
         )
         if sig.signal_id in self._seen_ids:

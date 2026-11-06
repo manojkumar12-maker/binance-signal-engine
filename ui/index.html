@@ -3,67 +3,520 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Binance Signal Engine</title>
+<title>GROK AI TRADING TERMINAL</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-body{font-family:system-ui,sans-serif;margin:0;background:#0b0f19;color:#e8ecf4;padding:16px}
-h1{font-size:1.4rem;margin:0 0 12px}
-.card{background:#151b2b;border-radius:12px;padding:14px;margin-bottom:12px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
-.kpi{background:#1d2538;border-radius:8px;padding:10px}
-.kpi .label{font-size:.75rem;color:#9aa4bf}
-.kpi .val{font-size:1.1rem;font-weight:600;margin-top:4px}
-table{width:100%;border-collapse:collapse;font-size:.85rem}
-th,td{padding:6px;border-bottom:1px solid #2a3348;text-align:left}
-.badge{padding:2px 8px;border-radius:999px;font-size:.75rem}
-.ok{background:#1f6f4a}.halt{background:#8a2a2a}
-button{background:#00d4ff;border:none;border-radius:8px;padding:8px 12px;color:#000;font-weight:600;cursor:pointer;margin-right:8px}
+:root{--bg:#050816;--panel:#0b1224;--panel2:#101a33;--border:#1c2a4a;--cyan:#00e5ff;--blue:#3b82f6;--green:#22c55e;--red:#ef4444;--purple:#a855f7;--amber:#f59e0b;--text:#e8ecf4;--muted:#9aa4bf}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Roboto,sans-serif;font-size:13px}
+.topbar{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#0a1024,#050816);position:sticky;top:0;z-index:10}
+.logo{font-weight:800;letter-spacing:1px;color:var(--cyan);text-shadow:0 0 12px rgba(0,229,255,.4)}
+.logo span{color:var(--purple)}
+.topitem{display:flex;flex-direction:column;font-size:11px}
+.topitem .label{color:var(--muted)}
+.topitem .val{font-weight:600}
+.statusdot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;box-shadow:0 0 8px currentColor}
+.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}
+.layout{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 52px)}
+@media(max-width:860px){.layout{grid-template-columns:1fr}.sidebar{display:none}.sidebar.open{display:block;position:fixed;top:52px;left:0;bottom:0;width:220px;z-index:20;background:var(--bg)}}
+.sidebar{border-right:1px solid var(--border);padding:12px;background:#070c1c}
+.navbtn{display:block;width:100%;text-align:left;padding:9px 12px;margin:2px 0;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--text);cursor:pointer;font-size:13px}
+.navbtn:hover{background:rgba(0,229,255,.06);border-color:var(--border)}
+.navbtn.active{background:rgba(0,229,255,.12);border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 10px rgba(0,229,255,.15)}
+.main{padding:14px;overflow:auto}
+.view{display:none}.view.active{display:block}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1100px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.g4,.g3,.g2{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,var(--panel),#070c1c);border:1px solid var(--border);border-radius:10px;padding:12px;box-shadow:0 0 0 1px rgba(0,229,255,.03),0 8px 24px rgba(0,0,0,.35)}
+.card h3{margin:0 0 10px;font-size:13px;color:var(--cyan);letter-spacing:.5px;text-transform:uppercase}
+.kpi .val{font-size:20px;font-weight:700;margin-top:4px}
+.kpi .label{font-size:11px;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase}
+tr:hover td{background:rgba(0,229,255,.04)}
+.badge{padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600}
+.b-idle{background:#1f2937;color:#9ca3af}.b-scan{background:#1e3a8a;color:#93c5fd}.b-anal{background:#581c87;color:#d8b4fe}
+.b-app{background:#14532d;color:#86efac}.b-rej{background:#7f1d1d;color:#fca5a5}.b-exec{background:#7c2d12;color:#fdba74}
+.b-mon{background:#0c4a6e;color:#7dd3fc}.b-err{background:#7f1d1d;color:#fca5a5}.b-stop{background:#374151;color:#d1d5db}
+.btn{background:linear-gradient(180deg,#00e5ff,#0099cc);border:none;border-radius:8px;padding:7px 12px;color:#001018;font-weight:700;cursor:pointer;margin:2px;font-size:12px}
+.btn.danger{background:linear-gradient(180deg,#ef4444,#b91c1c);color:#fff}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn:hover{filter:brightness(1.1)}
+.terminal{background:#020611;border:1px solid var(--border);border-radius:8px;height:260px;overflow:auto;padding:8px;font-family:Consolas,monospace;font-size:12px}
+.term-line{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.agentpanel{display:flex;flex-direction:column;gap:6px}
+.agentrow{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,.02)}
+.agenticon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(0,229,255,.1);color:var(--cyan);font-weight:700;font-size:12px}
+.agentmeta{flex:1}
+.agentname{font-weight:700;font-size:12px}
+.agentdesc{font-size:11px;color:var(--muted)}
+.pulse{width:10px;height:10px;border-radius:50%;background:var(--cyan);animation:pulse 1.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(0,229,255,.6)}70%{box-shadow:0 0 0 10px rgba(0,229,255,0)}100%{box-shadow:0 0 0 0 rgba(0,229,255,0)}}
+.network{position:relative;height:320px;border:1px solid var(--border);border-radius:10px;background:radial-gradient(circle at 50% 50%,#0a1630,#050816);overflow:hidden}
+.node{position:absolute;width:92px;height:46px;margin:-23px 0 0 -46px;border-radius:10px;border:1px solid var(--cyan);background:rgba(0,229,255,.08);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--cyan);box-shadow:0 0 14px rgba(0,229,255,.25);transition:all .3s}
+.node.active{background:rgba(0,229,255,.18);box-shadow:0 0 22px rgba(0,229,255,.5)}
+.particle{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:travel 2s linear infinite;opacity:.9}
+@keyframes travel{0%{transform:translate(0,0);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translate(var(--dx),var(--dy));opacity:0}}
+.healthrow{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px}
+.healthrow .k{color:var(--muted)}
+.mobtoggle{display:none}
+@media(max-width:860px){.mobtoggle{display:inline-block}}
 </style>
 </head>
 <body>
-<h1>Binance Signal Engine</h1>
-<div id="status" class="card">Loading...</div>
-<div class="card">
-<button onclick="halt()">Emergency Halt</button>
-<button onclick="resume()">Resume</button>
+<div id="loginOverlay" style="position:fixed;inset:0;background:#050816;display:flex;align-items:center;justify-content:center;z-index:100">
+  <div class="card" style="width:320px">
+    <h3>Login</h3>
+    <input id="loginUser" placeholder="username" style="width:100%;padding:8px;margin:4px 0;background:#0b1224;color:#e8ecf4;border:1px solid #1c2a4a;border-radius:6px">
+    <input id="loginPass" type="password" placeholder="password" style="width:100%;padding:8px;margin:4px 0;background:#0b1224;color:#e8ecf4;border:1px solid #1c2a4a;border-radius:6px">
+    <button class="btn" style="width:100%;margin-top:8px" onclick="doLogin()">Sign In</button>
+    <div id="loginMsg" style="color:#ef4444;margin-top:8px;font-size:12px"></div>
+  </div>
 </div>
-<div class="card">
-<h3>Recent Signals</h3>
-<div id="signals"></div>
+<div class="topbar">
+  <button class="btn ghost mobtoggle" onclick="toggleSidebar()">Menu</button>
+  <div class="logo">GROK <span>AI</span> TRADING TERMINAL</div>
+  <div class="topitem"><span class="label">Exchange</span><span class="val"><span class="statusdot" id="exDot"></span><span id="exStatus">connecting</span></span></div>
+  <div class="topitem"><span class="label">Mode</span><span class="val" id="modeVal">-</span></div>
+  <div class="topitem"><span class="label">Balance</span><span class="val" id="balVal">-</span></div>
+  <div class="topitem"><span class="label">Time</span><span class="val" id="clockVal">-</span></div>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <button class="btn danger" onclick="emergencyStop()">EMERGENCY STOP</button>
+    <button class="btn ghost" onclick="toggleAdmin()">Admin</button>
+  </div>
 </div>
-<div class="card">
-<h3>Trades</h3>
-<div id="trades"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <button class="navbtn active" data-view="overview" onclick="showView('overview')">Overview</button>
+    <button class="navbtn" data-view="scanner" onclick="showView('scanner')">Scanner</button>
+    <button class="navbtn" data-view="rug" onclick="showView('rug')">Rug Check</button>
+    <button class="navbtn" data-view="sizer" onclick="showView('sizer')">Sizer</button>
+    <button class="navbtn" data-view="executer" onclick="showView('executer')">Executer</button>
+    <button class="navbtn" data-view="positions" onclick="showView('positions')">Open Positions</button>
+    <button class="navbtn" data-view="logger" onclick="showView('logger')">Logger</button>
+    <button class="navbtn" data-view="equity" onclick="showView('equity')">Equity</button>
+    <button class="navbtn" data-view="admin" onclick="showView('admin')">Admin Logs</button>
+    <button class="navbtn" data-view="settings" onclick="showView('settings')">Settings</button>
+  </aside>
+  <main class="main">
+    <section class="view active" id="view-overview">
+      <div class="grid g4">
+        <div class="card kpi"><div class="label">Total Equity</div><div class="val" id="eqVal">-</div></div>
+        <div class="card kpi"><div class="label">Available Balance</div><div class="val" id="availVal">-</div></div>
+        <div class="card kpi"><div class="label">Daily P&L</div><div class="val" id="dailyPnl">-</div></div>
+        <div class="card kpi"><div class="label">Open Positions</div><div class="val" id="openPos">-</div></div>
+      </div>
+      <div class="grid g4" style="margin-top:12px">
+        <div class="card kpi"><div class="label">Realized P&L</div><div class="val" id="realPnl">-</div></div>
+        <div class="card kpi"><div class="label">Unrealized P&L</div><div class="val" id="unrealPnl">0.00</div></div>
+        <div class="card kpi"><div class="label">Total Trades</div><div class="val" id="totalTrades">-</div></div>
+        <div class="card kpi"><div class="label">Win Rate</div><div class="val" id="winRate">-</div></div>
+      </div>
+      <div class="grid g2" style="margin-top:12px">
+        <div class="card">
+          <h3>AI Agent Command Center</h3>
+          <div class="agentpanel" id="agentPanel"></div>
+        </div>
+        <div class="card">
+          <h3>Agent Network</h3>
+          <div class="network" id="network"></div>
+        </div>
+      </div>
+      <div class="grid g2" style="margin-top:12px">
+        <div class="card">
+          <h3>Recent Activity Terminal</h3>
+          <div class="terminal" id="terminal"></div>
+        </div>
+        <div class="card">
+          <h3>System Brain</h3>
+          <div id="systemBrain"></div>
+        </div>
+        <div class="card">
+          <h3>System Health</h3>
+          <div id="health"></div>
+        </div>
+      </div>
+    </section>
+    <section class="view" id="view-scanner">
+      <div class="card">
+        <h3>Live Market Scanner</h3>
+        <div style="margin-bottom:8px">
+          <button class="btn" onclick="startScanner()">Start Scanner</button>
+          <button class="btn ghost" onclick="stopScanner()">Stop Scanner</button>
+        </div>
+        <div id="scannerTable"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <h3>Market Chart</h3>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <select id="symSelect" class="btn ghost"></select>
+          <select id="tfSelect" class="btn ghost">
+            <option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option>
+            <option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
+          </select>
+          <button class="btn" onclick="loadChart()">Load</button>
+        </div>
+        <div id="chart" style="height:420px"></div>
+      </div>
+    </section>
+    <section class="view" id="view-rug">
+      <div class="card">
+        <h3>Rug Check / Asset Risk</h3>
+        <p style="color:var(--muted)">Risk assessments from scanner signals and reconciliation events.</p>
+        <div id="rugTable"></div>
+      </div>
+    </section>
+    <section class="view" id="view-sizer">
+      <div class="card">
+        <h3>Sizer</h3>
+        <div class="grid g3">
+          <div class="kpi"><div class="label">Max Risk/Trade</div><div class="val">0.5%</div></div>
+          <div class="kpi"><div class="label">Max Daily Loss</div><div class="val">1%</div></div>
+          <div class="kpi"><div class="label">Max Positions</div><div class="val">1</div></div>
+        </div>
+        <p style="color:var(--muted);margin-top:10px">Latest sizing decisions from events log.</p>
+        <div id="sizerEvents"></div>
+        <div id="sizerConfig" style="margin-top:10px"></div>
+      </div>
+    </section>
+    <section class="view" id="view-executer">
+      <div class="card">
+        <h3>Executer</h3>
+        <div style="margin-bottom:8px">
+          <button class="btn" onclick="enableTrading()">Enable Trading</button>
+          <button class="btn ghost" onclick="disableTrading()">Disable Trading</button>
+        </div>
+        <div id="tradesTable"></div>
+      </div>
+    </section>
+    <section class="view" id="view-positions">
+      <div class="card">
+        <h3>Open Positions</h3>
+        <div id="positionsTable"></div>
+      </div>
+    </section>
+    <section class="view" id="view-logger">
+      <div class="card">
+        <h3>Logger</h3>
+        <div style="margin-bottom:8px">
+          <button class="btn ghost" onclick="filterEvents('')">All</button>
+          <button class="btn ghost" onclick="filterEvents('SCANNER')">Scanner</button>
+          <button class="btn ghost" onclick="filterEvents('RUG CHECK')">Rug Check</button>
+          <button class="btn ghost" onclick="filterEvents('SIZER')">Sizer</button>
+          <button class="btn ghost" onclick="filterEvents('EXECUTER')">Executer</button>
+          <button class="btn ghost" onclick="filterEvents('SYSTEM')">System</button>
+        </div>
+        <div class="terminal" id="loggerTerminal" style="height:420px"></div>
+      </div>
+    </section>
+    <section class="view" id="view-equity">
+      <div class="card">
+        <h3>Equity Curve</h3>
+        <div id="equityChart" style="height:360px"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <h3>Performance</h3>
+        <div id="perf"></div>
+      </div>
+    </section>
+    <section class="view" id="view-admin">
+      <div class="card">
+        <h3>Admin Logs & Controls</h3>
+        <div style="margin-bottom:8px">
+          <button class="btn" onclick="halt()">Halt</button>
+          <button class="btn ghost" onclick="resume()">Resume</button>
+        </div>
+        <div id="adminStatus"></div>
+      </div>
+    </section>
+    <section class="view" id="view-settings">
+      <div class="card">
+        <h3>Settings</h3>
+        <div id="settingsInfo"></div>
+      </div>
+    </section>
+  </main>
 </div>
 <script>
-async function load(){
-  const s=await fetch('/status').then(r=>r.json());
-  document.getElementById('status').innerHTML=`
-    <div class="grid">
-      <div class="kpi"><div class="label">Mode</div><div class="val">${s.trading_mode}</div></div>
-      <div class="kpi"><div class="label">Live Auth</div><div class="val">${s.live_authorized}</div></div>
-      <div class="kpi"><div class="label">Sim Balance</div><div class="val">${s.simulated_starting_balance} USDT</div></div>
-      <div class="kpi"><div class="label">Open Positions</div><div class="val">${s.open_positions}</div></div>
-      <div class="kpi"><div class="label">Daily Loss Used</div><div class="val">${s.daily_loss_used}</div></div>
-      <div class="kpi"><div class="label">Remaining Budget</div><div class="val">${s.daily_loss_remaining}</div></div>
-      <div class="kpi"><div class="label">Kill Switch</div><div class="val"><span class="badge ${s.halted?'halt':'ok'}">${s.halted?'HALTED':'OK'}</span></div></div>
-      <div class="kpi"><div class="label">Worker HB</div><div class="val">${s.worker_heartbeat?.status||'n/a'}</div></div>
-    </div>`;
-  const sig=await fetch('/signals').then(r=>r.json());
-  document.getElementById('signals').innerHTML=renderTable(sig.signals,['direction','symbol','entry_price','accepted','rejection_reason']);
-  const tr=await fetch('/trades').then(r=>r.json());
-  document.getElementById('trades').innerHTML=renderTable(tr.trades,['id','symbol','direction','quantity','status','realized_pnl']);
+const API = '';
+let ws = null;
+let currentAgentFilter = '';
+let chart = null, candleSeries = null, equityChart = null, equitySeries = null;
+let lastEventId = 0;
+
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
+function showView(v){
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.view===v));
+  if(v==='scanner') loadChart();
+  if(v==='equity') loadEquityChart();
 }
-function renderTable(rows,cols){
-  if(!rows||!rows.length) return '<p>No data.</p>';
-  let h='<table><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr>';
-  for(const r of rows){h+='<tr>'+cols.map(c=>'<td>'+(r[c]??'')+'</td>').join('')+'</tr>';}
-  return h+'</table>';
+function setKpi(id,val){const el=document.getElementById(id); if(el){el.textContent=val}}
+
+async function api(path){const r=await fetch(API+path);return r.json()}
+
+async function loadStatus(){
+  try{
+    const s=await api('/status');
+    document.getElementById('modeVal').textContent=s.trading_mode;
+    document.getElementById('balVal').textContent=s.simulated_starting_balance+' USDT';
+    setKpi('openPos', s.open_positions);
+    setKpi('dailyPnl', s.daily_loss_used);
+    document.getElementById('exStatus').textContent = s.worker_healthy?'connected':'degraded';
+    document.getElementById('exDot').className='statusdot '+(s.worker_healthy?'ok':'bad');
+    document.getElementById('systemBrain').innerHTML = `
+      <div class="healthrow"><span class="k">Workflow Stage</span><span>${s.workflow_stage||'idle'}</span></div>
+      <div class="healthrow"><span class="k">Mode</span><span>${s.trading_mode}</span></div>
+      <div class="healthrow"><span class="k">Worker</span><span>${s.worker_healthy?'healthy':'degraded'}</span></div>
+      <div class="healthrow"><span class="k">Halted</span><span>${s.halted}</span></div>`;
+    document.getElementById('health').innerHTML = `
+      <div class="healthrow"><span class="k">Backend</span><span>ok</span></div>
+      <div class="healthrow"><span class="k">Mode</span><span>${s.trading_mode}</span></div>
+      <div class="healthrow"><span class="k">Live Authorized</span><span>${s.live_authorized}</span></div>
+      <div class="healthrow"><span class="k">Halted</span><span>${s.halted}</span></div>
+      <div class="healthrow"><span class="k">Worker HB</span><span>${s.worker_heartbeat?.status||'n/a'}</span></div>
+      <div class="healthrow"><span class="k">Daily Loss Used</span><span>${s.daily_loss_used}</span></div>
+      <div class="healthrow"><span class="k">Remaining Budget</span><span>${s.daily_loss_remaining}</span></div>`;
+    document.getElementById('adminStatus').innerHTML = `
+      <div class="healthrow"><span class="k">Halted</span><span>${s.halted}</span></div>
+      <div class="healthrow"><span class="k">Reason</span><span>${s.halt_reason||'-'}</span></div>
+      <div class="healthrow"><span class="k">Mode</span><span>${s.trading_mode}</span></div>`;
+    document.getElementById('settingsInfo').innerHTML = `
+      <div class="healthrow"><span class="k">Trading Mode</span><span>${s.trading_mode}</span></div>
+      <div class="healthrow"><span class="k">Broker Enabled</span><span>${s.broker_enabled}</span></div>
+      <div class="healthrow"><span class="k">Auto Trade</span><span>${s.auto_trade}</span></div>
+      <div class="healthrow"><span class="k">Live Trading Enabled</span><span>${s.live_trading_enabled}</span></div>
+      <div class="healthrow"><span class="k">Use Testnet</span><span>${s.use_testnet}</span></div>
+      <div class="healthrow"><span class="k">Simulated Balance</span><span>${s.simulated_starting_balance}</span></div>`;
+  }catch(e){console.error(e)}
 }
-async function halt(){await fetch('/halt',{method:'POST'});load();}
-async function resume(){await fetch('/resume',{method:'POST'});load();}
-load();setInterval(load,10000);
+
+async function loadSizerConfig(){
+  try{
+    const c=await api('/api/sizer/config');
+    document.getElementById('sizerConfig').innerHTML = `<div class="healthrow"><span class="k">Risk/Trade</span><span>${(Number(c.risk_per_trade_pct)*100).toFixed(2)}%</span></div>
+      <div class="healthrow"><span class="k">Max Daily Loss</span><span>${(Number(c.max_daily_loss_pct)*100).toFixed(2)}%</span></div>
+      <div class="healthrow"><span class="k">Max Leverage</span><span>${c.max_leverage}x</span></div>
+      <div class="healthrow"><span class="k">Max Positions</span><span>${c.max_simultaneous_positions}</span></div>`;
+  }catch(e){}
+}
+async function loadEquity(){
+  try{
+    const e=await api('/api/equity/analytics');
+    const eq=e.analytics;
+    setKpi('eqVal', Number(eq.current_equity||0).toFixed(4));
+    setKpi('realPnl', Number(eq.realized_pnl||0).toFixed(4));
+    setKpi('totalTrades', eq.total_trades);
+    setKpi('winRate', (eq.win_rate||0).toFixed(1)+'%');
+    setKpi('availVal', eq.starting_equity||'-');
+    document.getElementById('perf').innerHTML = `
+      <div class="healthrow"><span class="k">Realized P&L</span><span>${Number(eq.realized_pnl||0).toFixed(4)}</span></div>
+      <div class="healthrow"><span class="k">Unrealized P&L</span><span>${Number(eq.unrealized_pnl||0).toFixed(4)}</span></div>
+      <div class="healthrow"><span class="k">Fees</span><span>${Number(eq.fees||0).toFixed(4)}</span></div>
+      <div class="healthrow"><span class="k">Total Trades</span><span>${eq.total_trades}</span></div>
+      <div class="healthrow"><span class="k">Wins</span><span>${eq.winning_trades}</span></div>
+      <div class="healthrow"><span class="k">Losses</span><span>${eq.losing_trades}</span></div>
+      <div class="healthrow"><span class="k">Win Rate</span><span>${eq.win_rate||0}%</span></div>
+      <div class="healthrow"><span class="k">Profit Factor</span><span>${eq.profit_factor||'n/a'}</span></div>
+      <div class="healthrow"><span class="k">Max Drawdown</span><span>${Number(eq.max_drawdown||0).toFixed(4)}</span></div>
+      <div class="healthrow"><span class="k">Open Positions</span><span>${eq.open_trades}</span></div>`;
+  }catch(e){console.error(e)}
+}
+
+async function loadSignals(){
+  try{
+    const d=await api('/signals');
+    const rows=d.signals||[];
+    // scanner results
+    try{
+      const sr=await api('/api/scanner/results?limit=20');
+      const srows=sr.results||[];
+      if(srows.length){
+        let sh='<table><tr><th>Symbol</th><th>Dir</th><th>Score</th><th>Entry</th><th>SL</th><th>TP</th><th>Explanation</th></tr>';
+        for(const r of srows){sh+=`<tr><td>${r.symbol}</td><td>${r.direction}</td><td>${r.score}</td><td>${r.entry_price}</td><td>${r.stop_loss}</td><td>${r.take_profit}</td><td>${r.explanation||''}</td></tr>`;}
+        sh+='</table>';
+        document.getElementById('scannerTable').innerHTML=sh;
+      }
+    }catch(e){}
+    let html='<table><tr><th>Symbol</th><th>Dir</th><th>Entry</th><th>SL</th><th>TP</th><th>Accepted</th><th>Reason</th></tr>';
+    for(const r of rows){
+      html+=`<tr><td>${r.symbol}</td><td>${r.direction}</td><td>${r.entry_price}</td><td>${r.stop_loss}</td><td>${r.take_profit}</td><td>${r.accepted}</td><td>${r.rejection_reason||''}</td></tr>`;
+    }
+    html+='</table>';
+    document.getElementById('scannerTable').innerHTML = rows.length?html:'<p>No signals.</p>';
+    document.getElementById('rugTable').innerHTML = rows.length?html:'<p>No data.</p>';
+    const syms=[...new Set(rows.map(r=>r.symbol))];
+    if(syms.length){
+      const sel=document.getElementById('symSelect');
+      const cur=sel.value;
+      sel.innerHTML=syms.map(s=>`<option value="${s}">${s}</option>`).join('');
+      if(cur) sel.value=cur;
+    }
+  }catch(e){console.error(e)}
+}
+
+async function loadTrades(){
+  try{
+    const d=await api('/trades');
+    const rows=d.trades||[];
+    let html='<table><tr><th>ID</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Status</th><th>PnL</th></tr>';
+    for(const r of rows){
+      html+=`<tr><td>${r.id}</td><td>${r.symbol}</td><td>${r.direction}</td><td>${r.quantity}</td><td>${r.status}</td><td>${r.realized_pnl}</td></tr>`;
+    }
+    html+='</table>';
+    document.getElementById('tradesTable').innerHTML = rows.length?html:'<p>No trades.</p>';
+    const open=rows.filter(r=>r.status==='OPEN');
+    let phtml='<table><tr><th>ID</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Entry</th><th>SL</th><th>TP</th></tr>';
+    for(const r of open){
+      phtml+=`<tr><td>${r.id}</td><td>${r.symbol}</td><td>${r.direction}</td><td>${r.quantity}</td><td>${r.entry_price}</td><td>${r.stop_loss}</td><td>${r.take_profit}</td></tr>`;
+    }
+    phtml+='</table>';
+    document.getElementById('positionsTable').innerHTML = open.length?phtml:'<p>No open positions.</p>';
+  }catch(e){console.error(e)}
+}
+
+async function loadEvents(){
+  try{
+    const d=await api('/api/logs?limit=100'+(currentAgentFilter?('&agent='+encodeURIComponent(currentAgentFilter)):''));
+    const rows=d.events||[];
+    const term=document.getElementById('loggerTerminal');
+    term.innerHTML = rows.slice().reverse().map(e=>`<div class="term-line">[${new Date(e.ts*1000).toLocaleTimeString()}] ${e.agent} - ${e.event_type} ${e.status} ${e.reason||''}</div>`).join('');
+    const t20=rows.slice(0,20).reverse();
+    document.getElementById('terminal').innerHTML = t20.map(e=>`<div class="term-line">[${new Date(e.ts*1000).toLocaleTimeString()}] ${e.agent} - ${e.event_type} ${e.status} ${e.reason||''}</div>`).join('');
+    // sizer events
+    const sizer=rows.filter(e=>e.agent==='SIZER').slice(0,20);
+    document.getElementById('sizerEvents').innerHTML = sizer.length?sizer.map(e=>`<div class="term-line">${e.status} ${e.reason||''}</div>`).join(''):'<p>No sizing events.</p>';
+  }catch(e){console.error(e)}
+}
+
+async function loadAgents(){
+  try{
+    const d=await api('/agents');
+    const list=d.agents||[];
+    const panel=document.getElementById('agentPanel');
+    const icons={SCANNER:'SC', 'RUG CHECK':'RC', SIZER:'SZ', EXECUTER:'EX', LOGGER:'LG', EQUITY:'EQ', ADMIN:'AD'};
+    panel.innerHTML=list.map(a=>`
+      <div class="agentrow">
+        <div class="agenticon">${icons[a.agent]||'AG'}</div>
+        <div class="agentmeta">
+          <div class="agentname">${a.agent}</div>
+          <div class="agentdesc">${a.event_type||''} - ${a.reason||'idle'}</div>
+        </div>
+        <span class="badge b-idle">${a.status||'IDLE'}</span>
+        ${a.status&&a.status!=='IDLE'?'<div class="pulse"></div>':''}
+      </div>`).join('');
+    const net=document.getElementById('network');
+    net.innerHTML='';
+    const names=['SCANNER','RUG CHECK','SIZER','EXECUTER','LOGGER','EQUITY','ADMIN'];
+    const pos={SCANNER:{x:8,y:50}, 'RUG CHECK':{x:22,y:50}, SIZER:{x:36,y:50}, EXECUTER:{x:50,y:50}, LOGGER:{x:64,y:30}, EQUITY:{x:64,y:70}, ADMIN:{x:82,y:50}};
+    for(const n of names){
+      const p=pos[n];
+      const el=document.createElement('div');
+      el.className='node';
+      el.style.left=p.x+'%'; el.style.top=p.y+'%';
+      el.textContent=n;
+      const ag=list.find(a=>a.agent===n);
+      if(ag && ag.status && ag.status!=='IDLE' && ag.status!=='') el.classList.add('active');
+      net.appendChild(el);
+    }
+  }catch(e){console.error(e)}
+}
+
+function filterEvents(a){currentAgentFilter=a; loadEvents()}
+
+async function startScanner(){await fetch('/resume',{method:'POST'}); alert('Scanner control requested');}
+async function stopScanner(){await fetch('/halt',{method:'POST'}); alert('Halt requested');}
+async function enableTrading(){if(confirm('Enable trading?')){alert('Trading enable requires backend flags; use .env');}}
+async function disableTrading(){if(confirm('Disable trading?')){await fetch('/halt',{method:'POST'}); loadStatus();}}
+async function emergencyStop(){if(confirm('EMERGENCY STOP?')){await fetch('/halt',{method:'POST'}); loadStatus();}}
+async function halt(){if(confirm('Halt system?')){await fetch('/halt',{method:'POST'}); loadStatus();}}
+async function resume(){if(confirm('Resume system?')){await fetch('/resume',{method:'POST'}); loadStatus();}}
+function toggleAdmin(){showView('admin')}
+
+async function loadChart(){
+  const sym=document.getElementById('symSelect').value||'BTCUSDT';
+  const tf=document.getElementById('tfSelect').value;
+  const url=`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${tf}&limit=200`;
+  try{
+    const r=await fetch(url); const data=await r.json();
+    const candles=data.map(k=>({time:k[0]/1000,open:+k[1],high:+k[2],low:+k[3],close:+k[4]}));
+    const vol=data.map(k=>({time:k[0]/1000,value:+k[5],color:+k[4]>=+k[1]?'rgba(34,197,94,.5)':'rgba(239,68,68,.5)'}));
+    if(!chart){
+      chart=LightweightCharts.createChart(document.getElementById('chart'),{layout:{background:{color:'#0b1224'},textColor:'#e8ecf4'},grid:{vertLines:{color:'#1c2a4a'},horzLines:{color:'#1c2a4a'}},width:document.getElementById('chart').clientWidth,height:420});
+      candleSeries=chart.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',borderUpColor:'#22c55e',borderDownColor:'#ef4444',wickUpColor:'#22c55e',wickDownColor:'#ef4444'});
+      const volSeries=chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:''});
+      volSeries.priceScale().applyOptions({scaleMargins:{top:0.8,bottom:0}});
+      candleSeries.setData(candles);
+      volSeries.setData(vol);
+    }else{
+      candleSeries.setData(candles);
+    }
+    chart.timeScale().fitContent();
+  }catch(e){console.error(e)}
+}
+
+async function loadEquityChart(){
+  try{
+    const d=await api('/api/equity/history?limit=200');
+    const rows=d.history||[];
+    let cum=0; const pts=[];
+    for(const r of rows.slice().reverse()){cum+=Number(r.realized_pnl||0); pts.push({time:Math.floor(r.ts),value:cum});}
+    if(!equityChart){
+      equityChart=LightweightCharts.createChart(document.getElementById('equityChart'),{layout:{background:{color:'#0b1224'},textColor:'#e8ecf4'},grid:{vertLines:{color:'#1c2a4a'},horzLines:{color:'#1c2a4a'}},width:document.getElementById('equityChart').clientWidth,height:360});
+      equitySeries=equityChart.addLineSeries({color:'#00e5ff'});
+      equitySeries.setData(pts);
+    }else{
+      equitySeries.setData(pts);
+    }
+    equityChart.timeScale().fitContent();
+  }catch(e){console.error(e)}
+}
+
+function connectWS(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(proto+'://'+location.host+'/ws');
+  ws.onmessage=(ev)=>{
+    try{
+      const m=JSON.parse(ev.data);
+      if(m.type==='status'){
+        const s=m.data;
+        setKpi('openPos', s.open_positions);
+        if(s.equity){ setKpi('realPnl', Number(s.equity.realized_pnl||0).toFixed(4)); setKpi('totalTrades', s.equity.total_trades); setKpi('winRate', (s.equity.win_rate||0).toFixed(1)+'%'); }
+      }
+    }catch(e){}
+  };
+  ws.onclose=()=>setTimeout(connectWS,3000);
+}
+connectWS();
+
+async function checkAuth(){
+  try{
+    const s=await api('/api/auth/status');
+    if(s.authenticated){ document.getElementById('loginOverlay').style.display='none'; }
+    else { document.getElementById('loginOverlay').style.display='flex'; if(s.setup_required){ document.getElementById('loginMsg').textContent='Setup required: set ADMIN_USERNAME/ADMIN_PASSWORD env.'; } }
+  }catch(e){}
+}
+async function doLogin(){
+  const username=document.getElementById('loginUser').value;
+  const password=document.getElementById('loginPass').value;
+  const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+  const d=await r.json();
+  if(r.ok){ document.getElementById('loginOverlay').style.display='none'; refreshAll(); }
+  else { document.getElementById('loginMsg').textContent=d.error||'login failed'; }
+}
+setInterval(()=>{document.getElementById('clockVal').textContent=new Date().toLocaleTimeString()},1000);
+
+async function refreshAll(){await Promise.all([loadStatus(),loadEquity(),loadSignals(),loadTrades(),loadEvents(),loadAgents(),loadSizerConfig()])}
+checkAuth();
+refreshAll();
+setInterval(refreshAll,8000);
 </script>
 </body>
 </html>
 EOF
-echo done

@@ -1,4 +1,3 @@
-import os
 from decimal import Decimal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
@@ -7,7 +6,7 @@ from pydantic import Field, field_validator
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    trading_mode: str = Field(default="demo")
+    trading_mode: str = Field(default="paper")
     broker_enabled: bool = Field(default=False)
     auto_trade: bool = Field(default=False)
     live_trading_enabled: bool = Field(default=False)
@@ -23,6 +22,8 @@ class Settings(BaseSettings):
     max_new_entries_per_day: int = Field(default=1)
     max_daily_loss_usdt: Decimal = Field(default=Decimal("0.10"))
     max_planned_loss_per_trade: Decimal = Field(default=Decimal("0.05"))
+    risk_per_trade_pct: Decimal = Field(default=Decimal("0.005"))
+    max_daily_loss_pct: Decimal = Field(default=Decimal("0.01"))
     max_leverage: int = Field(default=2)
     cross_margin: bool = Field(default=False)
 
@@ -32,10 +33,12 @@ class Settings(BaseSettings):
     min_reward_to_risk: Decimal = Field(default=Decimal("2.0"))
 
     symbol: str = Field(default="BTCUSDT")
+    symbols: str = Field(default="BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT")
     timeframe: str = Field(default="15m")
     signal_cooldown_seconds: int = Field(default=3600)
+    scan_interval_seconds: int = Field(default=60)
 
-    host: str = Field(default="127.0.0.1")
+    host: str = Field(default="0.0.0.0")
     port: int = Field(default=8000)
     log_level: str = Field(default="INFO")
 
@@ -59,10 +62,33 @@ class Settings(BaseSettings):
         return v
 
     @property
+    def normalized_mode(self) -> str:
+        # Backward-compatible alias: demo -> paper
+        if self.trading_mode == "demo":
+            return "paper"
+        return self.trading_mode
+
+    @property
+    def symbol_list(self) -> list[str]:
+        return [s.strip().upper() for s in self.symbols.split(",") if s.strip()]
+
+    @property
+    def paper_mode(self) -> bool:
+        return self.normalized_mode == "paper"
+
+    @property
+    def testnet_mode(self) -> bool:
+        return self.normalized_mode == "testnet"
+
+    @property
+    def live_mode(self) -> bool:
+        return self.normalized_mode == "live"
+
+    @property
     def live_authorized(self) -> bool:
         # Multiple independent checks required; single flag never enough.
         return (
-            self.trading_mode == "live"
+            self.normalized_mode == "live"
             and self.broker_enabled
             and self.auto_trade
             and self.live_trading_enabled
@@ -73,15 +99,17 @@ class Settings(BaseSettings):
 
     @property
     def credentials(self) -> tuple[str, str]:
-        if self.use_testnet or self.trading_mode != "live":
+        if self.use_testnet or self.normalized_mode != "live":
             return self.binance_testnet_api_key, self.binance_testnet_api_secret
         return self.binance_api_key, self.binance_api_secret
 
     def fail_closed_if_inconsistent(self) -> None:
-        if self.trading_mode == "live" and not (self.broker_enabled and self.auto_trade and self.live_trading_enabled):
+        if self.normalized_mode == "live" and not (self.broker_enabled and self.auto_trade and self.live_trading_enabled):
             raise RuntimeError("Inconsistent live-trading configuration; failing closed.")
-        if self.trading_mode == "live" and self.use_testnet:
+        if self.normalized_mode == "live" and self.use_testnet:
             raise RuntimeError("Live mode cannot use testnet credentials.")
+        if self.normalized_mode not in ("paper", "testnet", "live"):
+            raise RuntimeError(f"Unknown trading mode: {self.trading_mode}")
 
 
 settings = Settings()

@@ -1,7 +1,6 @@
 """Centralized risk engine for 5 USDT account."""
 from decimal import Decimal
 from dataclasses import dataclass
-from typing import Optional
 from .config import settings
 
 

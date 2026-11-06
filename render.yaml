@@ -5,7 +5,7 @@ services:
     dockerfilePath: ./Dockerfile
     envVars:
       - key: TRADING_MODE
-        value: demo
+        value: paper
       - key: BROKER_ENABLED
         value: "false"
       - key: AUTO_TRADE
@@ -16,7 +16,14 @@ services:
         value: "true"
       - key: ADMIN_TOKEN
         generateValue: true
+      - key: RUN_WORKER
+        value: "true"
+      - key: DATABASE_URL
+        value: "sqlite:////var/data/bot.db"
+      - key: COOKIE_SECURE
+        value: "true"
     disk:
       name: data
-      mountPath: /app/data
+      mountPath: /var/data
       sizeGB: 1
+    healthCheckPath: /api/health

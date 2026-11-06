@@ -6,6 +6,8 @@ from decimal import Decimal
 from .config import settings
 from .binance_client import BinanceClient
 from .signal_engine import SignalEngine
+from .scanner import Scanner
+from .orchestrator import Orchestrator
 from .execution import ExecutionEngine
 from .storage import Storage
 from .kill_switch import KillSwitch
@@ -66,67 +68,29 @@ def main():
         log.error("exchange info failed: %s", e)
         info = {"symbols": []}
     engine = ExecutionEngine(client, storage, info)
-    kill = KillSwitch(storage)
-    sig_engine = SignalEngine(cooldown_seconds=settings.signal_cooldown_seconds)
-    recon = ReconciliationService(client, storage)
-    symbol = settings.symbol
+    orch = Orchestrator(client, storage)
 
-    log.info("Starting bot in mode=%s live_authorized=%s", settings.trading_mode, settings.live_authorized)
+    log.info("Starting bot in mode=%s live_authorized=%s symbols=%s", settings.trading_mode, settings.live_authorized, settings.symbol_list)
     storage.update_heartbeat("started")
+    storage.log_event("SYSTEM", "", "worker", "started", "worker started")
+    storage.upsert_agent_status("SCANNER", "RUNNING", current_activity="started")
+    storage.upsert_agent_status("EXECUTER", "IDLE", current_activity="ready")
 
     while True:
         try:
             storage.update_heartbeat("running")
-            if kill.is_halted()[0]:
-                log.warning("Halted: %s", kill.is_halted()[1])
+            if orch.kill.is_halted()[0]:
+                log.warning("Halted: %s", orch.kill.is_halted()[1])
                 time.sleep(30)
                 continue
-
             try:
-                r = recon.reconcile()
-                storage.log_reconciliation(json.dumps(r))
-                if r["discrepancies"]:
-                    log.warning("Reconciliation discrepancies: %s", r["discrepancies"])
+                orch.run_cycle()
             except Exception as e:
-                log.error("reconciliation failed: %s", e)
-                storage.update_heartbeat("recon_failed")
+                log.error("cycle failed: %s", e)
+                storage.update_heartbeat("cycle_failed")
                 time.sleep(10)
                 continue
-
-            try:
-                kl = client.klines(symbol, settings.timeframe, 200)
-            except Exception as e:
-                log.error("klines failed: %s", e)
-                time.sleep(10)
-                continue
-
-            ok, reason = validate_candles(kl)
-            if not ok:
-                log.warning("Candle validation failed: %s", reason)
-                time.sleep(10)
-                continue
-
-            closes = [Decimal(str(k[4])) for k in kl]
-            interval = INTERVAL_MS.get(settings.timeframe, 900000)
-            candle_close_time = kl[-1][0] + interval
-
-            signal = sig_engine.evaluate(symbol, settings.timeframe, closes, candle_close_time=candle_close_time)
-            if signal is not None:
-                log.info("Signal generated: %s %s @ %s id=%s", signal.direction, symbol, signal.entry_price, signal.signal_id)
-                if storage.is_signal_seen(signal.signal_id):
-                    log.info("Duplicate signal skipped: %s", signal.signal_id)
-                else:
-                    storage.mark_signal_seen(signal.signal_id)
-                    ok2, reason2 = engine.execute_signal(signal, symbol)
-                    log.info("Execution result: %s %s", ok2, reason2)
-                    if ok2 and not settings.live_authorized:
-                        storage.save_signal(signal, accepted=False, reason="live not authorized; recorded only")
-                    elif ok2:
-                        storage.save_signal(signal, accepted=True)
-                    else:
-                        storage.save_signal(signal, accepted=False, reason=reason2)
-
-            time.sleep(60)
+            time.sleep(settings.scan_interval_seconds)
         except KeyboardInterrupt:
             log.info("Shutting down")
             break

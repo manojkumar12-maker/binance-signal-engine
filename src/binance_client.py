@@ -5,7 +5,6 @@ import time
 import httpx
 from decimal import Decimal
 from typing import Any, Optional
-from .config import settings
 
 
 class BinanceClient:

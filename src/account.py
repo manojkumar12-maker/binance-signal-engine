@@ -1,6 +1,5 @@
 """Account state retrieval and validation."""
 from decimal import Decimal
-from typing import Optional
 from .binance_client import BinanceClient
 
 

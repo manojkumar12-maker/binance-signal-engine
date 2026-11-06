@@ -1,6 +1,6 @@
 """Exchange filter validation using Decimal arithmetic."""
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, InvalidOperation
-from typing import Optional, Dict
+from typing import Optional
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 
 
 def _get_filter(info: dict, filter_type: str, symbol: str) -> Optional[dict]:
