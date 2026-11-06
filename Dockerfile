@@ -16,6 +16,6 @@ ENV RUN_WORKER=true
 ENV DATABASE_URL=sqlite:////app/data/bot.db
 
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import os,urllib.request; urllib.request.urlopen('http://localhost:'+os.getenv('PORT','10000')+'/api/health')" || exit 1
 
 CMD ["python", "main.py"]

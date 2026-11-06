@@ -17,14 +17,14 @@ class Settings(BaseSettings):
     binance_testnet_api_key: str = Field(default="")
     binance_testnet_api_secret: str = Field(default="")
 
-    simulated_starting_balance: Decimal = Field(default=Decimal("5.0"))
+    simulated_starting_balance: Decimal = Field(default=Decimal("30.0"))
     max_simultaneous_positions: int = Field(default=1)
     max_new_entries_per_day: int = Field(default=1)
     max_daily_loss_usdt: Decimal = Field(default=Decimal("0.10"))
     max_planned_loss_per_trade: Decimal = Field(default=Decimal("0.05"))
     risk_per_trade_pct: Decimal = Field(default=Decimal("0.005"))
     max_daily_loss_pct: Decimal = Field(default=Decimal("0.01"))
-    max_leverage: int = Field(default=2)
+    max_leverage: int = Field(default=1)
     cross_margin: bool = Field(default=False)
 
     estimated_maker_fee: Decimal = Field(default=Decimal("0.0002"))

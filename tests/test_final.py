@@ -106,3 +106,18 @@ def test_live_activation_rejected():
     r = api_client.put("/api/admin/settings", json={"trading_mode": "live"})
     assert r.status_code == 200
     assert r.json().get("ok") is False
+
+def test_no_admin_fail_closed_http(monkeypatch):
+    monkeypatch.setenv("AUTH_DISABLED", "false")
+    monkeypatch.setenv("FORCE_AUTH", "true")
+    from src.dashboard import storage as gstorage
+    orig = gstorage.has_admin
+    gstorage.has_admin = lambda: False
+    try:
+        from fastapi.testclient import TestClient
+        from src.dashboard import app
+        c = TestClient(app)
+        r = c.get("/api/status")
+        assert r.status_code == 503
+    finally:
+        gstorage.has_admin = orig

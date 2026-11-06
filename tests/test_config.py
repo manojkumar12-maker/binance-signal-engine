@@ -7,7 +7,7 @@ from src.config import Settings
 
 def test_default_balance_5():
     s = Settings()
-    assert s.simulated_starting_balance == Decimal("5.0")
+    assert s.simulated_starting_balance == Decimal("30.0")
 
 
 def test_live_disabled_by_default():

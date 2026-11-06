@@ -13,7 +13,6 @@ from .sizer import Sizer
 from .paper_trading import PaperTrader
 from .logger import Logger
 from .equity import EquityAgent
-from .worker_lock import WorkerLock
 from .kill_switch import KillSwitch
 from .reconciliation import ReconciliationService
 from .binance_client import BinanceClient
@@ -44,7 +43,6 @@ class Orchestrator:
         self.client = client
         self.storage = storage
         self.kill = KillSwitch(storage)
-        self.lock = WorkerLock()
         self.scanner = Scanner(client, storage, settings.symbol_list)
         self.rug = RugChecker()
         self.sizer = Sizer()
