@@ -3,519 +3,271 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GROK AI TRADING TERMINAL</title>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<title>GROK BOT TERMINAL · SOL-DESK V2</title>
 <style>
-:root{--bg:#050816;--panel:#0b1224;--panel2:#101a33;--border:#1c2a4a;--cyan:#00e5ff;--blue:#3b82f6;--green:#22c55e;--red:#ef4444;--purple:#a855f7;--amber:#f59e0b;--text:#e8ecf4;--muted:#9aa4bf}
+:root{--bg:#030712;--panel:#0a1022;--panel2:#0f172a;--border:#1e293b;--cyan:#22d3ee;--blue:#3b82f6;--purple:#a855f7;--pink:#ec4899;--teal:#2dd4bf;--amber:#f59e0b;--green:#22c55e;--red:#ef4444;--text:#e2e8f0;--muted:#94a3b8}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Roboto,sans-serif;font-size:13px}
-.topbar{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#0a1024,#050816);position:sticky;top:0;z-index:10}
-.logo{font-weight:800;letter-spacing:1px;color:var(--cyan);text-shadow:0 0 12px rgba(0,229,255,.4)}
-.logo span{color:var(--purple)}
-.topitem{display:flex;flex-direction:column;font-size:11px}
-.topitem .label{color:var(--muted)}
-.topitem .val{font-weight:600}
-.statusdot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;box-shadow:0 0 8px currentColor}
-.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}
-.layout{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 52px)}
-@media(max-width:860px){.layout{grid-template-columns:1fr}.sidebar{display:none}.sidebar.open{display:block;position:fixed;top:52px;left:0;bottom:0;width:220px;z-index:20;background:var(--bg)}}
-.sidebar{border-right:1px solid var(--border);padding:12px;background:#070c1c}
-.navbtn{display:block;width:100%;text-align:left;padding:9px 12px;margin:2px 0;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--text);cursor:pointer;font-size:13px}
-.navbtn:hover{background:rgba(0,229,255,.06);border-color:var(--border)}
-.navbtn.active{background:rgba(0,229,255,.12);border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 10px rgba(0,229,255,.15)}
-.main{padding:14px;overflow:auto}
-.view{display:none}.view.active{display:block}
-.grid{display:grid;gap:12px}
-.g2{grid-template-columns:repeat(2,1fr)}
-.g3{grid-template-columns:repeat(3,1fr)}
-.g4{grid-template-columns:repeat(4,1fr)}
-@media(max-width:1100px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:640px){.g4,.g3,.g2{grid-template-columns:1fr}}
-.card{background:linear-gradient(180deg,var(--panel),#070c1c);border:1px solid var(--border);border-radius:10px;padding:12px;box-shadow:0 0 0 1px rgba(0,229,255,.03),0 8px 24px rgba(0,0,0,.35)}
-.card h3{margin:0 0 10px;font-size:13px;color:var(--cyan);letter-spacing:.5px;text-transform:uppercase}
-.kpi .val{font-size:20px;font-weight:700;margin-top:4px}
-.kpi .label{font-size:11px;color:var(--muted)}
-table{width:100%;border-collapse:collapse;font-size:12px}
-th,td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
-th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase}
-tr:hover td{background:rgba(0,229,255,.04)}
-.badge{padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600}
-.b-idle{background:#1f2937;color:#9ca3af}.b-scan{background:#1e3a8a;color:#93c5fd}.b-anal{background:#581c87;color:#d8b4fe}
-.b-app{background:#14532d;color:#86efac}.b-rej{background:#7f1d1d;color:#fca5a5}.b-exec{background:#7c2d12;color:#fdba74}
-.b-mon{background:#0c4a6e;color:#7dd3fc}.b-err{background:#7f1d1d;color:#fca5a5}.b-stop{background:#374151;color:#d1d5db}
-.btn{background:linear-gradient(180deg,#00e5ff,#0099cc);border:none;border-radius:8px;padding:7px 12px;color:#001018;font-weight:700;cursor:pointer;margin:2px;font-size:12px}
-.btn.danger{background:linear-gradient(180deg,#ef4444,#b91c1c);color:#fff}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:13px;overflow:hidden}
+.mono{font-family:ui-monospace,Consolas,monospace}
+body::before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 20% 10%,rgba(34,211,238,.08),transparent 40%),radial-gradient(circle at 80% 0%,rgba(168,85,247,.08),transparent 40%);pointer-events:none}
+.topbar{display:grid;grid-template-columns:1fr auto;gap:16px;padding:14px 20px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#0a1022,#030712)}
+.brand{display:flex;align-items:center;gap:14px}
+.avatar{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle,#22d3ee,#3b82f6);box-shadow:0 0 18px rgba(34,211,238,.6);animation:pulse 2s infinite;position:relative}
+.avatar::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:1px solid rgba(34,211,238,.4);animation:spin 6s linear infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 18px rgba(34,211,238,.6)}50%{box-shadow:0 0 30px rgba(34,211,238,.9)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.title{font-size:20px;font-weight:800;letter-spacing:1px}
+.badge{padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:rgba(34,211,238,.15);color:var(--cyan);border:1px solid rgba(34,211,238,.4)}
+.status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--green)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.account{text-align:right}
+.account .bal{font-size:28px;font-weight:800;color:var(--green);text-shadow:0 0 12px rgba(34,197,94,.4)}
+.account .sub{font-size:11px;color:var(--muted)}
+.mini{width:120px;height:32px;margin-top:4px}
+.layout{display:grid;grid-template-columns:290px 1fr;height:calc(100vh - 86px)}
+.sidebar{border-right:1px solid var(--border);padding:12px;overflow:auto;background:#050a18}
+.agentcard{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px;background:linear-gradient(180deg,#0a1022,#050a18);position:relative;overflow:hidden}
+.agentcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+.agentcard.sc::before{background:var(--teal)}.agentcard.fi::before{background:var(--pink)}.agentcard.an::before{background:var(--purple)}.agentcard.ex::before{background:var(--cyan)}.agentcard.rk::before{background:var(--amber)}.agentcard.lg::before{background:var(--blue)}
+.agenthead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.agenticon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+.agentname{font-weight:700;font-size:12px;letter-spacing:.5px}
+.agentdesc{font-size:10px;color:var(--muted);margin-bottom:6px}
+.metric{display:flex;justify-content:space-between;font-size:11px;padding:2px 0}
+.metric .k{color:var(--muted)}.metric .v{font-weight:600}
+.you{border:1px dashed var(--border);border-radius:10px;padding:10px;text-align:center;font-size:11px;color:var(--muted)}
+.main{padding:12px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.ticker{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+.ticker::-webkit-scrollbar{height:6px}
+.ticker::-webkit-scrollbar-thumb{background:#1e293b;border-radius:3px}
+.tokencard{min-width:150px;border:1px solid var(--border);border-radius:8px;padding:8px;background:#0a1022;position:relative}
+.tokencard.new::after{content:"";position:absolute;top:6px;right:6px;width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan);animation:blink 1s infinite}
+.tokenrow{display:flex;justify-content:space-between;font-size:11px;margin:2px 0}
+.tokenrow .sym{font-weight:700;color:var(--cyan)}
+.flow{border:1px solid var(--border);border-radius:10px;padding:12px;background:#050a18}
+.flownodes{display:flex;justify-content:space-between;align-items:center;position:relative;padding:0 10px}
+.flownode{text-align:center;position:relative}
+.flownode .circle{width:52px;height:52px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;border:2px solid;box-shadow:0 0 14px currentColor;position:relative}
+.flownode .circle::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:1px dashed currentColor;opacity:.4;animation:spin 8s linear infinite}
+.flownode .name{font-size:11px;font-weight:700}
+.flownode .act{font-size:10px;color:var(--muted)}
+.connector{flex:1;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);margin:0 6px;position:relative;overflow:hidden}
+.connector::after{content:"";position:absolute;top:-2px;left:-20px;width:20px;height:6px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);animation:flow 2s linear infinite}
+@keyframes flow{0%{left:-20px}100%{left:100%}}
+.midgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.panel{border:1px solid var(--border);border-radius:10px;padding:12px;background:#0a1022}
+.panel h3{margin:0 0 10px;font-size:12px;color:var(--cyan);letter-spacing:.5px;text-transform:uppercase}
+.rule{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px}
+.rule .rname{color:var(--muted)}
+.rule .val{font-weight:600}
+.pass{color:var(--green)}.fail{color:var(--red)}.unk{color:var(--amber)}
+.gauge{width:140px;height:140px;margin:0 auto 10px;position:relative}
+.gauge svg{width:100%;height:100%}
+.gauge .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gauge .score{font-size:32px;font-weight:800;color:var(--purple)}
+.gauge .thr{font-size:10px;color:var(--muted)}
+.bar{height:6px;border-radius:3px;background:#1e293b;overflow:hidden;margin:4px 0}
+.bar>div{height:100%;background:linear-gradient(90deg,var(--purple),#c084fc);border-radius:3px;transition:width .6s}
+.barlabel{display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
+.decision{margin-top:8px;padding:6px;border-radius:6px;background:rgba(168,85,247,.1);border:1px solid rgba(168,85,247,.4);text-align:center;font-size:11px;color:var(--purple);font-weight:700}
+.posgrid{display:grid;grid-template-columns:1.4fr 1fr;gap:12px}
+.chartbox{height:220px;border:1px solid var(--border);border-radius:8px;background:#050a18;position:relative;overflow:hidden}
+.chartbox svg{width:100%;height:100%}
+.posmetrics{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.posmetrics .m{border:1px solid var(--border);border-radius:6px;padding:6px;background:#0a1022}
+.posmetrics .m .k{font-size:10px;color:var(--muted)}.posmetrics .m .v{font-size:13px;font-weight:700}
+.bottomgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.statrow{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px}
+.statrow .label{flex:1;color:var(--muted)}.statrow .val{font-weight:700;width:60px;text-align:right}
+.statrow .bar{flex:2;height:4px}
+.terminal{height:180px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:11px;background:#020611;border:1px solid var(--border);border-radius:8px;padding:8px}
+.term{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.term .ts{color:var(--muted)}.term .tag{font-weight:700}
+.tag.INFO{color:var(--blue)}.tag.SCAN{color:var(--teal)}.tag.CHECK{color:var(--green)}.tag.SCORE{color:var(--purple)}.tag.ENTER{color:var(--cyan)}.tag.BUY{color:var(--green)}.tag.SELL{color:var(--red)}.tag.WIN{color:var(--green)}.tag.LOSS{color:var(--red)}.tag.ERROR{color:var(--red)}
+.cursor{display:inline-block;width:8px;height:12px;background:var(--cyan);animation:blink 1s infinite;vertical-align:middle}
+.demo{position:fixed;bottom:8px;right:12px;font-size:10px;color:var(--muted);background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px;border:1px solid var(--border)}
+.controls{display:flex;gap:6px;align-items:center}
+.btn{background:linear-gradient(180deg,#22d3ee,#0891b2);border:none;border-radius:6px;padding:6px 10px;color:#001018;font-weight:700;font-size:11px;cursor:pointer}
 .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
-.btn:hover{filter:brightness(1.1)}
-.terminal{background:#020611;border:1px solid var(--border);border-radius:8px;height:260px;overflow:auto;padding:8px;font-family:Consolas,monospace;font-size:12px}
-.term-line{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
-.agentpanel{display:flex;flex-direction:column;gap:6px}
-.agentrow{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,.02)}
-.agenticon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(0,229,255,.1);color:var(--cyan);font-weight:700;font-size:12px}
-.agentmeta{flex:1}
-.agentname{font-weight:700;font-size:12px}
-.agentdesc{font-size:11px;color:var(--muted)}
-.pulse{width:10px;height:10px;border-radius:50%;background:var(--cyan);animation:pulse 1.4s infinite}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(0,229,255,.6)}70%{box-shadow:0 0 0 10px rgba(0,229,255,0)}100%{box-shadow:0 0 0 0 rgba(0,229,255,0)}}
-.network{position:relative;height:320px;border:1px solid var(--border);border-radius:10px;background:radial-gradient(circle at 50% 50%,#0a1630,#050816);overflow:hidden}
-.node{position:absolute;width:92px;height:46px;margin:-23px 0 0 -46px;border-radius:10px;border:1px solid var(--cyan);background:rgba(0,229,255,.08);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--cyan);box-shadow:0 0 14px rgba(0,229,255,.25);transition:all .3s}
-.node.active{background:rgba(0,229,255,.18);box-shadow:0 0 22px rgba(0,229,255,.5)}
-.particle{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:travel 2s linear infinite;opacity:.9}
-@keyframes travel{0%{transform:translate(0,0);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translate(var(--dx),var(--dy));opacity:0}}
-.healthrow{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px}
-.healthrow .k{color:var(--muted)}
-.mobtoggle{display:none}
-@media(max-width:860px){.mobtoggle{display:inline-block}}
+@media(max-width:1100px){.layout{grid-template-columns:240px 1fr}.midgrid,.posgrid,.bottomgrid{grid-template-columns:1fr}}
+@media(max-width:760px){.layout{grid-template-columns:1fr}.sidebar{display:none}.main{padding:8px}}
 </style>
 </head>
 <body>
-<div id="loginOverlay" style="position:fixed;inset:0;background:#050816;display:flex;align-items:center;justify-content:center;z-index:100">
-  <div class="card" style="width:320px">
-    <h3>Login</h3>
-    <input id="loginUser" placeholder="username" style="width:100%;padding:8px;margin:4px 0;background:#0b1224;color:#e8ecf4;border:1px solid #1c2a4a;border-radius:6px">
-    <input id="loginPass" type="password" placeholder="password" style="width:100%;padding:8px;margin:4px 0;background:#0b1224;color:#e8ecf4;border:1px solid #1c2a4a;border-radius:6px">
-    <button class="btn" style="width:100%;margin-top:8px" onclick="doLogin()">Sign In</button>
-    <div id="loginMsg" style="color:#ef4444;margin-top:8px;font-size:12px"></div>
-  </div>
-</div>
 <div class="topbar">
-  <button class="btn ghost mobtoggle" onclick="toggleSidebar()">Menu</button>
-  <div class="logo">GROK <span>AI</span> TRADING TERMINAL</div>
-  <div class="topitem"><span class="label">Exchange</span><span class="val"><span class="statusdot" id="exDot"></span><span id="exStatus">connecting</span></span></div>
-  <div class="topitem"><span class="label">Mode</span><span class="val" id="modeVal">-</span></div>
-  <div class="topitem"><span class="label">Balance</span><span class="val" id="balVal">-</span></div>
-  <div class="topitem"><span class="label">Time</span><span class="val" id="clockVal">-</span></div>
-  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-    <button class="btn danger" onclick="emergencyStop()">EMERGENCY STOP</button>
-    <button class="btn ghost" onclick="toggleAdmin()">Admin</button>
+  <div class="brand">
+    <div class="avatar"></div>
+    <div>
+      <div class="title">GROK BOT TERMINAL</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
+        <span class="badge">SOL-DESK V2</span>
+        <span class="status"><span class="dot"></span>RUNNING</span>
+        <span class="mono" style="font-size:11px;color:var(--muted)">session 04:12:33</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">One prompt · Six agents · Hard handoffs</div>
+    </div>
+  </div>
+  <div class="account">
+    <div class="sub">ACCOUNT BALANCE</div>
+    <div class="bal">$2,164.55</div>
+    <div class="sub">start $1,000.00 · trades 47 · wins 31 · losses 16</div>
+    <svg class="mini" viewBox="0 0 120 32"><polyline fill="none" stroke="#22c55e" stroke-width="2" points="0,24 12,20 24,22 36,16 48,18 60,12 72,14 84,8 96,10 108,4 120,6"/></svg>
+    <div style="margin-top:4px"><span class="badge" style="background:rgba(34,197,94,.15);color:var(--green);border-color:rgba(34,197,94,.4)">PAPER</span></div>
   </div>
 </div>
 <div class="layout">
-  <aside class="sidebar" id="sidebar">
-    <button class="navbtn active" data-view="overview" onclick="showView('overview')">Overview</button>
-    <button class="navbtn" data-view="scanner" onclick="showView('scanner')">Scanner</button>
-    <button class="navbtn" data-view="rug" onclick="showView('rug')">Rug Check</button>
-    <button class="navbtn" data-view="sizer" onclick="showView('sizer')">Sizer</button>
-    <button class="navbtn" data-view="executer" onclick="showView('executer')">Executer</button>
-    <button class="navbtn" data-view="positions" onclick="showView('positions')">Open Positions</button>
-    <button class="navbtn" data-view="logger" onclick="showView('logger')">Logger</button>
-    <button class="navbtn" data-view="equity" onclick="showView('equity')">Equity</button>
-    <button class="navbtn" data-view="admin" onclick="showView('admin')">Admin Logs</button>
-    <button class="navbtn" data-view="settings" onclick="showView('settings')">Settings</button>
+  <aside class="sidebar">
+    <div class="agentcard sc">
+      <div class="agenthead"><div class="agenticon" style="background:rgba(45,212,191,.15);color:var(--teal)">SC</div><div class="agentname">SCOUT</div><span class="badge" style="margin-left:auto">RUNNING</span></div>
+      <div class="agentdesc">Finds fresh Solana pairs</div>
+      <div class="metric"><span class="k">Pairs discovered</span><span class="v">1,248</span></div>
+      <div class="metric"><span class="k">Token age</span><span class="v">&lt; 24h</span></div>
+      <div class="metric"><span class="k">MC range</span><span class="v">$50k–$5M</span></div>
+      <div class="metric"><span class="k">Latest</span><span class="v">BONK2</span></div>
+    </div>
+    <div class="agentcard fi">
+      <div class="agenthead"><div class="agenticon" style="background:rgba(236,72,153,.15);color:var(--pink)">FI</div><div class="agentname">FILTER</div><span class="badge" style="margin-left:auto">RUNNING</span></div>
+      <div class="agentdesc">Eliminates tokens that fail security rules</div>
+      <div class="metric"><span class="k">Total rules</span><span class="v">8</span></div>
+      <div class="metric"><span class="k">Rejected</span><span class="v">1,190</span></div>
+      <div class="metric"><span class="k">Passed</span><span class="v">58</span></div>
+      <div class="metric"><span class="k">Latest reject</span><span class="v">low liq</span></div>
+    </div>
+    <div class="agentcard an">
+      <div class="agenthead"><div class="agenticon" style="background:rgba(168,85,247,.15);color:var(--purple)">AN</div><div class="agentname">ANALYST</div><span class="badge" style="margin-left:auto">RUNNING</span></div>
+      <div class="agentdesc">Scores token opportunities 0–100</div>
+      <div class="metric"><span class="k">Tokens scored</span><span class="v">58</span></div>
+      <div class="metric"><span class="k">Avg score</span><span class="v">64</span></div>
+      <div class="metric"><span class="k">Min qualify</span><span class="v">70</span></div>
+      <div class="metric"><span class="k">Latest</span><span class="v">WIF (78)</span></div>
+    </div>
+    <div class="agentcard ex">
+      <div class="agenthead"><div class="agenticon" style="background:rgba(34,211,238,.15);color:var(--cyan)">EX</div><div class="agentname">EXECUTOR</div><span class="badge" style="margin-left:auto">RUNNING</span></div>
+      <div class="agentdesc">Places and monitors trades</div>
+      <div class="metric"><span class="k">Trades executed</span><span class="v">47</span></div>
+      <div class="metric"><span class="k">Position size</span><span class="v">$50.00</span></div>
+      <div class="metric"><span class="k">Latest trade</span><span class="v">WIF</span></div>
+      <div class="metric"><span class="k">Status</span><span class="v">Monitoring</span></div>
+    </div>
+    <div class="agentcard rk">
+      <div class="agenthead"><div class="agenticon" style="background:rgba(245,158,11,.15);color:var(--amber)">RK</div><div class="agentname">RISK</div><span class="badge" style="margin-left:auto">RUNNING</span></div>
+      <div class="agentdesc">Protects every position</div>
+      <div class="metric"><span class="k">Active positions</span><span class="v">1</span></div>
+      <div class="metric"><span class="k">Stop-loss</span><span class="v">-5%</span></div>
+      <div class="metric"><span class="k">Trailing stop</span><span class="v">ON</span></div>
+      <div class="metric"><span class="k">Latest event</span><span class="v">trail up</span></div>
+    </div>
+    <div class="agentcard lg">
+      <div class="agenthead"><div class="agenticon" style="background:rgba(59,130,246,.15);color:var(--blue)">LG</div><div class="agentname">LOGGER</div><span class="badge" style="margin-left:auto">RUNNING</span></div>
+      <div class="agentdesc">Records every event</div>
+      <div class="metric"><span class="k">Log entries</span><span class="v">3,842</span></div>
+      <div class="metric"><span class="k">Latest</span><span class="v">trail activated</span></div>
+      <div class="metric"><span class="k">Status</span><span class="v">OK</span></div>
+    </div>
+    <div class="you">
+      <div style="font-weight:700;color:var(--text)">YOU</div>
+      <div>AI system operator</div>
+      <div style="margin-top:4px">1 prompt submitted · system running</div>
+    </div>
   </aside>
   <main class="main">
-    <section class="view active" id="view-overview">
-      <div class="grid g4">
-        <div class="card kpi"><div class="label">Total Equity</div><div class="val" id="eqVal">-</div></div>
-        <div class="card kpi"><div class="label">Available Balance</div><div class="val" id="availVal">-</div></div>
-        <div class="card kpi"><div class="label">Daily P&L</div><div class="val" id="dailyPnl">-</div></div>
-        <div class="card kpi"><div class="label">Open Positions</div><div class="val" id="openPos">-</div></div>
+    <div class="ticker" id="ticker"></div>
+    <div class="flow">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;letter-spacing:.5px">LIVE FLOW · HARD HANDOFFS · ONE JOB EACH</div>
+      <div class="flownodes">
+        <div class="flownode"><div class="circle" style="color:var(--teal)">SC</div><div class="name">SCOUT</div><div class="act">discovering</div></div>
+        <div class="connector"></div>
+        <div class="flownode"><div class="circle" style="color:var(--pink)">FI</div><div class="name">FILTER</div><div class="act">screening</div></div>
+        <div class="connector"></div>
+        <div class="flownode"><div class="circle" style="color:var(--purple)">AN</div><div class="name">ANALYST</div><div class="act">scoring</div></div>
+        <div class="connector"></div>
+        <div class="flownode"><div class="circle" style="color:var(--cyan)">EX</div><div class="name">EXECUTOR</div><div class="act">trading</div></div>
+        <div class="connector"></div>
+        <div class="flownode"><div class="circle" style="color:var(--amber)">RK</div><div class="name">RISK</div><div class="act">guarding</div></div>
+        <div class="connector"></div>
+        <div class="flownode"><div class="circle" style="color:var(--blue)">LG</div><div class="name">LOGGER</div><div class="act">logging</div></div>
       </div>
-      <div class="grid g4" style="margin-top:12px">
-        <div class="card kpi"><div class="label">Realized P&L</div><div class="val" id="realPnl">-</div></div>
-        <div class="card kpi"><div class="label">Unrealized P&L</div><div class="val" id="unrealPnl">0.00</div></div>
-        <div class="card kpi"><div class="label">Total Trades</div><div class="val" id="totalTrades">-</div></div>
-        <div class="card kpi"><div class="label">Win Rate</div><div class="val" id="winRate">-</div></div>
+    </div>
+    <div class="midgrid">
+      <div class="panel">
+        <h3>FILTER · 8 HARD RULES</h3>
+        <div id="rules"></div>
+        <div style="margin-top:8px;font-size:10px;color:var(--muted)">Processing: WIF · stage 3/8</div>
       </div>
-      <div class="grid g2" style="margin-top:12px">
-        <div class="card">
-          <h3>AI Agent Command Center</h3>
-          <div class="agentpanel" id="agentPanel"></div>
+      <div class="panel">
+        <h3>ANALYST · SCORE 0–100</h3>
+        <div class="gauge">
+          <svg viewBox="0 0 140 140"><circle cx="70" cy="70" r="58" fill="none" stroke="#1e293b" stroke-width="10"/><circle cx="70" cy="70" r="58" fill="none" stroke="url(#g)" stroke-width="10" stroke-linecap="round" stroke-dasharray="364" stroke-dashoffset="80" transform="rotate(-90 70 70)"/><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a855f7"/><stop offset="100%" stop-color="#c084fc"/></linearGradient></defs></svg>
+          <div class="center"><div class="score">78</div><div class="thr">qualify 70+</div></div>
         </div>
-        <div class="card">
-          <h3>Agent Network</h3>
-          <div class="network" id="network"></div>
+        <div class="barlabel"><span>WIF</span><span>78 ≥ 70 → HANDOFF TO EXECUTOR</span></div>
+        <div style="margin-top:8px">
+          <div class="barlabel"><span>Momentum</span><span>82%</span></div><div class="bar"><div style="width:82%"></div></div>
+          <div class="barlabel"><span>Unique buyers</span><span>74%</span></div><div class="bar"><div style="width:74%"></div></div>
+          <div class="barlabel"><span>Buy/sell ratio</span><span>79%</span></div><div class="bar"><div style="width:79%"></div></div>
+          <div class="barlabel"><span>Holder growth</span><span>68%</span></div><div class="bar"><div style="width:68%"></div></div>
+          <div class="barlabel"><span>Liquidity/MC</span><span>71%</span></div><div class="bar"><div style="width:71%"></div></div>
+          <div class="barlabel"><span>Smart wallets</span><span>85%</span></div><div class="bar"><div style="width:85%"></div></div>
+        </div>
+        <div class="decision">78 ≥ 70 → HANDOFF TO EXECUTOR</div>
+      </div>
+    </div>
+    <div class="posgrid">
+      <div class="panel">
+        <h3>EXECUTOR + RISK · POSITION</h3>
+        <div class="chartbox">
+          <svg viewBox="0 0 500 220">
+            <polyline fill="none" stroke="#22d3ee" stroke-width="2" points="0,180 40,170 80,160 120,150 160,140 200,130 240,120 280,110 320,100 360,95 400,90 440,85 500,80"/>
+            <line x1="0" y1="140" x2="500" y2="140" stroke="#22c55e" stroke-dasharray="4" stroke-width="1" opacity=".6"/>
+            <line x1="0" y1="170" x2="500" y2="170" stroke="#ef4444" stroke-dasharray="4" stroke-width="1" opacity=".6"/>
+            <text x="8" y="135" fill="#22c55e" font-size="9">entry</text>
+            <text x="8" y="165" fill="#ef4444" font-size="9">stop</text>
+          </svg>
         </div>
       </div>
-      <div class="grid g2" style="margin-top:12px">
-        <div class="card">
-          <h3>Recent Activity Terminal</h3>
-          <div class="terminal" id="terminal"></div>
+      <div class="panel">
+        <h3>POSITION METRICS</h3>
+        <div class="posmetrics">
+          <div class="m"><div class="k">Token</div><div class="v">WIF</div></div>
+          <div class="m"><div class="k">Status</div><div class="v" style="color:var(--green)">OPEN</div></div>
+          <div class="m"><div class="k">Entry</div><div class="v">$2.41</div></div>
+          <div class="m"><div class="k">Current</div><div class="v">$2.68</div></div>
+          <div class="m"><div class="k">Size</div><div class="v">$50.00</div></div>
+          <div class="m"><div class="k">Stop-loss</div><div class="v">-5%</div></div>
+          <div class="m"><div class="k">Trail</div><div class="v">ON</div></div>
+          <div class="m"><div class="k">P/L</div><div class="v" style="color:var(--green)">+$5.60 (+11.2%)</div></div>
         </div>
-        <div class="card">
-          <h3>System Brain</h3>
-          <div id="systemBrain"></div>
-        </div>
-        <div class="card">
-          <h3>System Health</h3>
-          <div id="health"></div>
-        </div>
       </div>
-    </section>
-    <section class="view" id="view-scanner">
-      <div class="card">
-        <h3>Live Market Scanner</h3>
-        <div style="margin-bottom:8px">
-          <button class="btn" onclick="startScanner()">Start Scanner</button>
-          <button class="btn ghost" onclick="stopScanner()">Stop Scanner</button>
-        </div>
-        <div id="scannerTable"></div>
+    </div>
+    <div class="bottomgrid">
+      <div class="panel">
+        <h3>STATS FROM THE NIGHT</h3>
+        <div id="stats"></div>
       </div>
-      <div class="card" style="margin-top:12px">
-        <h3>Market Chart</h3>
-        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-          <select id="symSelect" class="btn ghost"></select>
-          <select id="tfSelect" class="btn ghost">
-            <option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option>
-            <option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
-          </select>
-          <button class="btn" onclick="loadChart()">Load</button>
-        </div>
-        <div id="chart" style="height:420px"></div>
+      <div class="panel">
+        <h3>$ tail -f night.log</h3>
+        <div class="terminal" id="term"></div>
       </div>
-    </section>
-    <section class="view" id="view-rug">
-      <div class="card">
-        <h3>Rug Check / Asset Risk</h3>
-        <p style="color:var(--muted)">Risk assessments from scanner signals and reconciliation events.</p>
-        <div id="rugTable"></div>
-      </div>
-    </section>
-    <section class="view" id="view-sizer">
-      <div class="card">
-        <h3>Sizer</h3>
-        <div class="grid g3">
-          <div class="kpi"><div class="label">Max Risk/Trade</div><div class="val">0.5%</div></div>
-          <div class="kpi"><div class="label">Max Daily Loss</div><div class="val">1%</div></div>
-          <div class="kpi"><div class="label">Max Positions</div><div class="val">1</div></div>
-        </div>
-        <p style="color:var(--muted);margin-top:10px">Latest sizing decisions from events log.</p>
-        <div id="sizerEvents"></div>
-        <div id="sizerConfig" style="margin-top:10px"></div>
-      </div>
-    </section>
-    <section class="view" id="view-executer">
-      <div class="card">
-        <h3>Executer</h3>
-        <div style="margin-bottom:8px">
-          <button class="btn" onclick="enableTrading()">Enable Trading</button>
-          <button class="btn ghost" onclick="disableTrading()">Disable Trading</button>
-        </div>
-        <div id="tradesTable"></div>
-      </div>
-    </section>
-    <section class="view" id="view-positions">
-      <div class="card">
-        <h3>Open Positions</h3>
-        <div id="positionsTable"></div>
-      </div>
-    </section>
-    <section class="view" id="view-logger">
-      <div class="card">
-        <h3>Logger</h3>
-        <div style="margin-bottom:8px">
-          <button class="btn ghost" onclick="filterEvents('')">All</button>
-          <button class="btn ghost" onclick="filterEvents('SCANNER')">Scanner</button>
-          <button class="btn ghost" onclick="filterEvents('RUG CHECK')">Rug Check</button>
-          <button class="btn ghost" onclick="filterEvents('SIZER')">Sizer</button>
-          <button class="btn ghost" onclick="filterEvents('EXECUTER')">Executer</button>
-          <button class="btn ghost" onclick="filterEvents('SYSTEM')">System</button>
-        </div>
-        <div class="terminal" id="loggerTerminal" style="height:420px"></div>
-      </div>
-    </section>
-    <section class="view" id="view-equity">
-      <div class="card">
-        <h3>Equity Curve</h3>
-        <div id="equityChart" style="height:360px"></div>
-      </div>
-      <div class="card" style="margin-top:12px">
-        <h3>Performance</h3>
-        <div id="perf"></div>
-      </div>
-    </section>
-    <section class="view" id="view-admin">
-      <div class="card">
-        <h3>Admin Logs & Controls</h3>
-        <div style="margin-bottom:8px">
-          <button class="btn" onclick="halt()">Halt</button>
-          <button class="btn ghost" onclick="resume()">Resume</button>
-        </div>
-        <div id="adminStatus"></div>
-      </div>
-    </section>
-    <section class="view" id="view-settings">
-      <div class="card">
-        <h3>Settings</h3>
-        <div id="settingsInfo"></div>
-      </div>
-    </section>
+    </div>
   </main>
 </div>
+<div class="demo">DEMO DATA · simulated · no real trades</div>
 <script>
-const API = '';
-let ws = null;
-let currentAgentFilter = '';
-let chart = null, candleSeries = null, equityChart = null, equitySeries = null;
-let lastEventId = 0;
-
-function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
-function showView(v){
-  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
-  document.getElementById('view-'+v).classList.add('active');
-  document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.view===v));
-  if(v==='scanner') loadChart();
-  if(v==='equity') loadEquityChart();
-}
-function setKpi(id,val){const el=document.getElementById(id); if(el){el.textContent=val}}
-
-async function api(path){const r=await fetch(API+path);return r.json()}
-
-async function loadStatus(){
-  try{
-    const s=await api('/status');
-    document.getElementById('modeVal').textContent=s.trading_mode;
-    document.getElementById('balVal').textContent=s.simulated_starting_balance+' USDT';
-    setKpi('openPos', s.open_positions);
-    setKpi('dailyPnl', s.daily_loss_used);
-    document.getElementById('exStatus').textContent = s.worker_healthy?'connected':'degraded';
-    document.getElementById('exDot').className='statusdot '+(s.worker_healthy?'ok':'bad');
-    document.getElementById('systemBrain').innerHTML = `
-      <div class="healthrow"><span class="k">Workflow Stage</span><span>${s.workflow_stage||'idle'}</span></div>
-      <div class="healthrow"><span class="k">Mode</span><span>${s.trading_mode}</span></div>
-      <div class="healthrow"><span class="k">Worker</span><span>${s.worker_healthy?'healthy':'degraded'}</span></div>
-      <div class="healthrow"><span class="k">Halted</span><span>${s.halted}</span></div>`;
-    document.getElementById('health').innerHTML = `
-      <div class="healthrow"><span class="k">Backend</span><span>ok</span></div>
-      <div class="healthrow"><span class="k">Mode</span><span>${s.trading_mode}</span></div>
-      <div class="healthrow"><span class="k">Live Authorized</span><span>${s.live_authorized}</span></div>
-      <div class="healthrow"><span class="k">Halted</span><span>${s.halted}</span></div>
-      <div class="healthrow"><span class="k">Worker HB</span><span>${s.worker_heartbeat?.status||'n/a'}</span></div>
-      <div class="healthrow"><span class="k">Daily Loss Used</span><span>${s.daily_loss_used}</span></div>
-      <div class="healthrow"><span class="k">Remaining Budget</span><span>${s.daily_loss_remaining}</span></div>`;
-    document.getElementById('adminStatus').innerHTML = `
-      <div class="healthrow"><span class="k">Halted</span><span>${s.halted}</span></div>
-      <div class="healthrow"><span class="k">Reason</span><span>${s.halt_reason||'-'}</span></div>
-      <div class="healthrow"><span class="k">Mode</span><span>${s.trading_mode}</span></div>`;
-    document.getElementById('settingsInfo').innerHTML = `
-      <div class="healthrow"><span class="k">Trading Mode</span><span>${s.trading_mode}</span></div>
-      <div class="healthrow"><span class="k">Broker Enabled</span><span>${s.broker_enabled}</span></div>
-      <div class="healthrow"><span class="k">Auto Trade</span><span>${s.auto_trade}</span></div>
-      <div class="healthrow"><span class="k">Live Trading Enabled</span><span>${s.live_trading_enabled}</span></div>
-      <div class="healthrow"><span class="k">Use Testnet</span><span>${s.use_testnet}</span></div>
-      <div class="healthrow"><span class="k">Simulated Balance</span><span>${s.simulated_starting_balance}</span></div>`;
-  }catch(e){console.error(e)}
-}
-
-async function loadSizerConfig(){
-  try{
-    const c=await api('/api/sizer/config');
-    document.getElementById('sizerConfig').innerHTML = `<div class="healthrow"><span class="k">Risk/Trade</span><span>${(Number(c.risk_per_trade_pct)*100).toFixed(2)}%</span></div>
-      <div class="healthrow"><span class="k">Max Daily Loss</span><span>${(Number(c.max_daily_loss_pct)*100).toFixed(2)}%</span></div>
-      <div class="healthrow"><span class="k">Max Leverage</span><span>${c.max_leverage}x</span></div>
-      <div class="healthrow"><span class="k">Max Positions</span><span>${c.max_simultaneous_positions}</span></div>`;
-  }catch(e){}
-}
-async function loadEquity(){
-  try{
-    const e=await api('/api/equity/analytics');
-    const eq=e.analytics;
-    setKpi('eqVal', Number(eq.current_equity||0).toFixed(4));
-    setKpi('realPnl', Number(eq.realized_pnl||0).toFixed(4));
-    setKpi('totalTrades', eq.total_trades);
-    setKpi('winRate', (eq.win_rate||0).toFixed(1)+'%');
-    setKpi('availVal', eq.starting_equity||'-');
-    document.getElementById('perf').innerHTML = `
-      <div class="healthrow"><span class="k">Realized P&L</span><span>${Number(eq.realized_pnl||0).toFixed(4)}</span></div>
-      <div class="healthrow"><span class="k">Unrealized P&L</span><span>${Number(eq.unrealized_pnl||0).toFixed(4)}</span></div>
-      <div class="healthrow"><span class="k">Fees</span><span>${Number(eq.fees||0).toFixed(4)}</span></div>
-      <div class="healthrow"><span class="k">Total Trades</span><span>${eq.total_trades}</span></div>
-      <div class="healthrow"><span class="k">Wins</span><span>${eq.winning_trades}</span></div>
-      <div class="healthrow"><span class="k">Losses</span><span>${eq.losing_trades}</span></div>
-      <div class="healthrow"><span class="k">Win Rate</span><span>${eq.win_rate||0}%</span></div>
-      <div class="healthrow"><span class="k">Profit Factor</span><span>${eq.profit_factor||'n/a'}</span></div>
-      <div class="healthrow"><span class="k">Max Drawdown</span><span>${Number(eq.max_drawdown||0).toFixed(4)}</span></div>
-      <div class="healthrow"><span class="k">Open Positions</span><span>${eq.open_trades}</span></div>`;
-  }catch(e){console.error(e)}
-}
-
-async function loadSignals(){
-  try{
-    const d=await api('/signals');
-    const rows=d.signals||[];
-    // scanner results
-    try{
-      const sr=await api('/api/scanner/results?limit=20');
-      const srows=sr.results||[];
-      if(srows.length){
-        let sh='<table><tr><th>Symbol</th><th>Dir</th><th>Score</th><th>Entry</th><th>SL</th><th>TP</th><th>Explanation</th></tr>';
-        for(const r of srows){sh+=`<tr><td>${r.symbol}</td><td>${r.direction}</td><td>${r.score}</td><td>${r.entry_price}</td><td>${r.stop_loss}</td><td>${r.take_profit}</td><td>${r.explanation||''}</td></tr>`;}
-        sh+='</table>';
-        document.getElementById('scannerTable').innerHTML=sh;
-      }
-    }catch(e){}
-    let html='<table><tr><th>Symbol</th><th>Dir</th><th>Entry</th><th>SL</th><th>TP</th><th>Accepted</th><th>Reason</th></tr>';
-    for(const r of rows){
-      html+=`<tr><td>${r.symbol}</td><td>${r.direction}</td><td>${r.entry_price}</td><td>${r.stop_loss}</td><td>${r.take_profit}</td><td>${r.accepted}</td><td>${r.rejection_reason||''}</td></tr>`;
-    }
-    html+='</table>';
-    document.getElementById('scannerTable').innerHTML = rows.length?html:'<p>No signals.</p>';
-    document.getElementById('rugTable').innerHTML = rows.length?html:'<p>No data.</p>';
-    const syms=[...new Set(rows.map(r=>r.symbol))];
-    if(syms.length){
-      const sel=document.getElementById('symSelect');
-      const cur=sel.value;
-      sel.innerHTML=syms.map(s=>`<option value="${s}">${s}</option>`).join('');
-      if(cur) sel.value=cur;
-    }
-  }catch(e){console.error(e)}
-}
-
-async function loadTrades(){
-  try{
-    const d=await api('/trades');
-    const rows=d.trades||[];
-    let html='<table><tr><th>ID</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Status</th><th>PnL</th></tr>';
-    for(const r of rows){
-      html+=`<tr><td>${r.id}</td><td>${r.symbol}</td><td>${r.direction}</td><td>${r.quantity}</td><td>${r.status}</td><td>${r.realized_pnl}</td></tr>`;
-    }
-    html+='</table>';
-    document.getElementById('tradesTable').innerHTML = rows.length?html:'<p>No trades.</p>';
-    const open=rows.filter(r=>r.status==='OPEN');
-    let phtml='<table><tr><th>ID</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Entry</th><th>SL</th><th>TP</th></tr>';
-    for(const r of open){
-      phtml+=`<tr><td>${r.id}</td><td>${r.symbol}</td><td>${r.direction}</td><td>${r.quantity}</td><td>${r.entry_price}</td><td>${r.stop_loss}</td><td>${r.take_profit}</td></tr>`;
-    }
-    phtml+='</table>';
-    document.getElementById('positionsTable').innerHTML = open.length?phtml:'<p>No open positions.</p>';
-  }catch(e){console.error(e)}
-}
-
-async function loadEvents(){
-  try{
-    const d=await api('/api/logs?limit=100'+(currentAgentFilter?('&agent='+encodeURIComponent(currentAgentFilter)):''));
-    const rows=d.events||[];
-    const term=document.getElementById('loggerTerminal');
-    term.innerHTML = rows.slice().reverse().map(e=>`<div class="term-line">[${new Date(e.ts*1000).toLocaleTimeString()}] ${e.agent} - ${e.event_type} ${e.status} ${e.reason||''}</div>`).join('');
-    const t20=rows.slice(0,20).reverse();
-    document.getElementById('terminal').innerHTML = t20.map(e=>`<div class="term-line">[${new Date(e.ts*1000).toLocaleTimeString()}] ${e.agent} - ${e.event_type} ${e.status} ${e.reason||''}</div>`).join('');
-    // sizer events
-    const sizer=rows.filter(e=>e.agent==='SIZER').slice(0,20);
-    document.getElementById('sizerEvents').innerHTML = sizer.length?sizer.map(e=>`<div class="term-line">${e.status} ${e.reason||''}</div>`).join(''):'<p>No sizing events.</p>';
-  }catch(e){console.error(e)}
-}
-
-async function loadAgents(){
-  try{
-    const d=await api('/agents');
-    const list=d.agents||[];
-    const panel=document.getElementById('agentPanel');
-    const icons={SCANNER:'SC', 'RUG CHECK':'RC', SIZER:'SZ', EXECUTER:'EX', LOGGER:'LG', EQUITY:'EQ', ADMIN:'AD'};
-    panel.innerHTML=list.map(a=>`
-      <div class="agentrow">
-        <div class="agenticon">${icons[a.agent]||'AG'}</div>
-        <div class="agentmeta">
-          <div class="agentname">${a.agent}</div>
-          <div class="agentdesc">${a.event_type||''} - ${a.reason||'idle'}</div>
-        </div>
-        <span class="badge b-idle">${a.status||'IDLE'}</span>
-        ${a.status&&a.status!=='IDLE'?'<div class="pulse"></div>':''}
-      </div>`).join('');
-    const net=document.getElementById('network');
-    net.innerHTML='';
-    const names=['SCANNER','RUG CHECK','SIZER','EXECUTER','LOGGER','EQUITY','ADMIN'];
-    const pos={SCANNER:{x:8,y:50}, 'RUG CHECK':{x:22,y:50}, SIZER:{x:36,y:50}, EXECUTER:{x:50,y:50}, LOGGER:{x:64,y:30}, EQUITY:{x:64,y:70}, ADMIN:{x:82,y:50}};
-    for(const n of names){
-      const p=pos[n];
-      const el=document.createElement('div');
-      el.className='node';
-      el.style.left=p.x+'%'; el.style.top=p.y+'%';
-      el.textContent=n;
-      const ag=list.find(a=>a.agent===n);
-      if(ag && ag.status && ag.status!=='IDLE' && ag.status!=='') el.classList.add('active');
-      net.appendChild(el);
-    }
-  }catch(e){console.error(e)}
-}
-
-function filterEvents(a){currentAgentFilter=a; loadEvents()}
-
-async function startScanner(){await fetch('/resume',{method:'POST'}); alert('Scanner control requested');}
-async function stopScanner(){await fetch('/halt',{method:'POST'}); alert('Halt requested');}
-async function enableTrading(){if(confirm('Enable trading?')){alert('Trading enable requires backend flags; use .env');}}
-async function disableTrading(){if(confirm('Disable trading?')){await fetch('/halt',{method:'POST'}); loadStatus();}}
-async function emergencyStop(){if(confirm('EMERGENCY STOP?')){await fetch('/halt',{method:'POST'}); loadStatus();}}
-async function halt(){if(confirm('Halt system?')){await fetch('/halt',{method:'POST'}); loadStatus();}}
-async function resume(){if(confirm('Resume system?')){await fetch('/resume',{method:'POST'}); loadStatus();}}
-function toggleAdmin(){showView('admin')}
-
-async function loadChart(){
-  const sym=document.getElementById('symSelect').value||'BTCUSDT';
-  const tf=document.getElementById('tfSelect').value;
-  const url=`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${tf}&limit=200`;
-  try{
-    const r=await fetch(url); const data=await r.json();
-    const candles=data.map(k=>({time:k[0]/1000,open:+k[1],high:+k[2],low:+k[3],close:+k[4]}));
-    const vol=data.map(k=>({time:k[0]/1000,value:+k[5],color:+k[4]>=+k[1]?'rgba(34,197,94,.5)':'rgba(239,68,68,.5)'}));
-    if(!chart){
-      chart=LightweightCharts.createChart(document.getElementById('chart'),{layout:{background:{color:'#0b1224'},textColor:'#e8ecf4'},grid:{vertLines:{color:'#1c2a4a'},horzLines:{color:'#1c2a4a'}},width:document.getElementById('chart').clientWidth,height:420});
-      candleSeries=chart.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',borderUpColor:'#22c55e',borderDownColor:'#ef4444',wickUpColor:'#22c55e',wickDownColor:'#ef4444'});
-      const volSeries=chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:''});
-      volSeries.priceScale().applyOptions({scaleMargins:{top:0.8,bottom:0}});
-      candleSeries.setData(candles);
-      volSeries.setData(vol);
-    }else{
-      candleSeries.setData(candles);
-    }
-    chart.timeScale().fitContent();
-  }catch(e){console.error(e)}
-}
-
-async function loadEquityChart(){
-  try{
-    const d=await api('/api/equity/history?limit=200');
-    const rows=d.history||[];
-    let cum=0; const pts=[];
-    for(const r of rows.slice().reverse()){cum+=Number(r.realized_pnl||0); pts.push({time:Math.floor(r.ts),value:cum});}
-    if(!equityChart){
-      equityChart=LightweightCharts.createChart(document.getElementById('equityChart'),{layout:{background:{color:'#0b1224'},textColor:'#e8ecf4'},grid:{vertLines:{color:'#1c2a4a'},horzLines:{color:'#1c2a4a'}},width:document.getElementById('equityChart').clientWidth,height:360});
-      equitySeries=equityChart.addLineSeries({color:'#00e5ff'});
-      equitySeries.setData(pts);
-    }else{
-      equitySeries.setData(pts);
-    }
-    equityChart.timeScale().fitContent();
-  }catch(e){console.error(e)}
-}
-
-function connectWS(){
-  const proto=location.protocol==='https:'?'wss':'ws';
-  ws=new WebSocket(proto+'://'+location.host+'/ws');
-  ws.onmessage=(ev)=>{
-    try{
-      const m=JSON.parse(ev.data);
-      if(m.type==='status'){
-        const s=m.data;
-        setKpi('openPos', s.open_positions);
-        if(s.equity){ setKpi('realPnl', Number(s.equity.realized_pnl||0).toFixed(4)); setKpi('totalTrades', s.equity.total_trades); setKpi('winRate', (s.equity.win_rate||0).toFixed(1)+'%'); }
-      }
-    }catch(e){}
-  };
-  ws.onclose=()=>setTimeout(connectWS,3000);
-}
-connectWS();
-
-async function checkAuth(){
-  try{
-    const s=await api('/api/auth/status');
-    if(s.authenticated){ document.getElementById('loginOverlay').style.display='none'; }
-    else { document.getElementById('loginOverlay').style.display='flex'; if(s.setup_required){ document.getElementById('loginMsg').textContent='Setup required: set ADMIN_USERNAME/ADMIN_PASSWORD env.'; } }
-  }catch(e){}
-}
-async function doLogin(){
-  const username=document.getElementById('loginUser').value;
-  const password=document.getElementById('loginPass').value;
-  const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
-  const d=await r.json();
-  if(r.ok){ document.getElementById('loginOverlay').style.display='none'; refreshAll(); }
-  else { document.getElementById('loginMsg').textContent=d.error||'login failed'; }
-}
-setInterval(()=>{document.getElementById('clockVal').textContent=new Date().toLocaleTimeString()},1000);
-
-async function refreshAll(){await Promise.all([loadStatus(),loadEquity(),loadSignals(),loadTrades(),loadEvents(),loadAgents(),loadSizerConfig()])}
-checkAuth();
-refreshAll();
-setInterval(refreshAll,8000);
+const tokens=[{sym:"WIF",age:"2h",mc:"$1.2M",liq:"$340k",new:true},{sym:"BONK",age:"5h",mc:"$890k",liq:"$210k",new:false},{sym:"POPCAT",age:"1h",mc:"$2.1M",liq:"$520k",new:true},{sym:"MEW",age:"8h",mc:"$640k",liq:"$180k",new:false},{sym:"JUP",age:"12h",mc:"$4.3M",liq:"$1.1M",new:false},{sym:"PYTH",age:"3h",mc:"$3.0M",liq:"$900k",new:true}];
+const ticker=document.getElementById('ticker');
+ticker.innerHTML=tokens.map(t=>`<div class="tokencard ${t.new?'new':''}"><div class="tokenrow"><span class="sym">${t.sym}</span><span>${t.age}</span></div><div class="tokenrow"><span>MC</span><span>${t.mc}</span></div><div class="tokenrow"><span>Liq</span><span>${t.liq}</span></div><div class="tokenrow"><span>Status</span><span style="color:var(--green)">PASS</span></div></div>`).join('');
+const rules=[["Mint authority revoked","PASS","revoked","required"],["Freeze authority revoked","PASS","revoked","required"],["LP locked / burned","PASS","burned","required"],["Top holder < 15%","PASS","9.2%","<15%"],["Min liquidity $50k","PASS","$340k",">=$50k"],["No honeypot","PASS","clean","clean"],["Buy tax <= 5%","PASS","2%","<=5%"],["Sell tax <= 5%","PASS","2%","<=5%"]];
+document.getElementById('rules').innerHTML=rules.map(r=>`<div class="rule"><span class="rname">${r[0]}</span><span class="val ${r[1]==='PASS'?'pass':'fail'}">${r[1]}</span><span style="color:var(--muted);font-size:10px">${r[2]} / ${r[3]}</span></div>`).join('');
+const stats=[["Pairs scanned",1248,1248],["Tokens rejected",1190,1248],["Tokens scored",58,1248],["Trades taken",47,58],["Winning trades",31,47],["Losing trades",16,47],["Win rate",66,100],["Worst loss",-12,100],["Best trade",34,100]];
+document.getElementById('stats').innerHTML=stats.map(s=>`<div class="statrow"><span class="label">${s[0]}</span><span class="val">${s[1]}${s[0].includes('rate')?'%':''}</span><div class="bar"><div style="width:${Math.min(100,Math.abs(s[1])/s[2]*100)}%;background:linear-gradient(90deg,var(--teal),var(--cyan))"></div></div></div>`).join('');
+const logs=[["03:45:12","SCOUT","New token discovered: WIF","SCAN"],["03:45:13","FILTER","Security checks passed","CHECK"],["03:45:15","ANALYST","Token scored 78","SCORE"],["03:45:17","EXECUTOR","Trade approved","ENTER"],["03:45:18","EXECUTOR","Transaction submitted","BUY"],["03:45:20","RISK","Position profitable","WIN"],["03:45:22","RISK","Trailing stop activated","WIN"],["03:45:24","LOGGER","Event recorded","INFO"]];
+const term=document.getElementById('term');
+function renderTerm(){term.innerHTML=logs.map(l=>`<div class="term"><span class="ts">${l[0]}</span> <span class="tag ${l[3]}">${l[1]}</span> <span>${l[2]}</span></div>`).join('')+`<div class="term"><span class="cursor"></span></div>`;}
+renderTerm();
+setInterval(()=>{const t=new Date().toTimeString().slice(0,8);logs.push([t,"SCOUT","New token discovered: DEMO"+Math.floor(Math.random()*9),"SCAN"]);if(logs.length>40)logs.shift();renderTerm();term.scrollTop=term.scrollHeight;},4000);
+let sec=4*3600+12*60+33;
+setInterval(()=>{sec++;const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;document.querySelector('.mono').textContent=`session ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`},1000);
 </script>
 </body>
 </html>
