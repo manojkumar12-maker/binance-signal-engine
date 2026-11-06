@@ -2,6 +2,7 @@
 from decimal import Decimal
 from .binance_client import BinanceClient
 from .storage import Storage
+from .config import settings
 
 
 class ReconciliationService:
@@ -11,6 +12,9 @@ class ReconciliationService:
 
     def reconcile(self) -> dict:
         result = {"positions_synced": 0, "orders_synced": 0, "discrepancies": []}
+        # In PAPER mode (or without live credentials), do not call authenticated exchange endpoints.
+        if settings.paper_mode:
+            return result
         try:
             ex_positions = self.client.position_risk()
         except Exception as e:

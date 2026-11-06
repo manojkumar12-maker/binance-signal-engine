@@ -93,6 +93,8 @@ def test_missing_admin_fail_closed():
 
 # PAPER-only enforcement
 def test_paper_only_status():
+    from src.config import settings
+    settings.trading_mode = "paper"
     # login first
     r = api_client.post("/api/auth/login", json={"username": "admin", "password": "StrongPass123!"})
     assert r.status_code == 200
