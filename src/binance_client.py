@@ -65,6 +65,9 @@ class BinanceClient:
         data = self._request("GET", "/fapi/v1/premiumIndex", {"symbol": symbol})
         return Decimal(str(data.get("lastFundingRate", "0")))
 
+    def ticker_24hr(self) -> list:
+        return self._request("GET", "/fapi/v1/ticker/24hr")
+
     # Account
     def account(self) -> dict:
         return self._request("GET", "/fapi/v2/account", signed=True)

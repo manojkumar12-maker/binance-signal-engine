@@ -14,7 +14,9 @@ services:
         value: "false"
       - key: USE_TESTNET
         value: "true"
-      - key: ADMIN_TOKEN
+      - key: SCAN_TOP_N
+    value: "30"
+  - key: ADMIN_TOKEN
         generateValue: true
       - key: RUN_WORKER
         value: "true"

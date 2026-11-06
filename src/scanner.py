@@ -1,6 +1,7 @@
 """Multi-symbol market scanner."""
 import time
 import logging
+import os
 from decimal import Decimal
 from .binance_client import BinanceClient
 from .signal_engine import SignalEngine
@@ -15,9 +16,38 @@ class Scanner:
     def __init__(self, client: BinanceClient, storage: Storage, symbols: list[str] | None = None):
         self.client = client
         self.storage = storage
-        self.symbols = symbols or settings.symbol_list
+        self.symbols = list(symbols or settings.symbol_list)
         self.sig_engine = SignalEngine(cooldown_seconds=settings.signal_cooldown_seconds)
         self.rug = RugChecker()
+        self.top_n = int(os.getenv("SCAN_TOP_N", "30"))
+        self._discovered_at = 0.0
+        self._discovered = None
+
+    def discover_symbols(self) -> list[str]:
+        # Auto-discover the most liquid USDT-M perpetuals by 24h quote volume.
+        now = time.time()
+        if self._discovered and (now - self._discovered_at) < 3600:
+            return self._discovered
+        try:
+            info = self.client.exchange_info()
+            trading = {s["symbol"] for s in info.get("symbols", [])
+                       if s.get("status") == "TRADING"
+                       and s.get("contractType") == "PERPETUAL"
+                       and s.get("quoteAsset") == "USDT"}
+            tickers = self.client.ticker_24hr()
+            ranked = sorted((t for t in tickers if t.get("symbol") in trading),
+                            key=lambda t: float(t.get("quoteVolume", 0) or 0), reverse=True)
+            syms = [t["symbol"] for t in ranked[:self.top_n]]
+            if syms:
+                self._discovered = syms
+                self._discovered_at = now
+                self.symbols = syms
+                self.storage.log_event("SCANNER", "", "discover", "ok", f"top{len(syms)} by volume")
+                return syms
+        except Exception as e:
+            log.warning("symbol discovery failed: %s", e)
+            self.storage.log_event("SCANNER", "", "discover", "error", str(e))
+        return self.symbols
 
     def set_symbols(self, symbols: list[str]):
         self.symbols = [s.strip().upper() for s in symbols if s.strip()]
@@ -81,7 +111,8 @@ class Scanner:
         return result
 
     def scan_once(self) -> list[dict]:
-        self.storage.upsert_agent_status("SCANNER", "SCANNING", current_activity="scanning symbols")
+        self.discover_symbols()
+        self.storage.upsert_agent_status("SCANNER", "SCANNING", current_activity=f"scanning {len(self.symbols)} symbols")
         self.storage.log_event("SCANNER", "", "scan", "started", f"symbols={len(self.symbols)}")
         results = []
         for sym in self.symbols:
