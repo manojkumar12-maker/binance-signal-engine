@@ -1,4 +1,4 @@
-# GROK AI TRADING TERMINAL
+# BINANCE SIGNAL ENGINE
 
 > **Paper-only** Binance USDT-M Futures signal engine and trading terminal.
 > Seven AI agents. Real market data. No fake trades. Live trading disabled by default.
