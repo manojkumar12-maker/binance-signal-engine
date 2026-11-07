@@ -13,6 +13,7 @@ from .storage import Storage
 from .kill_switch import KillSwitch
 from .worker_lock import WorkerLock
 from .reconciliation import ReconciliationService
+from .market_data import MarketDataService
 
 logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO))
 log = logging.getLogger("worker")
@@ -68,11 +69,24 @@ def main():
         log.error("exchange info failed: %s", e)
         info = {"symbols": []}
     engine = ExecutionEngine(client, storage, info)
-    orch = Orchestrator(client, storage)
 
-    log.info("Starting bot in mode=%s live_authorized=%s symbols=%s", settings.trading_mode, settings.live_authorized, settings.symbol_list)
+    market_data = None
+    if getattr(settings, "scan_all_usdt_perpetuals", True):
+        market_data = MarketDataService(client)
+        try:
+            universe = market_data.refresh_universe()
+            log.info("Market data universe: %s USDT perpetual symbols", len(universe))
+        except Exception as e:
+            log.warning("initial universe refresh failed: %s", e)
+        market_data.start()
+
+    orch = Orchestrator(client, storage, market_data=market_data)
+
+    symbols_desc = f"{len(market_data.get_universe())} USDT perpetuals" if market_data else settings.symbol_list
+    log.info("Starting bot in mode=%s live_authorized=%s symbols=%s", settings.trading_mode, settings.live_authorized, symbols_desc)
     storage.update_heartbeat("started")
-    storage.log_event("SYSTEM", "", "worker", "started", "worker started")
+    storage.log_event("SYSTEM", "", "worker", "started",
+                      f"worker started; universe={symbols_desc}")
     storage.upsert_agent_status("SCANNER", "RUNNING", current_activity="started")
     storage.upsert_agent_status("EXECUTER", "IDLE", current_activity="ready")
 
@@ -100,6 +114,8 @@ def main():
             time.sleep(10)
 
     storage.update_heartbeat("stopped")
+    if market_data is not None:
+        market_data.close()
     lock.release()
     client.close()
     storage.close()

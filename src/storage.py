@@ -18,7 +18,9 @@ class Storage:
     def __init__(self, path: str | None = None):
         self.path = path or _db_path()
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.path, check_same_thread=False)
+        self.conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout=30000")
         self._init_schema()
         self._migrate()
 
@@ -162,6 +164,53 @@ class Storage:
             warnings TEXT,
             metrics TEXT
         );
+        CREATE TABLE IF NOT EXISTS signal_diagnostics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL,
+            symbol TEXT,
+            regime TEXT,
+            regime_detail TEXT,
+            long_score REAL,
+            long_decision TEXT,
+            long_reason TEXT,
+            long_checks TEXT,
+            short_score REAL,
+            short_decision TEXT,
+            short_reason TEXT,
+            short_checks TEXT,
+            final_decision TEXT,
+            rejection_reason TEXT,
+            signal_id TEXT,
+            strategy TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_diag_ts ON signal_diagnostics(ts);
+        CREATE INDEX IF NOT EXISTS idx_diag_symbol ON signal_diagnostics(symbol);
+        CREATE TABLE IF NOT EXISTS scan_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL,
+            total_scans INTEGER,
+            qualified INTEGER,
+            watchlist INTEGER,
+            errors INTEGER,
+            avg_long_score REAL,
+            avg_short_score REAL
+        );
+        CREATE TABLE IF NOT EXISTS market_candles (
+            symbol TEXT NOT NULL,
+            interval TEXT NOT NULL,
+            updated_at REAL,
+            candles TEXT,
+            PRIMARY KEY (symbol, interval)
+        );
+        CREATE TABLE IF NOT EXISTS market_universe (
+            symbol TEXT PRIMARY KEY,
+            quote_volume TEXT,
+            updated_at REAL
+        );
+        CREATE TABLE IF NOT EXISTS market_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
         INSERT OR IGNORE INTO agent_status (name,status) VALUES ('ADMIN','IDLE');
         """)
         self.conn.commit()
@@ -264,6 +313,90 @@ class Storage:
         import time
         cur = self.conn.cursor()
         cur.execute("INSERT INTO reconciliation_log (ts, result) VALUES (?, ?)", (time.time(), result))
+        self.conn.commit()
+
+    def save_signal_diagnostic(self, diag):
+        import json
+        d = diag.to_dict() if hasattr(diag, "to_dict") else dict(diag)
+        le = d.get("long_eval") or {}
+        se = d.get("short_eval") or {}
+        rd = d.get("regime_detail") or {}
+        strategy = le.get("strategy") if d.get("final_decision") == "SIGNAL" and le.get("decision") == "ACCEPTED" else (
+            se.get("strategy") if d.get("final_decision") == "SIGNAL" else le.get("strategy") or se.get("strategy") or "")
+        cur = self.conn.cursor()
+        cur.execute(
+            """INSERT INTO signal_diagnostics
+               (ts,symbol,regime,regime_detail,long_score,long_decision,long_reason,long_checks,
+                short_score,short_decision,short_reason,short_checks,final_decision,rejection_reason,signal_id,strategy)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (d.get("timestamp", time.time()), d.get("symbol", ""), d.get("regime", ""),
+             json.dumps(rd), le.get("score", 0.0), le.get("decision", ""), le.get("reason", ""),
+             json.dumps(le.get("checks", {})), se.get("score", 0.0), se.get("decision", ""), se.get("reason", ""),
+             json.dumps(se.get("checks", {})), d.get("final_decision", ""), d.get("rejection_reason", ""),
+             d.get("signal_id", ""), strategy),
+        )
+        self.conn.commit()
+
+    def recent_diagnostics(self, limit: int = 50, symbol: str | None = None, signals_only: bool = False) -> list[dict]:
+        cur = self.conn.cursor()
+        q = "SELECT * FROM signal_diagnostics"
+        conds, params = [], []
+        if symbol:
+            conds.append("symbol=?")
+            params.append(symbol)
+        if signals_only:
+            conds.append("final_decision='SIGNAL'")
+        if conds:
+            q += " WHERE " + " AND ".join(conds)
+        q += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        cols = [c[1] for c in cur.execute("PRAGMA table_info(signal_diagnostics)").fetchall()]
+        return [dict(zip(cols, r)) for r in cur.execute(q, params).fetchall()]
+
+    def save_scan_stats(self, stats: dict):
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO scan_stats (ts,total_scans,qualified,watchlist,errors,avg_long_score,avg_short_score) VALUES (?,?,?,?,?,?,?)",
+            (stats.get("ts", time.time()), stats.get("total_scans", 0), stats.get("qualified", 0),
+             stats.get("watchlist", 0), stats.get("errors", 0), stats.get("avg_long_score", 0.0), stats.get("avg_short_score", 0.0)),
+        )
+        self.conn.commit()
+
+    def diagnostics_summary(self) -> dict:
+        cur = self.conn.cursor()
+        total = cur.execute("SELECT COUNT(*) FROM signal_diagnostics").fetchone()[0]
+        signals = cur.execute("SELECT COUNT(*) FROM signal_diagnostics WHERE final_decision='SIGNAL'").fetchone()[0]
+        by_symbol = cur.execute(
+            "SELECT symbol, COUNT(*), SUM(CASE WHEN final_decision='SIGNAL' THEN 1 ELSE 0 END) FROM signal_diagnostics GROUP BY symbol"
+        ).fetchall()
+        by_strategy = cur.execute(
+            "SELECT strategy, COUNT(*) FROM signal_diagnostics WHERE final_decision='SIGNAL' AND strategy!='' GROUP BY strategy"
+        ).fetchall()
+        by_regime = cur.execute(
+            "SELECT regime, COUNT(*) FROM signal_diagnostics GROUP BY regime"
+        ).fetchall()
+        top_reasons = cur.execute(
+            "SELECT rejection_reason, COUNT(*) AS c FROM signal_diagnostics WHERE final_decision='NO_TRADE' AND rejection_reason!='' GROUP BY rejection_reason ORDER BY c DESC LIMIT 10"
+        ).fetchall()
+        avgs = cur.execute(
+            "SELECT AVG(long_score), AVG(short_score) FROM signal_diagnostics"
+        ).fetchone()
+        return {
+            "total_scans": total,
+            "signals": signals,
+            "rejected": total - signals,
+            "by_symbol": [{"symbol": r[0], "scans": r[1], "signals": r[2] or 0} for r in by_symbol],
+            "by_strategy": [{"strategy": r[0], "signals": r[1]} for r in by_strategy],
+            "by_regime": [{"regime": r[0], "count": r[1]} for r in by_regime],
+            "top_rejection_reasons": [{"reason": r[0], "count": r[1]} for r in top_reasons],
+            "avg_long_score": round(avgs[0] or 0.0, 1),
+            "avg_short_score": round(avgs[1] or 0.0, 1),
+        }
+
+    def prune_diagnostics(self, keep: int = 10000):
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM signal_diagnostics WHERE id NOT IN (SELECT id FROM signal_diagnostics ORDER BY id DESC LIMIT ?)", (keep,))
+        cur.execute("DELETE FROM scan_stats WHERE id NOT IN (SELECT id FROM scan_stats ORDER BY id DESC LIMIT ?)", (keep,))
         self.conn.commit()
 
     def log_event(self, agent: str, symbol: str = "", event_type: str = "", status: str = "", reason: str = "", trade_id: str = "",
@@ -489,6 +622,78 @@ class Storage:
             except Exception:
                 pass
         return d
+
+    # Market data cache (all USDT-M perpetuals)
+    def save_market_candles(self, symbol, interval, candles, updated_at=None):
+        self.save_market_candles_bulk([(symbol, interval, candles)], updated_at=updated_at)
+
+    def save_market_candles_bulk(self, items, updated_at=None):
+        import json
+        ts = time.time() if updated_at is None else updated_at
+        rows = [(str(symbol), str(interval), ts, json.dumps(candles, separators=(",", ":")))
+                for symbol, interval, candles in items]
+        if not rows:
+            return
+        with self.conn:
+            self.conn.executemany(
+                """INSERT INTO market_candles (symbol,interval,updated_at,candles) VALUES (?,?,?,?)
+                   ON CONFLICT(symbol,interval) DO UPDATE SET updated_at=excluded.updated_at, candles=excluded.candles""",
+                rows)
+
+    def get_market_candles(self, symbol, interval):
+        import json
+        cur = self.conn.cursor()
+        cur.execute("SELECT candles, updated_at FROM market_candles WHERE symbol=? AND interval=?", (symbol, interval))
+        r = cur.fetchone()
+        if not r:
+            return [], 0.0
+        try:
+            return json.loads(r[0]), float(r[1] or 0.0)
+        except Exception:
+            return [], float(r[1] or 0.0)
+
+    def save_market_universe(self, symbols):
+        now = time.time()
+        rows = []
+        for item in symbols:
+            if isinstance(item, (tuple, list)):
+                sym, qv = item[0], item[1] if len(item) > 1 else ""
+            else:
+                sym, qv = item, ""
+            rows.append((str(sym), str(qv), now))
+        with self.conn:
+            self.conn.execute("DELETE FROM market_universe")
+            self.conn.executemany(
+                "INSERT OR REPLACE INTO market_universe (symbol,quote_volume,updated_at) VALUES (?,?,?)", rows)
+
+    def get_market_universe(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT symbol FROM market_universe ORDER BY symbol")
+        return [r[0] for r in cur.fetchall()]
+
+    def set_market_meta(self, key, value):
+        with self.conn:
+            self.conn.execute("INSERT OR REPLACE INTO market_meta (key,value) VALUES (?,?)", (str(key), str(value)))
+
+    def get_market_meta(self, key, default=None):
+        cur = self.conn.cursor()
+        cur.execute("SELECT value FROM market_meta WHERE key=?", (str(key),))
+        r = cur.fetchone()
+        return r[0] if r else default
+
+    def market_data_summary(self):
+        cur = self.conn.cursor()
+        symbols = cur.execute("SELECT COUNT(*) FROM market_universe").fetchone()[0]
+        cached = cur.execute("SELECT COUNT(*) FROM market_candles").fetchone()[0]
+        row = cur.execute("SELECT MAX(updated_at) FROM market_candles").fetchone()
+        return {
+            "universe_symbols": symbols,
+            "cached_series": cached,
+            "last_candle_update": row[0] if row else None,
+            "last_refresh": self.get_market_meta("last_refresh"),
+            "last_refresh_status": self.get_market_meta("last_refresh_status", ""),
+            "last_refresh_count": self.get_market_meta("last_refresh_count", "0"),
+        }
 
     # Users
     def create_user(self, username, password_hash, salt, must_change_password=False):

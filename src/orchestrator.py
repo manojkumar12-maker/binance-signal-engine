@@ -39,11 +39,12 @@ class TaskResult:
 
 
 class Orchestrator:
-    def __init__(self, client, storage):
+    def __init__(self, client, storage, market_data=None):
         self.client = client
         self.storage = storage
+        self.market_data = market_data
         self.kill = KillSwitch(storage)
-        self.scanner = Scanner(client, storage, settings.symbol_list)
+        self.scanner = Scanner(client, storage, market_data=market_data)
         self.rug = RugChecker()
         self.sizer = Sizer()
         self.paper = PaperTrader(storage)
@@ -103,10 +104,8 @@ class Orchestrator:
                 # process signal if present and not duplicate
                 if not (isinstance(sig, dict) and sig.get("direction") and not sig.get("duplicate")):
                     continue
-                signal_id = None  # scanner didn't return id; build from symbol+direction+time
-                # try to find latest signal id in storage? Use scanner result candle time
-                # We'll use a synthetic id
-                signal_id = f"{symbol}:{sig.get('direction')}:{int(time.time())}"
+                # scanner provides the real signal id (symbol:direction:strategy:candle_close_time)
+                signal_id = sig.get("signal_id") or f"{symbol}:{sig.get('direction')}:{int(time.time())}"
 
                 # Rug check (already in scan result)
                 risk = sr.get("risk") or {}
@@ -124,18 +123,22 @@ class Orchestrator:
                     self.storage.log_event("ORCHESTRATOR", symbol, "workflow", "rejected", f"rug check {rating}")
                     continue
 
-                # Sizer
+                # Sizer — use current equity (realized PnL included), not the static starting balance
                 self.set_stage("sizing")
                 self.storage.upsert_agent_status("SIZER", "ANALYZING", current_activity=f"{symbol}")
                 try:
-                    from decimal import Decimal
+                    eq = self.storage.equity_summary()
+                    current_equity = settings.simulated_starting_balance + Decimal(str(eq.get("realized_pnl", 0)))
+                except Exception:
+                    current_equity = settings.simulated_starting_balance
+                try:
                     dd = self.sizer.calculate(
                         symbol=symbol,
                         direction=sig["direction"],
                         entry_price=sig["entry_price"],
                         stop_loss_price=sig["stop_loss"],
                         take_profit_price=sig["take_profit"],
-                        available_equity=str(settings.simulated_starting_balance),
+                        available_equity=str(current_equity),
                         rug_rating=rating,
                         kill_halted=self.kill.is_halted()[0],
                         daily_loss_used=self.kill.daily_loss_used(),
@@ -165,15 +168,15 @@ class Orchestrator:
                     self.logger.info("EXECUTER", "skip", "position already open")
                     continue
 
-                # idempotency: check signal seen
-                # Build a simple signal id for dedup using scanner result
+                # execution-level idempotency (separate namespace from scanner's seen-signal marks)
                 sid = sig.get("signal_id") if isinstance(sig, dict) else None
                 if sid is None:
                     sid = f"{symbol}:{sig['direction']}:{sig.get('entry_price')}"
-                if self.storage.is_signal_seen(sid):
-                    self.logger.info("SCANNER", "duplicate", sid)
+                exec_id = f"exec:{sid}"
+                if self.storage.is_signal_seen(exec_id):
+                    self.logger.info("EXECUTER", "duplicate", sid)
                     continue
-                self.storage.mark_signal_seen(sid)
+                self.storage.mark_signal_seen(exec_id)
 
                 # Executer: open paper position
                 self.set_stage("executing")

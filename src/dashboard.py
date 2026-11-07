@@ -536,7 +536,17 @@ async def api_websocket(ws: WebSocket):
 @app.get("/api/scanner/symbols")
 @api_error_handler
 def api_scanner_symbols():
-    return {"symbols": settings.symbol_list}
+    if getattr(settings, "scan_all_usdt_perpetuals", True):
+        symbols = storage.get_market_universe()
+        if symbols:
+            return {"symbols": symbols, "count": len(symbols), "mode": "all_usdt_perpetuals"}
+    return {"symbols": settings.symbol_list, "count": len(settings.symbol_list), "mode": "manual"}
+
+
+@app.get("/api/market-data/status")
+@api_error_handler
+def api_market_data_status():
+    return storage.market_data_summary()
 
 
 @app.put("/api/scanner/symbols")
@@ -573,6 +583,18 @@ async def api_scanner_symbols_set(request: Request):
 @api_error_handler
 def api_scanner_results(limit: int = 50, symbol: str = ""):
     return {"results": storage.recent_scanner_results(limit=limit, symbol=symbol)}
+
+
+@app.get("/api/diagnostics")
+@api_error_handler
+def api_diagnostics(limit: int = 50, symbol: str = "", signals_only: bool = False):
+    return {"diagnostics": storage.recent_diagnostics(limit=limit, symbol=symbol or None, signals_only=signals_only)}
+
+
+@app.get("/api/diagnostics/summary")
+@api_error_handler
+def api_diagnostics_summary():
+    return storage.diagnostics_summary()
 
 
 @app.get("/api/rug-check/{symbol}")
