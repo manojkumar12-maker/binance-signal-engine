@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GROK AI TRADING TERMINAL</title>
+<title>Binance Signal Engine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/ui/vendor/lightweight-charts.standalone.production.js"></script>
 <style>
 :root{
   --bg:#030510; --bg2:#070b18;
@@ -78,7 +78,9 @@ h1,h2,h3,.gro{font-family:'Space Grotesk','Inter',sans-serif}
 @keyframes ringping{0%{transform:scale(.4);opacity:.9}80%,100%{transform:scale(1.5);opacity:0}}
 .ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}
 .topactions{margin-left:auto;display:flex;align-items:center;gap:10px}
-.mobtoggle{display:none}
+.mobtoggle{display:inline-flex}
+.layout.nav-collapsed{grid-template-columns:1fr}
+.layout.nav-collapsed .sidebar{display:none}
 
 /* ---------- buttons ---------- */
 .btn{position:relative;display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border:none;border-radius:10px;font-family:inherit;font-size:12.5px;font-weight:600;letter-spacing:.2px;color:#02121a;background:linear-gradient(135deg,var(--cyan2),#0e9fd8);cursor:pointer;overflow:hidden;transition:transform .18s var(--ease),box-shadow .25s,filter .2s;box-shadow:0 4px 16px rgba(0,229,255,.18)}
@@ -190,7 +192,8 @@ h1,h2,h3,.gro{font-family:'Space Grotesk','Inter',sans-serif}
   transition:all .4s var(--ease);overflow:visible}
 .fnode .orb svg{width:22px;height:22px;color:var(--muted);transition:all .4s}
 .fnode .nm{margin-top:8px;font-family:'Space Grotesk';font-weight:700;font-size:11.5px;letter-spacing:1px;transition:color .35s,text-shadow .35s}
-.fnode .st{margin-top:3px;font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted2);transition:color .3s}
+.fnode .st{margin-top:3px;font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted2);transition:color .3s;max-width:150px;margin-left:auto;margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fnode.support .st{max-width:112px}
 .fnode .idx{position:absolute;top:-7px;left:calc(50% + 24px);font-family:'JetBrains Mono';font-size:8.5px;
   letter-spacing:1px;color:var(--muted2);border:1px solid var(--border2);border-radius:6px;padding:1px 5px;
   background:rgba(7,11,24,.92);z-index:4}
@@ -202,6 +205,12 @@ h1,h2,h3,.gro{font-family:'Space Grotesk','Inter',sans-serif}
 .fnode.is-active .st{color:var(--cyan);text-shadow:0 0 10px rgba(34,211,238,.5)}
 .fnode.is-active .idx{border-color:rgba(34,211,238,.5);color:var(--cyan);box-shadow:0 0 10px rgba(34,211,238,.25)}
 @keyframes orbPulse{0%,100%{box-shadow:0 0 18px rgba(34,211,238,.35),inset 0 0 12px rgba(34,211,238,.12)}50%{box-shadow:0 0 40px rgba(34,211,238,.65),inset 0 0 20px rgba(34,211,238,.25)}}
+.fnode.is-warm .orb{border-color:rgba(251,191,36,.55);box-shadow:0 0 18px rgba(251,191,36,.22),inset 0 0 12px rgba(251,191,36,.08)}
+.fnode.is-warm .orb svg{color:var(--amber);filter:drop-shadow(0 0 5px rgba(251,191,36,.6))}
+.fnode.is-warm .st{color:var(--amber)}
+.fnode.is-error .orb{border-color:rgba(251,113,133,.65);box-shadow:0 0 18px rgba(251,113,133,.3)}
+.fnode.is-error .orb svg{color:var(--red)}
+.fnode.is-error .st{color:var(--red)}
 .fnode.is-active .orb::before{content:'';position:absolute;inset:-16px;border-radius:50%;pointer-events:none;
   border:1px solid rgba(34,211,238,.45);animation:ringping 2.4s var(--ease) infinite}
 .fnode.is-active .orb::after{content:'';position:absolute;inset:-8px;border-radius:50%;pointer-events:none;
@@ -338,7 +347,6 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
   .sidebar{display:none;position:fixed;top:60px;left:0;bottom:0;width:250px;z-index:60;background:rgba(5,8,18,.97);height:auto}
   .sidebar.open{display:block;animation:slideL .3s var(--ease)}
   @keyframes slideL{from{transform:translateX(-100%)}to{transform:none}}
-  .mobtoggle{display:inline-flex}
   .topstats{display:none}
   .main{padding:16px 14px 34px}
 }
@@ -362,8 +370,8 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round"><path d="M3 17l5-6 4 3 6-9"/><path d="M18 5h3v3"/></svg>
       </div>
       <div>
-        <div class="t1">GROK <span>AI</span> TERMINAL</div>
-        <div class="t2">Signal Engine</div>
+        <div class="t1">BINANCE <span>SIGNAL</span> ENGINE</div>
+        <div class="t2">Futures · Demo / Live</div>
       </div>
     </div>
     <div class="field"><label>Username</label><input id="loginUser" class="inp" placeholder="operator" autocomplete="username"></div>
@@ -380,12 +388,12 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
   </button>
   <div class="brand">
     <div class="mk"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round"><path d="M3 17l5-6 4 3 6-9"/><path d="M18 5h3v3"/></svg></div>
-    <span>GROK <em>AI</em> TERMINAL</span>
+    <span>BINANCE <em>SIGNAL</em> ENGINE</span>
   </div>
   <div class="topstats">
     <div class="tstat"><span class="lb">Exchange</span><span class="vl"><span class="pill"><span class="dot ok" id="exDot"></span><span id="exStatus">connecting</span></span></span></div>
     <div class="tstat"><span class="lb">Mode</span><span class="vl" id="modeVal">–</span></div>
-    <div class="tstat"><span class="lb">Balance</span><span class="vl" id="balVal">–</span></div>
+    <div class="tstat"><span class="lb">Equity</span><span class="vl" id="balVal">–</span></div>
     <div class="tstat"><span class="lb">Time</span><span class="vl" id="clockVal">–</span></div>
   </div>
   <div class="topactions">
@@ -413,7 +421,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
     <button class="navbtn" data-view="logger" onclick="showView('logger')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>Logger</button>
     <button class="navbtn" data-view="admin" onclick="showView('admin')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 1 1 8 0v2.5" stroke-linecap="round"/></svg>Admin Logs</button>
     <button class="navbtn" data-view="settings" onclick="showView('settings')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.15-1.4l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2.4-1.4L13.7 2h-3.4l-.45 2.5a7 7 0 0 0-2.4 1.4l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .48.05.94.15 1.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2.4 1.4l.45 2.5h3.4l.45-2.5a7 7 0 0 0 2.4-1.4l2.3 1 2-3.4-2-1.5c.1-.46.15-.92.15-1.4z"/></svg>Settings</button>
-    <div class="sidefoot"><b>PAPER MODE</b><br>No real orders are placed. Live trading is disabled by default.</div>
+    <div class="sidefoot" id="sideMode"><b>PAPER MODE</b><br>Simulated execution. Configure Demo keys in Settings to trade testnet.</div>
   </aside>
 
   <!-- MAIN -->
@@ -426,8 +434,8 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
     <!-- OVERVIEW -->
     <section class="view active" id="view-overview">
       <div class="grid g4 stagger">
-        <div class="card kpi"><div class="label">Total Equity</div><div class="val" id="eqVal">–</div><div class="sub">USDT · paper account</div></div>
-        <div class="card kpi"><div class="label">Available Balance</div><div class="val" id="availVal">–</div><div class="sub">starting allocation</div></div>
+        <div class="card kpi"><div class="label">Total Equity</div><div class="val" id="eqVal">–</div><div class="sub" id="eqSub">USDT · loading</div></div>
+        <div class="card kpi"><div class="label">Available Balance</div><div class="val" id="availVal">–</div><div class="sub" id="availSub">available margin</div></div>
         <div class="card kpi"><div class="label">Daily P&amp;L</div><div class="val" id="dailyPnl">–</div><div class="sub">loss budget used</div></div>
         <div class="card kpi"><div class="label">Open Positions</div><div class="val" id="openPos">–</div><div class="sub">being monitored</div></div>
       </div>
@@ -475,6 +483,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
         <div class="chiprow" style="margin-bottom:12px">
           <button class="btn" onclick="startScanner()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 4l14 8-14 8z" stroke-linejoin="round"/></svg>Start Scanner</button>
           <button class="btn ghost" onclick="stopScanner()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Scanner</button>
+          <span id="scanStatus" class="hint" style="margin:0 0 0 auto"></span>
         </div>
         <div id="scannerTable"></div>
       </div>
@@ -482,11 +491,12 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
         <h3>Market Chart</h3>
         <div class="chiprow">
           <select id="symSelect" class="btn ghost sel"></select>
-          <select id="tfSelect" class="btn ghost sel">
+          <select id="tfSelect" class="btn ghost sel" onchange="loadChart()">
             <option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option>
             <option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
           </select>
-          <button class="btn" onclick="loadChart()">Load Chart</button>
+          <button class="btn" onclick="loadChart()">Refresh Chart</button>
+          <span id="chartStatus" class="hint" style="margin:0 0 0 auto"></span>
         </div>
         <div class="chartframe"><div id="chart"></div></div>
       </div>
@@ -497,6 +507,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
       <div class="card">
         <h3>Rug Check / Asset Risk</h3>
         <div class="hint">Risk assessments from scanner signals and reconciliation events.</div>
+        <div id="rugStatus" class="hint"></div>
         <div id="rugTable"></div>
       </div>
     </section>
@@ -511,6 +522,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
       <div class="card mt">
         <h3>Sizing Decisions</h3>
         <div class="hint">Latest position-sizing events from the engine.</div>
+        <div id="sizerStatus" class="hint"></div>
         <div class="terminal" id="sizerEvents"></div>
         <h3 style="margin-top:16px">Sizer Configuration</h3>
         <div id="sizerConfig"></div>
@@ -521,6 +533,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
     <section class="view" id="view-executer">
       <div class="card">
         <h3>Executer</h3>
+        <div id="execStatus" class="hint"></div>
         <div class="chiprow" style="margin-bottom:12px">
           <button class="btn" onclick="enableTrading()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l4 4L19 6"/></svg>Enable Trading</button>
           <button class="btn ghost" onclick="disableTrading()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>Disable Trading</button>
@@ -631,6 +644,23 @@ let firstPaint = true;
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function fmt(n,d=2){const x=Number(n);if(!isFinite(x))return '–';return x.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d})}
 function signCls(n){n=Number(n);return n>0?'pos':(n<0?'neg':'')}
+function timeAgo(ts){
+  if(!ts) return '—';
+  const s=Math.max(0,Date.now()/1000-Number(ts));
+  if(s<60) return Math.round(s)+'s ago';
+  if(s<3600) return Math.round(s/60)+'m ago';
+  if(s<86400) return Math.round(s/3600)+'h ago';
+  return Math.round(s/86400)+'d ago';
+}
+async function loadScanStatus(){
+  const el=$('scanStatus'); if(!el) return;
+  try{
+    const d=await api('/api/logs?limit=60&agent=SCANNER');
+    const rows=d.events||[];
+    const last=rows.find(e=>String(e.reason||'').includes('scanned')||e.event_type==='scan');
+    el.textContent = last ? `${last.reason||last.message||'scan complete'} · ${timeAgo(last.ts)}` : 'waiting for first scan';
+  }catch(e){ el.textContent='scanner status unavailable'; }
+}
 
 async function api(path){
   const r = await fetch(API+path);
@@ -772,7 +802,17 @@ const viewMeta={
   admin:['Admin Logs','Administrative controls and system oversight.'],
   settings:['Settings','Runtime configuration reported by the backend.']
 };
-function toggleSidebar(){$('sidebar').classList.toggle('open')}
+function toggleSidebar(){
+  const layout=document.querySelector('.layout');
+  const sb=$('sidebar'); if(!layout||!sb) return;
+  if(window.matchMedia('(max-width:900px)').matches){
+    layout.classList.remove('nav-collapsed');
+    sb.classList.toggle('open');
+  }else{
+    const collapsed=layout.classList.toggle('nav-collapsed');
+    try{localStorage.setItem('navCollapsed', collapsed?'1':'0')}catch(e){}
+  }
+}
 function showView(v){
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
   const sec=$('view-'+v); if(!sec) return;
@@ -781,7 +821,7 @@ function showView(v){
   const m=viewMeta[v]||[v,''];
   $('vhTitle').textContent=m[0]; $('vhDesc').textContent=m[1];
   $('sidebar').classList.remove('open');
-  if(v==='scanner') loadChart();
+  if(v==='scanner'){ loadChartSymbols().then(()=>{ loadChart(); startChartAuto(); }); }
   if(v==='equity') loadEquityChart();
   if(v==='settings') loadBinanceStatus();
 }
@@ -799,14 +839,34 @@ function skeleton(el,rows=4){
 async function loadStatus(){
   try{
     const s=await api('/status'); lastStatus=s;
-    $('modeVal').textContent=(s.trading_mode||'–').toUpperCase();
-    $('balVal').textContent=fmt(Number(s.simulated_starting_balance),2)+' USDT';
+    const acct=s.account||{};
+    const live=String(acct.source||'').indexOf('binance')===0;
+    const execLabel = s.execution_mode==='binance-demo' ? 'BINANCE DEMO'
+                    : s.execution_mode==='binance-live' ? 'BINANCE LIVE'
+                    : 'SIMULATED';
+    const srcLabel = live ? (acct.source==='binance-demo'?'Binance Demo':'Binance Live') : 'Simulated';
+    $('modeVal').textContent=execLabel;
+    $('balVal').textContent=fmt(Number(live?acct.equity:s.simulated_starting_balance),2)+' USDT';
+    $('balVal').title=acct.error?('account error: '+acct.error):srcLabel;
     setKpi('openPos', s.open_positions??'–');
     setPnl('dailyPnl', s.daily_loss_used, 4);
     $('exStatus').textContent = s.worker_healthy?'connected':'degraded';
     $('exDot').className='dot '+(s.worker_healthy?'ok':'bad');
+    const side=$('sideMode');
+    if(side){
+      side.innerHTML = s.execution_mode==='binance-demo'
+        ? '<b>BINANCE DEMO</b><br>Orders route to Binance Testnet. No real funds.'
+        : s.execution_mode==='binance-live'
+        ? '<b>BINANCE LIVE</b><br>Real mainnet orders are enabled.'
+        : '<b>SIMULATED PAPER</b><br>No exchange orders. Add Demo keys in Settings.';
+    }
     $('health').innerHTML = [
       ['Backend','ok'],['Mode',(s.trading_mode||'').toUpperCase()],
+      ['Execution', execLabel],
+      ['Equity Source', srcLabel],
+      ['Account Equity', live?fmt(Number(acct.equity),2)+' USDT':'–'],
+      ['Available', live?fmt(Number(acct.available),2)+' USDT':'–'],
+      ...(acct.error?[['Account Error',`<span class="bad">${esc(acct.error)}</span>`]]:[]),
       ['Live Authorized',String(!!s.live_authorized)],
       ['Halted', s.halted?`<span class="bad">true</span>`:'false'],
       ['Worker HB', esc(s.worker_heartbeat?.status||'n/a')],
@@ -820,6 +880,10 @@ async function loadStatus(){
     ].map(([k,v])=>`<div class="hrow"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
     $('settingsInfo').innerHTML = [
       ['Trading Mode',(s.trading_mode||'').toUpperCase()],
+      ['Execution', execLabel],
+      ['Equity Source', srcLabel],
+      ['Account Equity', live?fmt(Number(acct.equity),2)+' USDT':'–'],
+      ['Available', live?fmt(Number(acct.available),2)+' USDT':'–'],
       ['Broker Enabled',String(!!s.broker_enabled)],
       ['Auto Trade',String(!!s.auto_trade)],
       ['Live Trading Enabled',String(!!s.live_trading_enabled)],
@@ -849,13 +913,25 @@ async function loadEquity(){
   try{
     const e=await api('/api/equity/analytics');
     const eq=e.analytics||{};
-    countUp($('eqVal'),Number(eq.current_equity)||0,4);
+    const acct=e.account||{};
+    const live=String(acct.source||'').indexOf('binance')===0;
+    const srcLabel = live ? (acct.source==='binance-demo'?'Binance Demo':'Binance Live') : 'Simulated paper';
+    const equity = live ? acct.equity : eq.current_equity;
+    countUp($('eqVal'),Number(equity)||0,4);
     setPnl('realPnl',eq.realized_pnl||0,4);
     setPnl('unrealPnl',eq.unrealized_pnl||0,4);
     setKpi('totalTrades',eq.total_trades??'–');
     countUp($('winRate'),Number(eq.win_rate)||0,1,'%');
-    setKpi('availVal',fmt(Number(eq.starting_equity),2));
+    setKpi('availVal',fmt(Number(live?acct.available:eq.starting_equity),2));
+    if($('eqSub')) $('eqSub').textContent='USDT · '+srcLabel;
+    if($('availSub')) $('availSub').textContent=live?'available margin':'starting allocation';
     $('perf').innerHTML=[
+      ['Equity Source',srcLabel],
+      ...(acct.error?[['Account Error',`<span class="neg">${esc(acct.error)}</span>`]]:[]),
+      ['Account Equity',live?fmt(acct.equity,4):'–'],
+      ['Wallet Balance',live?fmt(acct.balance,4):'–'],
+      ['Available Margin',live?fmt(acct.available,4):'–'],
+      ['Unrealized (exchange)',live?`<span class="${signCls(acct.unrealized)}">${fmt(acct.unrealized,4)}</span>`:'–'],
       ['Realized P&L',`<span class="${signCls(eq.realized_pnl)}">${fmt(eq.realized_pnl,4)}</span>`],
       ['Unrealized P&L',`<span class="${signCls(eq.unrealized_pnl)}">${fmt(eq.unrealized_pnl,4)}</span>`],
       ['Fees',fmt(eq.fees,4)],
@@ -970,20 +1046,42 @@ const agentIcons={
   EQUITY:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 15l5-5 4 3 7-8"/></svg>',
   ADMIN:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 1 1 8 0v2.5" stroke-linecap="round"/></svg>'
 };
-function isActiveStatus(s){s=String(s||'').toUpperCase();return s&&s!=='IDLE'&&s!=='STOPPED'&&s!=='UNKNOWN'}
+function isActiveStatus(s){s=String(s||'').toUpperCase();return ['RUNNING','SCANNING','ANALYZING','EXECUTING','MONITORING','ACTIVE','OK','SUCCESS','APPROVED'].includes(s)}
+function isErrorStatus(s){s=String(s||'').toUpperCase();return ['ERROR','FAILED','REJECTED','HALTED'].includes(s)}
+function isWarm(a){const ts=Number(a && a.last_activity)||0;return ts>0 && (Date.now()/1000-ts)<180}
 function badgeClassFor(s){s=String(s||'').toUpperCase();if(!s||s==='IDLE')return 'b-idle';if(['RUNNING','SCANNING','ACTIVE','OK','SUCCESS','APPROVED'].includes(s))return 'b-run';if(['ERROR','FAILED','REJECTED','HALTED'].includes(s))return 'b-bad';return 'b-warn2'}
 
 const pipeOrder=['SCANNER','RUG CHECK','SIZER','EXECUTER'];
 const pipeSupport=['LOGGER','EQUITY','ADMIN'];
 const pipeDesc={SCANNER:'Scanning markets','RUG CHECK':'Assessing asset risk',SIZER:'Sizing position',EXECUTER:'Executing paper trade',LOGGER:'Recording events',EQUITY:'Updating analytics',ADMIN:'Overseeing system'};
 
+function nodeState(a){
+  a=a||{};
+  const act=isActiveStatus(a.status);
+  const err=isErrorStatus(a.status);
+  const warm=!act && !err && isWarm(a);
+  const label=act ? String(a.status) : (err ? String(a.status) : (warm ? (a.current_activity||'recent') : 'idle'));
+  const title=[a.status,a.current_activity,a.reason,'last '+timeAgo(a.last_activity)].filter(Boolean).join(' · ');
+  return {act,err,warm,label,title};
+}
 function buildPipeline(agents){
   const net=$('network'); if(!net) return;
-  const get=n=>agents.find(a=>a.agent===n)||{agent:n,status:'IDLE',reason:''};
+  const get=n=>agents.find(a=>a.agent===n||a.name===n)||{agent:n,status:'IDLE',reason:'',last_activity:null};
   const mainPos={SCANNER:{x:12,y:32},'RUG CHECK':{x:37.3,y:32},SIZER:{x:62.6,y:32},EXECUTER:{x:88,y:32}};
   const supPos={LOGGER:{x:25,y:78},EQUITY:{x:50,y:78},ADMIN:{x:75,y:78}};
+  const stage=String(lastStatus?.workflow_stage||'').toLowerCase();
+  const stageAgent={scanning:'SCANNER','rug_check':'RUG CHECK',sizing:'SIZER',executing:'EXECUTER',monitoring:'EXECUTER',equity:'EQUITY'}[stage]||'';
+  const stateFor=(n,a)=>{
+    const st=nodeState(a);
+    if(n===stageAgent){ st.act=true; st.warm=false; st.err=false; st.label=stage.replace('_',' '); st.title=[st.title,'workflow stage'].filter(Boolean).join(' · '); }
+    return st;
+  };
   // Avoid DOM rebuilds that restart CSS animations on every poll.
-  const sig=[...pipeOrder,...pipeSupport].map(n=>`${n}:${get(n).status}`).join('|');
+  const sig=[`stage:${stage}`,...pipeOrder,...pipeSupport].map(n=>{
+    if(n.startsWith('stage:')) return n;
+    const a=get(n);
+    return `${n}:${a.status}:${a.current_activity||''}:${Math.floor(Number(a.last_activity||0)/30)}`;
+  }).join('|');
   if(net.dataset.sig===sig && net.querySelector('.fnode')) return;
   net.dataset.sig=sig;
   let html='<div class="fgrid"></div><div class="holo"></div><div class="flowbeam"></div>';
@@ -991,27 +1089,30 @@ function buildPipeline(agents){
   const names=pipeOrder;
   for(let i=0;i<names.length-1;i++){
     const a=mainPos[names[i]], b=mainPos[names[i+1]];
-    const active=isActiveStatus(get(names[i]).status);
+    const st=stateFor(names[i],get(names[i]));
+    const active=st.act||st.warm;
     html+=`<div class="fconn ${active?'flowing':''}" style="left:${a.x}%;top:${a.y}%;width:${b.x-a.x}%"><div class="stream"></div><div class="pk p1"></div><div class="pk p2"></div><div class="pk p3"></div></div>`;
   }
   // support connectors (vertical)
   const vmap={LOGGER:{x:25,y1:32,y2:78},EQUITY:{x:50,y1:32,y2:78},ADMIN:{x:75,y1:32,y2:78}};
   for(const n of pipeSupport){
-    const c=vmap[n]; const active=isActiveStatus(get(n).status);
-    html+=`<div class="fconn vconn ${active?'flowing':''}" style="left:${c.x}%;top:${c.y1}%;height:${c.y2-c.y1}%"><div class="stream"></div><div class="pk p1"></div><div class="pk p2"></div><div class="pk p3"></div></div>`;
+    const c=vmap[n]; const st=stateFor(n,get(n));
+    html+=`<div class="fconn vconn ${(st.act||st.warm)?'flowing':''}" style="left:${c.x}%;top:${c.y1}%;height:${c.y2-c.y1}%"><div class="stream"></div><div class="pk p1"></div><div class="pk p2"></div><div class="pk p3"></div></div>`;
   }
   // nodes
   pipeOrder.forEach((n,i)=>{
-    const a=get(n), p=mainPos[n], act=isActiveStatus(a.status);
-    html+=`<div class="fnode ${act?'is-active':''}" style="left:${p.x}%;top:${p.y}%">
+    const a=get(n), p=mainPos[n], st=stateFor(n,a);
+    const cls=[st.act?'is-active':'',st.warm?'is-warm':'',st.err?'is-error':''].filter(Boolean).join(' ');
+    html+=`<div class="fnode ${cls}" title="${esc(st.title)}" style="left:${p.x}%;top:${p.y}%">
       <div class="orb">${agentIcons[n]}<span class="idx">0${i+1}</span></div>
-      <div class="nm">${n}</div><div class="st">${esc(String(a.status||'IDLE'))}</div></div>`;
+      <div class="nm">${n}</div><div class="st">${esc(st.label)}</div></div>`;
   });
   for(const n of pipeSupport){
-    const a=get(n), p=supPos[n], act=isActiveStatus(a.status);
-    html+=`<div class="fnode support ${act?'is-active':''}" style="left:${p.x}%;top:${p.y}%">
+    const a=get(n), p=supPos[n], st=stateFor(n,a);
+    const cls=[st.act?'is-active':'',st.warm?'is-warm':'',st.err?'is-error':''].filter(Boolean).join(' ');
+    html+=`<div class="fnode support ${cls}" title="${esc(st.title)}" style="left:${p.x}%;top:${p.y}%">
       <div class="orb">${agentIcons[n]}</div>
-      <div class="nm">${n}</div><div class="st">${esc(String(a.status||'IDLE'))}</div></div>`;
+      <div class="nm">${n}</div><div class="st">${esc(st.label)}</div></div>`;
   }
   html+='<div class="flowlegend">SCANNER → RUG CHECK → SIZER → EXECUTER · LOGGER / EQUITY / ADMIN IN SUPPORT</div>';
   net.innerHTML=html;
@@ -1021,10 +1122,12 @@ function renderBrain(){
   const el=$('systemBrain'); if(!el) return;
   const stage=lastStatus?.workflow_stage;
   const steps=['SCANNER','RUG CHECK','SIZER','EXECUTER','LOGGER','EQUITY','ADMIN'];
-  const get=n=>(lastAgents.find(a=>a.agent===n)||{status:'IDLE'});
+  const get=n=>(lastAgents.find(a=>a.agent===n||a.name===n)||{status:'IDLE'});
   el.innerHTML=steps.map((n,i)=>{
-    const on=isActiveStatus(get(n).status)||(stage&&String(stage).toUpperCase().includes(n.split(' ')[0]));
-    return `<div class="step ${on?'on':''}"><div class="n">${i+1}</div><div class="sb"><div class="t">${n}</div><div class="d">${pipeDesc[n]}</div></div></div>`;
+    const a=get(n), st=nodeState(a);
+    const on=st.act||st.warm||(stage&&String(stage).toUpperCase().includes(n.split(' ')[0]));
+    const desc=st.act||st.warm ? (a.current_activity||pipeDesc[n]) : pipeDesc[n];
+    return `<div class="step ${on?'on':''}"><div class="n">${i+1}</div><div class="sb"><div class="t">${n}</div><div class="d">${esc(String(desc))}</div></div></div>`;
   }).join('');
 }
 
@@ -1044,6 +1147,15 @@ async function loadAgents(){
     }).join('');
     buildPipeline(list);
     renderBrain();
+    const agentLine=name=>{
+      const a=list.find(x=>x.agent===name||x.name===name);
+      if(!a) return 'no activity yet';
+      const parts=[a.status||'IDLE', a.current_activity||a.event_type||'', a.reason||'', timeAgo(a.last_activity)].filter(Boolean);
+      return parts.join(' · ');
+    };
+    if($('rugStatus')) $('rugStatus').textContent='Agent: '+agentLine('RUG CHECK');
+    if($('sizerStatus')) $('sizerStatus').textContent='Agent: '+agentLine('SIZER');
+    if($('execStatus')) $('execStatus').textContent='Agent: '+agentLine('EXECUTER');
   }catch(e){console.error(e)}
 }
 
@@ -1080,13 +1192,35 @@ function filterEvents(a){
 /* ---------- charts ---------- */
 function chartOpts(h){return{layout:{background:{color:'#070c1c'},textColor:'#8b96b8',fontFamily:'Inter'},grid:{vertLines:{color:'rgba(120,150,255,.07)'},horzLines:{color:'rgba(120,150,255,.07)'}},crosshair:{mode:0,vertLine:{color:'rgba(34,211,238,.4)',labelBackgroundColor:'#0e9fd8'},horzLine:{color:'rgba(34,211,238,.4)',labelBackgroundColor:'#0e9fd8'}},timeScale:{borderColor:'rgba(120,150,255,.2)'},rightPriceScale:{borderColor:'rgba(120,150,255,.2)'},width:document.getElementById('chart')?.clientWidth||600,height:h}}
 
-async function loadChart(){
-  const sym=$('symSelect').value||'BTCUSDT';
-  const tf=$('tfSelect').value;
-  const url=`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${tf}&limit=200`;
+let chartTimer=null;
+async function loadChartSymbols(){
+  const sel=$('symSelect'); if(!sel) return;
   try{
-    const r=await fetch(url); const data=await r.json();
-    if(!Array.isArray(data)) throw new Error('bad data');
+    const d=await api('/api/market/symbols?limit=120');
+    const list=d.symbols||[];
+    if(!list.length) return;
+    const prev=sel.value||'BTCUSDT';
+    sel.innerHTML=list.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    sel.value=list.includes(prev)?prev:(list.includes('BTCUSDT')?'BTCUSDT':list[0]);
+  }catch(e){}
+}
+function startChartAuto(){
+  if(chartTimer) clearInterval(chartTimer);
+  chartTimer=setInterval(()=>{
+    if($('view-scanner') && $('view-scanner').classList.contains('active')) loadChart();
+  },15000);
+}
+async function loadChart(){
+  const sym=$('symSelect')?.value||'BTCUSDT';
+  const tf=$('tfSelect')?.value||'15m';
+  const status=$('chartStatus');
+  try{
+    if(status) status.textContent='loading '+sym+'…';
+    const r=await fetch(API+'/api/market/klines?symbol='+encodeURIComponent(sym)+'&interval='+encodeURIComponent(tf)+'&limit=200');
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok || !Array.isArray(d.candles)) throw new Error(d.error||'bad data');
+    if(typeof LightweightCharts==='undefined') throw new Error('chart library not loaded');
+    const data=d.candles;
     const candles=data.map(k=>({time:k[0]/1000,open:+k[1],high:+k[2],low:+k[3],close:+k[4]}));
     const vol=data.map(k=>({time:k[0]/1000,value:+k[5],color:+k[4]>=+k[1]?'rgba(52,211,153,.45)':'rgba(251,113,133,.45)'}));
     if(!chart){
@@ -1094,12 +1228,15 @@ async function loadChart(){
       candleSeries=chart.addCandlestickSeries({upColor:'#34d399',downColor:'#fb7185',borderUpColor:'#34d399',borderDownColor:'#fb7185',wickUpColor:'#34d399',wickDownColor:'#fb7185'});
       volSeriesRef=chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:''});
       volSeriesRef.priceScale().applyOptions({scaleMargins:{top:0.82,bottom:0}});
-      candleSeries.setData(candles); volSeriesRef.setData(vol);
-    }else{
-      candleSeries.setData(candles); volSeriesRef.setData(vol);
     }
+    candleSeries.setData(candles); volSeriesRef.setData(vol);
     chart.timeScale().fitContent();
-  }catch(e){console.error(e)}
+    if(status) status.textContent=`${sym} · ${tf} · ${d.source==='binance-demo'?'Demo':'Live'} · ${new Date().toLocaleTimeString()}`;
+  }catch(e){
+    if(status) status.textContent='chart unavailable: '+(e.message||'error');
+    if(!chart && $('chart')) $('chart').innerHTML='<div class="empty"><div class="et">Chart unavailable</div></div>';
+    console.error(e);
+  }
 }
 
 async function loadEquityChart(){
@@ -1137,9 +1274,27 @@ function connectWS(){
   ws.onmessage=(ev)=>{
     try{
       const m=JSON.parse(ev.data);
+      if(m.type==='event' && m.data){
+        const line=termLine(m.data);
+        const t=$('terminal');
+        if(t){
+          if(t.textContent.includes('Waiting')) t.innerHTML='';
+          t.insertAdjacentHTML('afterbegin', line);
+          while(t.children.length>20) t.lastElementChild.remove();
+        }
+        const lt=$('loggerTerminal');
+        if(lt && (!currentAgentFilter || m.data.agent===currentAgentFilter)){
+          lt.insertAdjacentHTML('afterbegin', line);
+          while(lt.children.length>100) lt.lastElementChild.remove();
+        }
+      }
       if(m.type==='status'){
         const s=m.data;
         setKpi('openPos', s.open_positions);
+        const acct=s.account||{};
+        if(String(acct.source||'').indexOf('binance')===0){
+          $('balVal').textContent=fmt(Number(acct.equity),2)+' USDT';
+        }
         if(s.equity){ setPnl('realPnl',s.equity.realized_pnl||0,4); setKpi('totalTrades', s.equity.total_trades); countUp($('winRate'),Number(s.equity.win_rate)||0,1,'%'); }
       }
     }catch(e){}
@@ -1182,12 +1337,17 @@ async function refreshAll(){
     skeleton($('scannerTable')); skeleton($('sizerConfig'),3); skeleton($('health'),5); skeleton($('perf'),5);
     firstPaint=false;
   }
-  await Promise.all([loadStatus(),loadEquity(),loadSignals(),loadTrades(),loadEvents(),loadAgents(),loadSizerConfig()]);
+  await Promise.all([loadStatus(),loadEquity(),loadSignals(),loadTrades(),loadEvents(),loadAgents(),loadSizerConfig(),loadScanStatus()]);
 }
+try{
+  if(localStorage.getItem('navCollapsed')==='1' && !window.matchMedia('(max-width:900px)').matches){
+    document.querySelector('.layout')?.classList.add('nav-collapsed');
+  }
+}catch(e){}
 checkAuth();
 connectWS();
 refreshAll();
-setInterval(refreshAll,8000);
+setInterval(refreshAll,5000);
 </script>
 </body>
 </html>

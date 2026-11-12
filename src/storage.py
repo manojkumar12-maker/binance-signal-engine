@@ -705,6 +705,15 @@ class Storage:
         cur.execute("SELECT symbol FROM market_universe ORDER BY symbol")
         return [r[0] for r in cur.fetchall()]
 
+    def get_top_market_symbols(self, limit=100):
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT symbol FROM market_universe "
+            "ORDER BY CAST(COALESCE(quote_volume,0) AS REAL) DESC LIMIT ?",
+            (int(limit),),
+        )
+        return [r[0] for r in cur.fetchall()]
+
     def set_market_meta(self, key, value):
         with self.conn:
             self.conn.execute("INSERT OR REPLACE INTO market_meta (key,value) VALUES (?,?)", (str(key), str(value)))

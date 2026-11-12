@@ -48,6 +48,97 @@ settings_mgr.load_into_settings()
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 
+_ACCOUNT_CACHE = {"key": None, "ts": 0.0, "data": None}
+_PRICE_CACHE = {"key": None, "ts": 0.0, "data": {}}
+
+
+def _broker_account(max_age: float = 7.0):
+    """Live Binance Demo/Live account snapshot (short-lived cache)."""
+    key = (
+        settings.binance_api_key, settings.binance_api_secret,
+        settings.binance_testnet_api_key, settings.binance_testnet_api_secret,
+        settings.binance_environment,
+    )
+    now = time.time()
+    if _ACCOUNT_CACHE["data"] is not None and _ACCOUNT_CACHE["key"] == key \
+            and now - _ACCOUNT_CACHE["ts"] < max_age:
+        return _ACCOUNT_CACHE["data"]
+    api_key, api_secret = settings.credentials
+    environment = settings.binance_environment
+    testnet = environment == "demo"
+    if not api_key or not api_secret:
+        data = {"source": "simulated", "environment": environment,
+                "error": "no credentials configured"}
+    else:
+        try:
+            from .binance_client import BinanceClient
+            from .account import account_snapshot
+            c = BinanceClient(api_key=api_key, api_secret=api_secret, testnet=testnet)
+            try:
+                c.sync_time()
+                snap = account_snapshot(c)
+            finally:
+                c.close()
+            data = {"source": "binance-demo" if testnet else "binance-live",
+                    "environment": environment, **snap}
+        except Exception as e:
+            data = {"source": "simulated", "environment": environment,
+                    "error": str(e)[:200]}
+    _ACCOUNT_CACHE.update(key=key, ts=now, data=data)
+    return data
+
+
+def _prices_for_positions(max_age: float = 7.0) -> dict:
+    positions = storage.open_positions()
+    symbols = tuple(p["symbol"] for p in positions)
+    if not symbols:
+        return {}
+    key = (symbols, settings.binance_environment,
+           settings.binance_testnet_api_key, settings.binance_api_key)
+    now = time.time()
+    if _PRICE_CACHE["key"] == key and now - _PRICE_CACHE["ts"] < max_age:
+        return _PRICE_CACHE["data"]
+    prices = {}
+    try:
+        from .binance_client import BinanceClient
+        api_key, api_secret = settings.credentials
+        c = BinanceClient(api_key=api_key, api_secret=api_secret,
+                          testnet=settings.binance_environment == "demo")
+        try:
+            c.sync_time()
+            for s in symbols:
+                try:
+                    prices[s] = c.ticker_price(s)
+                except Exception:
+                    pass
+        finally:
+            c.close()
+    except Exception:
+        pass
+    _PRICE_CACHE.update(key=key, ts=now, data=prices)
+    return prices
+
+
+def _equity_payload() -> dict:
+    from .equity import EquityAgent
+    from .paper_trading import PaperTrader
+    account = _broker_account()
+    analytics = EquityAgent(storage).analytics(_prices_for_positions())
+    if account.get("source", "").startswith("binance"):
+        analytics["current_equity"] = account.get("equity", analytics["current_equity"])
+        analytics["unrealized_pnl"] = account.get("unrealized", analytics["unrealized_pnl"])
+        analytics["starting_equity"] = account.get("balance", analytics["starting_equity"])
+        analytics["equity_source"] = account["source"]
+    else:
+        analytics["equity_source"] = "simulated"
+    return {
+        "account": account,
+        "analytics": analytics,
+        "summary": PaperTrader(storage).account_summary(None),
+        "trading_mode": settings.normalized_mode,
+        "binance_environment": settings.binance_environment,
+    }
+
 _rate = {}
 
 
@@ -136,6 +227,10 @@ def status():
         "auto_trade": settings.auto_trade,
         "live_trading_enabled": settings.live_trading_enabled,
         "use_testnet": settings.use_testnet,
+        "binance_environment": settings.binance_environment,
+        "execution_mode": ("binance-demo" if settings.testnet_execution_ready else
+                           ("binance-live" if settings.live_authorized else "simulated")),
+        "account": _broker_account(),
         "simulated_starting_balance": str(settings.simulated_starting_balance),
         "open_positions": len(storage.open_positions()),
         "daily_loss_used": str(kill.daily_loss_used()),
@@ -179,15 +274,29 @@ def equity():
 
 @app.get("/agents")
 def agents():
-    evs = storage.recent_events(limit=200)
+    statuses = {s["name"]: s for s in storage.get_agent_statuses()}
+    evs = storage.recent_events(limit=300)
     latest = {}
     for e in evs:
-        if e["agent"] not in latest:
-            latest[e["agent"]] = e
-    # ensure all seven agents present
-    for name in ["SCANNER", "RUG CHECK", "SIZER", "EXECUTER", "LOGGER", "EQUITY", "ADMIN"]:
-        latest.setdefault(name, {"agent": name, "status": "IDLE", "reason": "", "ts": None, "event_type": ""})
-    return {"agents": list(latest.values())}
+        latest.setdefault(e["agent"], e)
+    names = ["SCANNER", "RUG CHECK", "SIZER", "EXECUTER", "LOGGER", "EQUITY", "ADMIN"]
+    out = []
+    for name in names:
+        s = statuses.get(name, {})
+        e = latest.get(name, {})
+        out.append({
+            "agent": name,
+            "name": name,
+            "status": s.get("status") or e.get("status") or "IDLE",
+            "current_activity": s.get("current_activity") or e.get("event_type") or "",
+            "reason": e.get("reason") or s.get("error_message") or "",
+            "event_type": e.get("event_type") or "",
+            "last_activity": s.get("last_activity") or e.get("ts"),
+            "last_success": s.get("last_success"),
+            "tasks_completed": s.get("tasks_completed") or 0,
+            "error_message": s.get("error_message") or "",
+        })
+    return {"agents": out, "workflow_stage": storage.get_setting("workflow_stage", "idle")}
 
 
 @app.websocket("/ws")
@@ -211,7 +320,11 @@ async def websocket_endpoint(ws: WebSocket):
             await ws.close(code=4401)
             return
     await ws.accept()
-    last_id = 0
+    try:
+        latest = storage.recent_events(limit=1)
+        last_id = latest[0]["id"] if latest else 0
+    except Exception:
+        last_id = 0
     try:
         while True:
             evs = storage.recent_events(limit=50)
@@ -231,6 +344,7 @@ async def websocket_endpoint(ws: WebSocket):
                 "worker_heartbeat": hb,
                 "open_positions": len(storage.open_positions()),
                 "equity": storage.equity_summary(),
+                "account": await asyncio.to_thread(_broker_account),
             }}))
             await asyncio.sleep(2)
     except WebSocketDisconnect:
@@ -285,6 +399,7 @@ def api_status():
         "binance_environment": settings.binance_environment,
         "execution_mode": ("binance-demo" if settings.testnet_execution_ready else
                            ("binance-live" if settings.live_authorized else "simulated")),
+        "account": _broker_account(),
         "simulated_starting_balance": str(settings.simulated_starting_balance),
         "open_positions": len(storage.open_positions()),
         "daily_loss_used": str(kill.daily_loss_used()),
@@ -348,6 +463,38 @@ def api_market():
     return {"symbol": settings.symbol, "timeframe": settings.timeframe, "signals": storage.recent_events(limit=10, agent="SCANNER")}
 
 
+@app.get("/api/market/symbols")
+@api_error_handler
+def api_market_symbols(limit: int = 100):
+    limit = max(5, min(int(limit), 300))
+    symbols = storage.get_top_market_symbols(limit)
+    if not symbols:
+        symbols = settings.symbol_list
+    return {"symbols": symbols, "count": len(symbols),
+            "mode": "all_usdt_perpetuals" if getattr(settings, "scan_all_usdt_perpetuals", True) else "manual"}
+
+
+@app.get("/api/market/klines")
+@api_error_handler
+def api_market_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 200):
+    from .binance_client import BinanceClient
+    symbol = (symbol or "BTCUSDT").strip().upper()
+    interval = interval if interval in ("1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d") else "15m"
+    limit = max(20, min(int(limit), 500))
+    api_key, api_secret = settings.credentials
+    testnet = settings.binance_environment == "demo"
+    c = BinanceClient(api_key=api_key, api_secret=api_secret, testnet=testnet)
+    try:
+        return {
+            "symbol": symbol,
+            "interval": interval,
+            "candles": c.klines(symbol, interval, limit=limit),
+            "source": "binance-demo" if testnet else "binance-live",
+        }
+    finally:
+        c.close()
+
+
 @app.get("/api/signals")
 @api_error_handler
 def api_signals():
@@ -377,31 +524,15 @@ def api_trades():
 @app.get("/api/equity")
 @api_error_handler
 def api_equity():
-    from .equity import EquityAgent
-    from .paper_trading import PaperTrader
-    pt = PaperTrader(storage)
-    summ = pt.account_summary(None)
-    prices = {}
-    try:
-        from .binance_client import BinanceClient
-        key, secret = settings.credentials
-        testnet = settings.use_testnet or settings.trading_mode != "live"
-        c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
-        c.sync_time()
-        for p in storage.open_positions():
-            try:
-                prices[p["symbol"]] = c.ticker_price(p["symbol"])
-            except Exception:
-                pass
-    except Exception:
-        pass
-    agent = EquityAgent(storage)
-    a = agent.analytics(prices)
-    return {"equity": storage.equity_summary(),
-            "simulated_starting_balance": str(settings.simulated_starting_balance),
-            "trading_mode": settings.normalized_mode,
-            "analytics": a,
-            "account": summ}
+    payload = _equity_payload()
+    return {
+        "equity": storage.equity_summary(),
+        "simulated_starting_balance": str(settings.simulated_starting_balance),
+        "trading_mode": settings.normalized_mode,
+        "analytics": payload["analytics"],
+        "account": payload["account"],
+        "summary": payload["summary"],
+    }
 
 
 @app.get("/api/logs")
@@ -869,31 +1000,10 @@ async def api_paper_close(trade_id: int, request: Request):
     return res
 
 
-@app.get("/api/equity")
+@app.get("/api/equity/full")
 @api_error_handler
 def api_equity_full():
-    from .equity import EquityAgent
-    from .paper_trading import PaperTrader
-    pt = PaperTrader(storage)
-    summ = pt.account_summary(None)
-    prices = {}
-    # best-effort prices
-    try:
-        from .binance_client import BinanceClient
-        key, secret = settings.credentials
-        testnet = settings.use_testnet or settings.trading_mode != "live"
-        c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
-        c.sync_time()
-        for p in storage.open_positions():
-            try:
-                prices[p["symbol"]] = c.ticker_price(p["symbol"])
-            except Exception:
-                pass
-    except Exception:
-        pass
-    agent = EquityAgent(storage)
-    a = agent.analytics(prices)
-    return {"account": summ, "analytics": a}
+    return _equity_payload()
 
 
 @app.get("/api/equity/history")
@@ -907,26 +1017,7 @@ def api_equity_history(limit: int = 200):
 @app.get("/api/equity/analytics")
 @api_error_handler
 def api_equity_analytics():
-    from .equity import EquityAgent
-    from .paper_trading import PaperTrader
-    pt = PaperTrader(storage)
-    summ = pt.account_summary(None)
-    prices = {}
-    try:
-        from .binance_client import BinanceClient
-        key, secret = settings.credentials
-        testnet = settings.use_testnet or settings.trading_mode != "live"
-        c = BinanceClient(api_key=key, api_secret=secret, testnet=testnet)
-        c.sync_time()
-        for p in storage.open_positions():
-            try:
-                prices[p["symbol"]] = c.ticker_price(p["symbol"])
-            except Exception:
-                pass
-    except Exception:
-        pass
-    agent = EquityAgent(storage)
-    return {"analytics": agent.analytics(prices)}
+    return _equity_payload()
 
 
 @app.get("/api/equity/drawdown")
@@ -1157,6 +1248,15 @@ def api_monitoring():
         "open_positions": len(storage.open_positions()),
         "events_count": storage.count_events(),
     }
+
+
+@app.get("/ui/vendor/{filename}")
+def ui_vendor(filename: str):
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ui", "vendor")
+    path = os.path.join(base, os.path.basename(filename))
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(path, media_type="application/javascript")
 
 
 @app.get("/", response_class=HTMLResponse)

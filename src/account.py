@@ -10,6 +10,23 @@ def get_available_equity(client: BinanceClient) -> Decimal:
     return avail
 
 
+def account_snapshot(client: BinanceClient) -> dict:
+    """Normalized account balances for dashboard/equity display."""
+    acct = client.account()
+    balance = Decimal(str(acct.get("totalWalletBalance", "0")))
+    unrealized = Decimal(str(acct.get("totalUnrealizedProfit", "0")))
+    margin = Decimal(str(acct.get("totalMarginBalance", "0")))
+    equity = margin if margin > 0 else balance + unrealized
+    return {
+        "equity": str(equity),
+        "balance": str(balance),
+        "available": str(Decimal(str(acct.get("availableBalance", "0")))),
+        "unrealized": str(unrealized),
+        "can_trade": bool(acct.get("canTrade", False)),
+        "can_withdraw": bool(acct.get("canWithdraw", False)),
+    }
+
+
 def get_positions(client: BinanceClient) -> list[dict]:
     return client.position_risk()
 

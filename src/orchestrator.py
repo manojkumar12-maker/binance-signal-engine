@@ -13,7 +13,7 @@ from .rug_check import RugChecker
 from .sizer import Sizer
 from .paper_trading import PaperTrader
 from .execution import ExecutionEngine, exchange_execution_authorized
-from .account import get_available_equity
+from .account import get_available_equity, account_snapshot
 from .logger import Logger
 from .equity import EquityAgent
 from .kill_switch import KillSwitch
@@ -74,6 +74,25 @@ class Orchestrator:
 
     def _make_task_id(self, agent, symbol, signal_id):
         return f"{agent}:{symbol}:{signal_id}:{int(time.time()*1000)}"
+
+    def _snapshot_equity(self):
+        prices = {}
+        for p in self.storage.open_positions():
+            try:
+                prices[p["symbol"]] = self.client.ticker_price(p["symbol"])
+            except Exception:
+                pass
+        if exchange_execution_authorized():
+            try:
+                acct = account_snapshot(self.client)
+                realized = self.storage.equity_summary().get("realized_pnl", 0)
+                self.storage.add_equity_snapshot(
+                    acct["equity"], acct["balance"], realized, acct["unrealized"]
+                )
+                return
+            except Exception:
+                pass
+        self.equity.snapshot({k: str(v) for k, v in prices.items()})
 
     def run_cycle(self) -> list[TaskResult]:
         results = []
@@ -267,11 +286,21 @@ class Orchestrator:
                     self.storage.log_event("EXECUTER", a.get("trade_id", ""), "monitor", a.get("action", ""), str(a))
                     # equity snapshot after close
                     try:
-                        self.equity.snapshot({})
+                        self._snapshot_equity()
                     except Exception:
                         pass
             except Exception as e:
                 self.logger.error("EXECUTER", "monitor", str(e))
+
+            # equity snapshot every cycle (live Demo/Live balance when available)
+            self.set_stage("equity")
+            self.storage.upsert_agent_status("EQUITY", "MONITORING", current_activity="snapshot")
+            try:
+                self._snapshot_equity()
+                self.storage.upsert_agent_status("EQUITY", "IDLE", current_activity="updated", last_success=True)
+            except Exception as e:
+                self.logger.error("EQUITY", "snapshot", str(e))
+                self.storage.upsert_agent_status("EQUITY", "ERROR", current_activity="snapshot failed", error_message=str(e))
 
             self.set_stage("idle")
             self.storage.upsert_agent_status("SCANNER", "IDLE", current_activity="cycle complete", last_success=True)
