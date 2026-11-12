@@ -5,12 +5,15 @@ import logging
 import threading
 from decimal import Decimal
 from dataclasses import dataclass, asdict
+from types import SimpleNamespace
 from .storage import Storage
 from .config import settings
 from .scanner import Scanner
 from .rug_check import RugChecker
 from .sizer import Sizer
 from .paper_trading import PaperTrader
+from .execution import ExecutionEngine, exchange_execution_authorized
+from .account import get_available_equity
 from .logger import Logger
 from .equity import EquityAgent
 from .kill_switch import KillSwitch
@@ -39,15 +42,17 @@ class TaskResult:
 
 
 class Orchestrator:
-    def __init__(self, client, storage, market_data=None):
+    def __init__(self, client, storage, market_data=None, exchange_info=None):
         self.client = client
         self.storage = storage
         self.market_data = market_data
+        self.exchange_info = exchange_info
         self.kill = KillSwitch(storage)
         self.scanner = Scanner(client, storage, market_data=market_data)
         self.rug = RugChecker()
         self.sizer = Sizer()
         self.paper = PaperTrader(storage)
+        self.execution = ExecutionEngine(client, storage, exchange_info or {})
         self.logger = Logger(storage)
         self.equity = EquityAgent(storage)
         self.recon = ReconciliationService(client, storage)
@@ -79,6 +84,14 @@ class Orchestrator:
         try:
             self.storage.update_heartbeat("running")
             self.logger.info("ORCHESTRATOR", "cycle", "cycle started")
+            # pick up credentials saved via the Settings page without a restart
+            try:
+                key, secret = settings.credentials
+                updater = getattr(self.client, "update_credentials", None)
+                if updater:
+                    updater(key, secret)
+            except Exception:
+                pass
             self.set_stage("reconciling")
             # reconciliation
             try:
@@ -98,6 +111,13 @@ class Orchestrator:
             self.storage.upsert_agent_status("SCANNER", "SCANNING", current_activity="scanning symbols")
 
             scan_results = self.scanner.scan_once()
+            use_exchange = exchange_execution_authorized()
+            use_engine = use_exchange or settings.live_mode
+            if use_exchange and not (self.execution.exchange_info or {}).get("symbols"):
+                try:
+                    self.execution.exchange_info = self.client.exchange_info()
+                except Exception as e:
+                    self.logger.error("EXECUTER", "exchange_info", str(e))
             for sr in scan_results:
                 symbol = sr.get("symbol")
                 sig = sr.get("signal")
@@ -123,14 +143,20 @@ class Orchestrator:
                     self.storage.log_event("ORCHESTRATOR", symbol, "workflow", "rejected", f"rug check {rating}")
                     continue
 
-                # Sizer — use current equity (realized PnL included), not the static starting balance
+                # Sizer — use Binance Demo equity when executing, else simulated equity
                 self.set_stage("sizing")
                 self.storage.upsert_agent_status("SIZER", "ANALYZING", current_activity=f"{symbol}")
-                try:
-                    eq = self.storage.equity_summary()
-                    current_equity = settings.simulated_starting_balance + Decimal(str(eq.get("realized_pnl", 0)))
-                except Exception:
-                    current_equity = settings.simulated_starting_balance
+                if use_exchange:
+                    try:
+                        current_equity = get_available_equity(self.client)
+                    except Exception:
+                        current_equity = settings.simulated_starting_balance
+                else:
+                    try:
+                        eq = self.storage.equity_summary()
+                        current_equity = settings.simulated_starting_balance + Decimal(str(eq.get("realized_pnl", 0)))
+                    except Exception:
+                        current_equity = settings.simulated_starting_balance
                 try:
                     dd = self.sizer.calculate(
                         symbol=symbol,
@@ -143,7 +169,7 @@ class Orchestrator:
                         kill_halted=self.kill.is_halted()[0],
                         daily_loss_used=self.kill.daily_loss_used(),
                         open_positions_count=len(self.storage.open_positions()),
-                        exchange_info=None,
+                        exchange_info=self.execution.exchange_info if use_exchange else None,
                     )
                 except Exception as e:
                     dd = None
@@ -178,22 +204,44 @@ class Orchestrator:
                     continue
                 self.storage.mark_signal_seen(exec_id)
 
-                # Executer: open paper position
+                # Executer: Binance Demo/live order, or internal simulator
                 self.set_stage("executing")
                 self.storage.upsert_agent_status("EXECUTER", "EXECUTING", current_activity=f"opening {symbol}")
-                proposal = {"symbol": symbol, "direction": sig["direction"],
-                            "entry_price": sig["entry_price"], "stop_loss": sig["stop_loss"],
-                            "take_profit": sig["take_profit"]}
-                try:
-                    res = self.paper.open_position(self.client, proposal, dd, None)
-                except Exception as e:
-                    res = {"ok": False, "reason": str(e)}
+                event_type = "binance_open" if use_engine else "paper_open"
+                if use_engine:
+                    signal_obj = SimpleNamespace(
+                        symbol=symbol,
+                        direction=sig["direction"],
+                        timestamp=int(time.time()),
+                        entry_price=Decimal(str(sig["entry_price"])),
+                        stop_loss=Decimal(str(sig["stop_loss"])),
+                        take_profit=Decimal(str(sig["take_profit"])),
+                        signal_id=sig.get("signal_id"),
+                    )
+                    try:
+                        ok, reason = self.execution.execute_signal(signal_obj, symbol, size_decision=dd)
+                    except Exception as e:
+                        ok, reason = False, str(e)
+                    res = {
+                        "ok": bool(ok and reason == "executed"),
+                        "reason": reason,
+                        "broker": ("binance-demo" if settings.testnet_execution_ready
+                                   else ("binance-live" if settings.live_authorized else "binance-gated")),
+                    }
+                else:
+                    proposal = {"symbol": symbol, "direction": sig["direction"],
+                                "entry_price": sig["entry_price"], "stop_loss": sig["stop_loss"],
+                                "take_profit": sig["take_profit"]}
+                    try:
+                        res = self.paper.open_position(self.client, proposal, dd, None)
+                    except Exception as e:
+                        res = {"ok": False, "reason": str(e)}
 
                 if res.get("ok"):
                     tr = TaskResult("EXECUTER", self._make_task_id("EXECUTER", symbol, signal_id), symbol, signal_id, True,
                                     output=res, timestamp=time.time())
                     results.append(tr)
-                    self.storage.log_event("EXECUTER", symbol, "paper_open", "executed", str(res))
+                    self.storage.log_event("EXECUTER", symbol, event_type, "executed", str(res))
                     self.storage.upsert_agent_status("EXECUTER", "MONITORING", current_activity=f"monitoring {symbol}", last_success=True)
                     # equity snapshot
                     self.set_stage("equity")
@@ -207,14 +255,14 @@ class Orchestrator:
                     tr = TaskResult("EXECUTER", self._make_task_id("EXECUTER", symbol, signal_id), symbol, signal_id, False,
                                     rejection_reason=res.get("reason", "execution failed"), timestamp=time.time())
                     results.append(tr)
-                    self.storage.log_event("EXECUTER", symbol, "paper_open", "rejected", res.get("reason", ""))
+                    self.storage.log_event("EXECUTER", symbol, event_type, "rejected", res.get("reason", ""))
                     self.storage.upsert_agent_status("EXECUTER", "ERROR", current_activity=res.get("reason", ""), error_message=res.get("reason", ""))
 
             # monitor existing positions
             self.set_stage("monitoring")
             self.storage.upsert_agent_status("EXECUTER", "MONITORING", current_activity="monitoring positions")
             try:
-                actions = self.paper.monitor(self.client)
+                actions = self.execution.monitor() if use_exchange else self.paper.monitor(self.client)
                 for a in actions:
                     self.storage.log_event("EXECUTER", a.get("trade_id", ""), "monitor", a.get("action", ""), str(a))
                     # equity snapshot after close

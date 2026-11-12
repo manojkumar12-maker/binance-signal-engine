@@ -16,6 +16,11 @@ class BinanceClient:
         self._time_offset_ms = 0
         self._client = httpx.Client(timeout=10.0)
 
+    def update_credentials(self, api_key: str, api_secret: str) -> None:
+        """Apply credentials saved at runtime (Settings page) without a restart."""
+        self.api_key = api_key or ""
+        self.api_secret = api_secret or ""
+
     def sync_time(self) -> None:
         r = self._client.get(f"{self.base_url}/fapi/v1/time")
         r.raise_for_status()
@@ -78,6 +83,20 @@ class BinanceClient:
     def open_orders(self, symbol: Optional[str] = None) -> list:
         params = {"symbol": symbol} if symbol else {}
         return self._request("GET", "/fapi/v1/openOrders", params, signed=True)
+
+    def income(self, symbol: Optional[str] = None, income_type: Optional[str] = None,
+               start_time: Optional[float] = None, limit: int = 1000) -> list:
+        params: dict[str, Any] = {"limit": limit}
+        if symbol:
+            params["symbol"] = symbol
+        if income_type:
+            params["incomeType"] = income_type
+        if start_time:
+            params["startTime"] = int(start_time * 1000)
+        return self._request("GET", "/fapi/v1/income", params, signed=True)
+
+    def set_leverage(self, symbol: str, leverage: int) -> dict:
+        return self._request("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": leverage}, signed=True)
 
     # Orders
     def place_order(self, **kwargs) -> dict:

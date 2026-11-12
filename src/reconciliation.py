@@ -12,8 +12,9 @@ class ReconciliationService:
 
     def reconcile(self) -> dict:
         result = {"positions_synced": 0, "orders_synced": 0, "discrepancies": []}
-        # In PAPER mode (or without live credentials), do not call authenticated exchange endpoints.
-        if settings.paper_mode:
+        # In plain simulated paper mode, do not call authenticated exchange endpoints.
+        # Testnet/live modes and Demo-authorized paper mode reconcile normally.
+        if settings.paper_mode and not settings.testnet_execution_ready:
             return result
         try:
             ex_positions = self.client.position_risk()
@@ -21,13 +22,18 @@ class ReconciliationService:
             result["discrepancies"].append(f"position fetch failed: {e}")
             return result
         ex_map = {p["symbol"]: Decimal(str(p.get("positionAmt", "0"))) for p in ex_positions}
+        managed_by_executor = settings.testnet_execution_ready or settings.live_authorized
 
         # mark locally open trades that are closed on exchange
         for t in self.storage.open_positions():
             amt = ex_map.get(t["symbol"], Decimal("0"))
             if amt == 0:
-                self.storage.close_trade(t["id"], "0", "0")
-                result["discrepancies"].append(f"local open but exchange closed: {t['symbol']}")
+                if managed_by_executor:
+                    # ExecutionEngine.monitor closes with realized PnL/fees.
+                    result["discrepancies"].append(f"local open but exchange closed: {t['symbol']}")
+                else:
+                    self.storage.close_trade(t["id"], "0", "0")
+                    result["discrepancies"].append(f"local open but exchange closed: {t['symbol']}")
 
         # unknown exchange positions
         local_symbols = {t["symbol"] for t in self.storage.open_positions()}

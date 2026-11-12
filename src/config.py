@@ -126,6 +126,23 @@ class Settings(BaseSettings):
         )
 
     @property
+    def testnet_execution_ready(self) -> bool:
+        """Paper mode executes on Binance Demo when testnet keys are configured."""
+        return (
+            self.normalized_mode in ("paper", "testnet")
+            and self.use_testnet
+            and bool(self.binance_testnet_api_key)
+            and bool(self.binance_testnet_api_secret)
+        )
+
+    @property
+    def binance_environment(self) -> str:
+        # Demo/testnet for paper, original mainnet for live.
+        if self.use_testnet or not self.live_mode:
+            return "demo"
+        return "live"
+
+    @property
     def credentials(self) -> tuple[str, str]:
         if self.use_testnet or self.normalized_mode != "live":
             return self.binance_testnet_api_key, self.binance_testnet_api_secret

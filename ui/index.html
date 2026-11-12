@@ -539,6 +539,31 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
         <div class="hint">Runtime configuration reported by the backend. Change values via environment variables and redeploy.</div>
         <div id="settingsInfo"></div>
       </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Binance Execution Credentials</h3>
+        <div class="hint">Stored encrypted at rest and never returned to the browser. Paper uses Binance Demo (Testnet); Live uses Binance Original (mainnet) and stays disabled until the env flags + marker file are enabled. Use a trade-only key with withdrawals disabled.</div>
+        <div id="binanceStatus"><div class="skl" style="width:70%"></div></div>
+        <div class="field" style="margin-top:14px">
+          <label>Network</label>
+          <select id="binNetwork" class="inp">
+            <option value="testnet">Binance Demo (Testnet) — Paper</option>
+            <option value="live">Binance Original — Live</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>API Key</label>
+          <input id="binKey" class="inp" placeholder="paste API key" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label>API Secret</label>
+          <input id="binSecret" type="password" class="inp" placeholder="paste API secret (never shown again)" autocomplete="new-password" spellcheck="false">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" onclick="saveBinanceCreds()">Save Encrypted</button>
+          <button class="btn ghost" onclick="testBinanceCreds()">Test Connection</button>
+          <button class="btn danger" onclick="clearBinanceCreds()">Clear</button>
+        </div>
+      </div>
     </section>
   </main>
 </div>
@@ -564,6 +589,82 @@ async function api(path){
   const r = await fetch(API+path);
   if(r.status===401){ $('loginOverlay').style.display='flex'; }
   return r.json();
+}
+
+async function apiSend(path, method, body){
+  const r = await fetch(API+path, {
+    method,
+    credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(r.status===401){ $('loginOverlay').style.display='flex'; }
+  let data = {};
+  try{ data = await r.json(); }catch(e){}
+  return {status:r.status, data};
+}
+
+/* ---------- binance execution credentials ---------- */
+async function loadBinanceStatus(){
+  const box = $('binanceStatus'); if(!box) return;
+  try{
+    const {status, data} = await apiSend('/api/admin/binance/credentials','GET');
+    if(status!==200){ box.innerHTML = `<div class="hint">Unable to load credentials (${status}).</div>`; return; }
+    const dot = ok => ok ? '<span class="badge b-good">CONFIGURED</span>' : '<span class="badge b-warn2">EMPTY</span>';
+    box.innerHTML = [
+      ['Encryption', data.encryption_available ? '<span class="badge b-good">READY</span>' : '<span class="badge b-bad">UNAVAILABLE</span>'],
+      ['Testnet Key', dot(data.testnet && data.testnet.configured) + (data.testnet && data.testnet.api_key_last4 ? ` <span class="v">${esc(data.testnet.api_key_last4)}</span>` : '')],
+      ['Live Key', dot(data.live && data.live.configured) + (data.live && data.live.api_key_last4 ? ` <span class="v">${esc(data.live.api_key_last4)}</span>` : '')],
+      ['Execution', data.execution_mode==='binance-demo' ? '<span class="badge b-good">BINANCE DEMO</span>' : (data.execution_mode==='binance-live' ? '<span class="badge b-bad">BINANCE LIVE</span>' : '<span class="badge b-warn2">SIMULATED</span>')],
+      ['Active Network', esc(data.active_network||'–')],
+      ['Trading Mode', esc((data.trading_mode||'–').toUpperCase())]
+    ].map(([k,v])=>`<div class="hrow"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+  }catch(e){
+    box.innerHTML = '<div class="hint">Unable to load credentials.</div>';
+  }
+}
+
+async function saveBinanceCreds(){
+  const key = $('binKey').value.trim();
+  const secret = $('binSecret').value.trim();
+  const network = $('binNetwork').value;
+  if(!key || !secret){ toast('API key and secret are required','err'); return; }
+  const {status, data} = await apiSend('/api/admin/binance/credentials','POST',{api_key:key,api_secret:secret,network});
+  if(status===200 && data.ok){
+    $('binKey').value=''; $('binSecret').value='';
+    toast(`${network} credentials saved (encrypted)`,'ok');
+    loadBinanceStatus();
+  }else{
+    toast(data.error || data.errors && data.errors.join(', ') || 'Save failed','err');
+  }
+}
+
+async function testBinanceCreds(){
+  const network = $('binNetwork').value;
+  const body = {network};
+  const key = $('binKey').value.trim();
+  const secret = $('binSecret').value.trim();
+  if(key && secret){ body.api_key = key; body.api_secret = secret; }
+  toast(`Testing ${network} connection…`,'info');
+  const {status, data} = await apiSend('/api/admin/binance/test','POST',body);
+  if(data.ok){
+    const warn = data.warning ? ` — ${data.warning}` : '';
+    toast(`Connected (${network}); canTrade=${data.can_trade}${warn}`, data.can_trade ? 'ok' : 'info');
+  }else{
+    toast(data.error || 'Connection failed','err');
+  }
+}
+
+async function clearBinanceCreds(){
+  const network = $('binNetwork').value;
+  if(!await confirmModal('Clear credentials', `Delete the stored ${network} API key and secret?`, true)) return;
+  const {status, data} = await apiSend('/api/admin/binance/credentials?network='+encodeURIComponent(network),'DELETE');
+  if(status===200 && data.ok){
+    toast(`${network} credentials cleared`,'ok');
+    loadBinanceStatus();
+  }else{
+    toast(data.error || 'Clear failed','err');
+  }
 }
 
 /* count-up animation for KPI numbers */
@@ -635,6 +736,7 @@ function showView(v){
   $('sidebar').classList.remove('open');
   if(v==='scanner') loadChart();
   if(v==='equity') loadEquityChart();
+  if(v==='settings') loadBinanceStatus();
 }
 function toggleAdmin(){showView('admin')}
 

@@ -8,8 +8,8 @@ from .binance_client import BinanceClient
 from .signal_engine import SignalEngine
 from .scanner import Scanner
 from .orchestrator import Orchestrator
-from .execution import ExecutionEngine
 from .storage import Storage
+from .settings_manager import SettingsManager
 from .kill_switch import KillSwitch
 from .worker_lock import WorkerLock
 from .reconciliation import ReconciliationService
@@ -62,14 +62,14 @@ def main():
         return
 
     storage = Storage()
+    # Load credentials saved via the Settings page before building the client.
+    SettingsManager(storage).load_into_settings()
     client = build_client()
     try:
         info = client.exchange_info()
     except Exception as e:
         log.error("exchange info failed: %s", e)
         info = {"symbols": []}
-    engine = ExecutionEngine(client, storage, info)
-
     market_data = None
     if getattr(settings, "scan_all_usdt_perpetuals", True):
         market_data = MarketDataService(client)
@@ -80,7 +80,7 @@ def main():
             log.warning("initial universe refresh failed: %s", e)
         market_data.start()
 
-    orch = Orchestrator(client, storage, market_data=market_data)
+    orch = Orchestrator(client, storage, market_data=market_data, exchange_info=info)
 
     symbols_desc = f"{len(market_data.get_universe())} USDT perpetuals" if market_data else settings.symbol_list
     log.info("Starting bot in mode=%s live_authorized=%s symbols=%s", settings.trading_mode, settings.live_authorized, symbols_desc)

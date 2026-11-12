@@ -88,6 +88,15 @@ class WorkerLock:
             except Exception:
                 pass
             self._fd = None
+        elif self._acquired:
+            # Windows fallback: remove our own lock file so it does not go stale.
+            try:
+                with open(self.path) as f:
+                    pid = int(f.read().strip().split()[0])
+                if pid == os.getpid():
+                    os.remove(self.path)
+            except Exception:
+                pass
         self._acquired = False
 
     def __del__(self):

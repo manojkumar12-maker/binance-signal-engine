@@ -92,6 +92,11 @@ class Storage:
             key TEXT PRIMARY KEY,
             value TEXT
         );
+        CREATE TABLE IF NOT EXISTS app_secrets (
+            name TEXT PRIMARY KEY,
+            ciphertext TEXT NOT NULL,
+            updated_at REAL
+        );
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT,
@@ -254,10 +259,16 @@ class Storage:
 
     def open_positions(self) -> list[dict]:
         cur = self.conn.cursor()
-        cur.execute("SELECT id,symbol,direction,quantity,entry_price,stop_loss,take_profit,entry_order_id,stop_order_id FROM trades WHERE status='OPEN'")
+        cur.execute("SELECT id,symbol,direction,quantity,entry_price,stop_loss,take_profit,entry_order_id,stop_order_id,opened_at FROM trades WHERE status='OPEN'")
         rows = cur.fetchall()
         return [{"id": r[0], "symbol": r[1], "direction": r[2], "quantity": r[3], "entry_price": r[4],
-                "stop_loss": r[5], "take_profit": r[6], "entry_order_id": r[7], "stop_order_id": r[8]} for r in rows]
+                "stop_loss": r[5], "take_profit": r[6], "entry_order_id": r[7], "stop_order_id": r[8],
+                "opened_at": r[9]} for r in rows]
+
+    def update_trade_stop_order(self, trade_id: int, order_id: str):
+        cur = self.conn.cursor()
+        cur.execute("UPDATE trades SET stop_order_id=? WHERE id=?", (order_id, trade_id))
+        self.conn.commit()
 
     def is_halted(self) -> tuple[bool, str]:
         cur = self.conn.cursor()
@@ -534,6 +545,29 @@ class Storage:
     def set_setting(self, key, value):
         cur = self.conn.cursor()
         cur.execute("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=?", (key, value, value))
+        self.conn.commit()
+
+    # Encrypted secrets (ciphertext only; never stored in plaintext)
+    def set_secret(self, name: str, ciphertext: str):
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO app_secrets (name,ciphertext,updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(name) DO UPDATE SET ciphertext=?, updated_at=?",
+            (name, ciphertext, time.time(), ciphertext, time.time()),
+        )
+        self.conn.commit()
+
+    def get_secret(self, name: str):
+        cur = self.conn.cursor()
+        cur.execute("SELECT ciphertext, updated_at FROM app_secrets WHERE name=?", (name,))
+        r = cur.fetchone()
+        if not r:
+            return None
+        return {"ciphertext": r[0], "updated_at": r[1]}
+
+    def delete_secret(self, name: str):
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM app_secrets WHERE name=?", (name,))
         self.conn.commit()
 
     # Admin actions

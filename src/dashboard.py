@@ -282,6 +282,9 @@ def api_status():
         "auto_trade": settings.auto_trade,
         "live_trading_enabled": settings.live_trading_enabled,
         "use_testnet": settings.use_testnet,
+        "binance_environment": settings.binance_environment,
+        "execution_mode": ("binance-demo" if settings.testnet_execution_ready else
+                           ("binance-live" if settings.live_authorized else "simulated")),
         "simulated_starting_balance": str(settings.simulated_starting_balance),
         "open_positions": len(storage.open_positions()),
         "daily_loss_used": str(kill.daily_loss_used()),
@@ -432,6 +435,7 @@ def api_settings():
         "max_daily_loss_usdt": str(settings.max_daily_loss_usdt),
         "max_planned_loss_per_trade": str(settings.max_planned_loss_per_trade),
         "simulated_starting_balance": str(settings.simulated_starting_balance),
+        "binance_environment": settings.binance_environment,
     }
 
 
@@ -1035,6 +1039,68 @@ async def api_admin_settings_put(request: Request):
     res = settings_mgr.validate_and_set(data)
     storage.log_event("ADMIN", "", "settings", "update", str(res))
     return res
+
+
+def _actor(request: Request) -> str:
+    return getattr(request.state, "user", None) or "admin"
+
+
+@app.get("/api/admin/binance/credentials")
+@api_error_handler
+def api_binance_credentials_get(request: Request):
+    _auth(request)
+    return settings_mgr.get_binance_status()
+
+
+@app.post("/api/admin/binance/credentials")
+@api_error_handler
+async def api_binance_credentials_post(request: Request):
+    _auth(request)
+    data = await request.json()
+    res = settings_mgr.save_binance_credentials(
+        data.get("api_key", ""), data.get("api_secret", ""), data.get("network", "testnet")
+    )
+    if not res.get("ok"):
+        return JSONResponse(res, status_code=400)
+    storage.log_admin_action("binance_credentials_save", actor=_actor(request),
+                             details=f"network={res.get('network')}")
+    return res
+
+
+@app.delete("/api/admin/binance/credentials")
+@api_error_handler
+def api_binance_credentials_delete(request: Request):
+    _auth(request)
+    network = request.query_params.get("network", "testnet")
+    res = settings_mgr.clear_binance_credentials(network)
+    if not res.get("ok"):
+        return JSONResponse(res, status_code=400)
+    storage.log_admin_action("binance_credentials_clear", actor=_actor(request),
+                             details=f"network={res.get('network')}")
+    return res
+
+
+@app.post("/api/admin/binance/test")
+@api_error_handler
+async def api_binance_test(request: Request):
+    _auth(request)
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    res = settings_mgr.test_binance_connection(
+        network=data.get("network", "testnet"),
+        api_key=data.get("api_key"),
+        api_secret=data.get("api_secret"),
+    )
+    network = res.get("network", data.get("network", "testnet"))
+    storage.log_admin_action(
+        "binance_connection_test", actor=_actor(request),
+        details=f"network={network} ok={bool(res.get('ok'))}",
+    )
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 
 @app.post("/api/admin/agents/{name}/start")
