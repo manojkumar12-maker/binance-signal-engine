@@ -62,6 +62,9 @@ def main():
         return
 
     storage = Storage()
+    # Beat immediately so /api/health reports ok during slow startup
+    # (client setup + universe refresh can take minutes on small VMs).
+    storage.update_heartbeat("started")
     # Load credentials saved via the Settings page before building the client.
     SettingsManager(storage).load_into_settings()
     client = build_client()

@@ -154,10 +154,21 @@ def rate_limit(ip: str, limit: int = 120):
     return True
 
 
+def client_ip(request: Request) -> str:
+    # Behind Fly's proxy every request shares the proxy address, so prefer
+    # the proxy-provided client IP headers before falling back to the socket.
+    fwd = request.headers.get("fly-client-ip") or request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 @app.middleware("http")
 async def rl_middleware(request: Request, call_next):
-    ip = request.client.host if request.client else "unknown"
-    if not rate_limit(ip):
+    # Health checks must never be rate limited (a 429 fails Fly's checks).
+    if request.url.path in PUBLIC_PATHS or request.url.path == "/health":
+        return await call_next(request)
+    if not rate_limit(client_ip(request)):
         return JSONResponse({"error": "rate limited"}, status_code=429)
     return await call_next(request)
 
@@ -1080,7 +1091,7 @@ async def api_auth_login(request: Request):
     data = await request.json()
     username = data.get("username", "")
     password = data.get("password", "")
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     if auth.is_rate_limited(ip):
         return JSONResponse({"error": "rate limited"}, status_code=429)
     ok, token, must_change = auth.login(username, password, ip)
