@@ -3,7 +3,9 @@ from decimal import Decimal
 from dataclasses import dataclass
 from .config import settings
 from .risk_engine import fee_estimate
-from .exchange_filters import validate_order, get_lot_size_filter, round_quantity
+from .exchange_filters import (
+    validate_order, get_lot_size_filter, get_symbol_info, round_quantity,
+)
 
 
 @dataclass
@@ -22,7 +24,8 @@ class SizeDecision:
 class Sizer:
     def calculate(self, symbol, direction, entry_price, stop_loss_price, take_profit_price,
                  available_equity, rug_rating="LOW", kill_halted=False, daily_loss_used=Decimal("0"),
-                 open_positions_count=0, exchange_info=None):
+                 open_positions_count=0, exchange_info=None, daily_loss_limit=None,
+                 entries_today=0):
         entry = Decimal(str(entry_price))
         stop = Decimal(str(stop_loss_price))
         tp = Decimal(str(take_profit_price))
@@ -40,16 +43,26 @@ class Sizer:
             return SizeDecision(False, f"rug check {rug_rating}")
 
         risk_pct = settings.risk_per_trade_pct
-        max_daily_pct = settings.max_daily_loss_pct
 
-        max_daily_loss = (equity * max_daily_pct)  # simplified; better use starting equity but equity approx
-        if daily_loss_used >= max_daily_loss:
+        # Prefer the kill-switch budget (day-start equity + absolute cap).
+        if daily_loss_limit is None:
+            daily_loss_limit = equity * settings.max_daily_loss_pct
+        daily_loss_limit = Decimal(str(daily_loss_limit))
+        if daily_loss_limit > 0 and daily_loss_used >= daily_loss_limit:
             return SizeDecision(False, "daily loss limit reached")
+
+        max_entries = settings.max_new_entries_per_day
+        if max_entries > 0 and entries_today >= max_entries:
+            return SizeDecision(False, "max new entries per day reached")
 
         if open_positions_count >= settings.max_simultaneous_positions:
             return SizeDecision(False, "max positions reached")
 
         risk_budget = equity * risk_pct
+        # Absolute per-trade loss cap (0 disables it).
+        max_planned = settings.max_planned_loss_per_trade
+        if max_planned > 0:
+            risk_budget = min(risk_budget, max_planned)
         stop_distance = abs(entry - stop)
         max_qty_by_risk = risk_budget / stop_distance
 
@@ -89,9 +102,8 @@ class Sizer:
         if margin_required > equity:
             return SizeDecision(False, "insufficient margin", quantity=qty)
 
-        # exchange filters
-        if exchange_info is not None:
-            from .exchange_filters import get_lot_size_filter, round_quantity, validate_order
+        # exchange filters (only when the symbol is present in exchange info)
+        if exchange_info is not None and get_symbol_info(exchange_info, symbol) is not None:
             lot = get_lot_size_filter(exchange_info, symbol)
             if lot:
                 step = Decimal(lot["stepSize"])
@@ -112,6 +124,12 @@ class Sizer:
         total_loss = gross_risk + fees
         notional = qty * entry
         margin_required = notional / Decimal(leverage)
+        reward = abs(tp - entry) * qty
+        net_reward = reward - fees
+        rr = (net_reward / total_loss) if total_loss > 0 else Decimal(0)
+        if total_loss > 0 and rr < settings.min_net_reward_to_risk:
+            return SizeDecision(False, "reward-to-risk below minimum", quantity=qty,
+                                estimated_loss=total_loss, estimated_fees=fees, reward_to_risk=rr)
 
         return SizeDecision(True, "approved", quantity=qty, risk_amount=risk_budget,
                             estimated_loss=total_loss, estimated_fees=fees, margin_required=margin_required,

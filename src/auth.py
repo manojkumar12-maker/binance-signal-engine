@@ -6,16 +6,36 @@ import time
 from .storage import Storage
 
 
-def hash_password(password: str, salt: str | None = None):
+PBKDF2_ITERATIONS = int(os.getenv("PBKDF2_ITERATIONS", "600000"))
+_LEGACY_ITERATIONS = 100000
+_HASH_PREFIX = "pbkdf2_sha256"
+
+
+def hash_password(password: str, salt: str | None = None, iterations: int | None = None):
     if salt is None:
         salt = secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000)
-    return h.hex(), salt
+    iters = iterations or PBKDF2_ITERATIONS
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), iters)
+    return f"{_HASH_PREFIX}${iters}${digest.hex()}", salt
 
 
 def verify_password(password: str, stored_hash: str, salt: str) -> bool:
-    h, _ = hash_password(password, salt)
-    return secrets.compare_digest(h, stored_hash)
+    try:
+        if stored_hash.startswith(_HASH_PREFIX + "$"):
+            _, iters, digest = stored_hash.split("$", 2)
+            iterations = int(iters)
+        else:
+            # Backward compatibility with legacy unsalted-format digests.
+            iterations = _LEGACY_ITERATIONS
+            digest = stored_hash
+        candidate = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), iterations).hex()
+        return secrets.compare_digest(candidate, digest)
+    except Exception:
+        return False
+
+
+_DUMMY_SALT = "00000000000000000000000000000000"
+_DUMMY_HASH, _ = hash_password("dummy-password", _DUMMY_SALT)
 
 
 class AuthManager:
@@ -51,6 +71,9 @@ class AuthManager:
 
     def record_failure(self, ip: str):
         now = time.time()
+        if len(self._attempts) > 5000:
+            for key in [k for k, v in list(self._attempts.items()) if v[1] and now >= v[1]]:
+                self._attempts.pop(key, None)
         info = self._attempts.get(ip, [0, 0])
         count = info[0] + 1
         lock_until = 0
@@ -61,11 +84,20 @@ class AuthManager:
     def clear_failures(self, ip: str):
         self._attempts.pop(ip, None)
 
+    def verify_user_password(self, username: str, password: str) -> bool:
+        user = self.storage.get_user(username)
+        if not user:
+            verify_password(password, _DUMMY_HASH, _DUMMY_SALT)
+            return False
+        return verify_password(password, user["password_hash"], user["salt"])
+
     def login(self, username: str, password: str, ip: str = "") -> tuple[bool, str, bool]:
         if self.is_rate_limited(ip):
             return False, "", False
         user = self.storage.get_user(username)
         if not user:
+            # Constant-ish work to reduce username-enumeration timing leaks.
+            verify_password(password, _DUMMY_HASH, _DUMMY_SALT)
             self.record_failure(ip)
             return False, "", False
         if not verify_password(password, user["password_hash"], user["salt"]):

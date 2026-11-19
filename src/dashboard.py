@@ -144,6 +144,9 @@ _rate = {}
 
 def rate_limit(ip: str, limit: int = 120):
     now = time.time()
+    if len(_rate) > 5000:
+        for key in [k for k, v in list(_rate.items()) if now > v[1]]:
+            _rate.pop(key, None)
     r = _rate.get(ip)
     if not r or now > r[1]:
         _rate[ip] = [1, now + 60]
@@ -154,13 +157,44 @@ def rate_limit(ip: str, limit: int = 120):
     return True
 
 
+def _trust_proxy_headers() -> bool:
+    """Only trust forwarding headers when explicitly behind a trusted proxy.
+
+    On Fly.io, FLY_APP_NAME is always set by the platform. Self-hosted
+    deployments must opt in via TRUST_PROXY_HEADERS, otherwise clients could
+    spoof X-Forwarded-For / Fly-Client-IP to bypass rate limits and lockouts.
+    """
+    flag = os.getenv("TRUST_PROXY_HEADERS", "").lower() in ("1", "true", "yes")
+    return flag or bool(
+        os.getenv("FLY_APP_NAME") or os.getenv("FLY_MACHINE_ID") or os.getenv("FLY_ALLOC_ID")
+    )
+
+
 def client_ip(request: Request) -> str:
-    # Behind Fly's proxy every request shares the proxy address, so prefer
-    # the proxy-provided client IP headers before falling back to the socket.
-    fwd = request.headers.get("fly-client-ip") or request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    if _trust_proxy_headers():
+        fwd = request.headers.get("fly-client-ip") or request.headers.get("x-forwarded-for", "")
+        if fwd:
+            return fwd.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+def _cookie_secure(request: Request) -> bool:
+    override = os.getenv("COOKIE_SECURE", "").lower()
+    if override in ("1", "true", "yes"):
+        return True
+    if override in ("0", "false", "no"):
+        return False
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    return request.url.scheme == "https" or proto == "https"
+
+
+def _same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    from urllib.parse import urlparse
+    host = request.headers.get("host", "")
+    return urlparse(origin).netloc == host
 
 
 @app.middleware("http")
@@ -185,6 +219,8 @@ async def auth_middleware(request: Request, call_next):
     auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
     if auth_disabled and not force_auth:
         return await call_next(request)
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and not _same_origin(request):
+        return JSONResponse({"error": "cross-origin request blocked"}, status_code=403)
     # Fail closed: if no admin configured, do not expose data
     if not storage.has_admin():
         return JSONResponse({"error": "setup required"}, status_code=503)
@@ -194,6 +230,28 @@ async def auth_middleware(request: Request, call_next):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     request.state.user = user
     return await call_next(request)
+
+
+def _ws_authorized(ws: WebSocket) -> bool:
+    """WebSocket auth: fail closed when no admin is configured."""
+    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
+    force_auth = os.getenv("FORCE_AUTH", "").lower() in ("1", "true", "yes")
+    if auth_disabled and not force_auth:
+        return True
+    if not storage.has_admin():
+        return False
+    token = None
+    try:
+        token = ws.cookies.get("session")
+    except Exception:
+        token = None
+    if token is None:
+        cookie_header = dict(ws.scope.get("headers", [])).get(b"cookie", b"").decode()
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if part.startswith("session="):
+                token = part.split("=", 1)[1]
+    return auth.validate_session(token) is not None
 
 
 def _auth(request: Request):
@@ -313,24 +371,9 @@ def agents():
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    # auth check
-    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
-    force_auth = os.getenv("FORCE_AUTH", "").lower() in ("1", "true", "yes")
-    if storage.has_admin() and not (auth_disabled and not force_auth):
-        token = None
-        try:
-            token = ws.cookies.get("session")
-        except Exception:
-            token = None
-        if token is None:
-            cookie_header = dict(ws.scope.get("headers", [])).get(b"cookie", b"").decode()
-            for part in cookie_header.split(";"):
-                part = part.strip()
-                if part.startswith("session="):
-                    token = part.split("=", 1)[1]
-        if auth.validate_session(token) is None:
-            await ws.close(code=4401)
-            return
+    if not _ws_authorized(ws):
+        await ws.close(code=4401)
+        return
     await ws.accept()
     try:
         latest = storage.recent_events(limit=1)
@@ -668,23 +711,9 @@ def api_system_kill(request: Request):
 
 @app.websocket("/api/ws")
 async def api_websocket(ws: WebSocket):
-    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
-    force_auth = os.getenv("FORCE_AUTH", "").lower() in ("1", "true", "yes")
-    if storage.has_admin() and not (auth_disabled and not force_auth):
-        token = None
-        try:
-            token = ws.cookies.get("session")
-        except Exception:
-            token = None
-        if token is None:
-            cookie_header = dict(ws.scope.get("headers", [])).get(b"cookie", b"").decode()
-            for part in cookie_header.split(";"):
-                part = part.strip()
-                if part.startswith("session="):
-                    token = part.split("=", 1)[1]
-        if auth.validate_session(token) is None:
-            await ws.close(code=4401)
-            return
+    if not _ws_authorized(ws):
+        await ws.close(code=4401)
+        return
     await ws.accept()
     last_id = 0
     try:
@@ -776,9 +805,9 @@ def api_scanner_pumps(limit: int = 30):
     return {"events": storage.recent_pump_events(limit=min(max(limit, 1), 100))}
 
 
-@app.get("/api/diagnostics")
+@app.get("/api/diagnostics/scanner")
 @api_error_handler
-def api_diagnostics(limit: int = 50, symbol: str = "", signals_only: bool = False):
+def api_scanner_diagnostics(limit: int = 50, symbol: str = "", signals_only: bool = False):
     return {"diagnostics": storage.recent_diagnostics(limit=limit, symbol=symbol or None, signals_only=signals_only)}
 
 
@@ -858,14 +887,12 @@ def api_sizer_config():
 async def api_sizer_config_update(request: Request):
     _auth(request)
     data = await request.json()
-    if "risk_per_trade_pct" in data:
-        settings.risk_per_trade_pct = __import__("decimal").Decimal(str(data["risk_per_trade_pct"]))
-    if "max_daily_loss_pct" in data:
-        settings.max_daily_loss_pct = __import__("decimal").Decimal(str(data["max_daily_loss_pct"]))
-    storage.set_setting("risk_per_trade_pct", str(settings.risk_per_trade_pct))
-    storage.set_setting("max_daily_loss_pct", str(settings.max_daily_loss_pct))
+    # Reuse the validated settings path; never accept unchecked risk values.
+    res = settings_mgr.validate_and_set(data)
+    if not res.get("ok"):
+        return JSONResponse(res, status_code=400)
     storage.log_admin_action("sizer_config_update", details=str(data))
-    return {"ok": True}
+    return res
 
 
 @app.post("/api/sizer/calculate")
@@ -876,6 +903,7 @@ async def api_sizer_calculate(request: Request):
     from decimal import Decimal
     sizer = Sizer()
     kill_halted, _ = kill.is_halted()
+    equity_raw = data.get("available_equity", str(settings.simulated_starting_balance))
     dd = sizer.calculate(
         symbol=data.get("symbol", settings.symbol),
         direction=data.get("direction", "LONG"),
@@ -888,6 +916,8 @@ async def api_sizer_calculate(request: Request):
         daily_loss_used=kill.daily_loss_used(),
         open_positions_count=len(storage.open_positions()),
         exchange_info=None,
+        daily_loss_limit=kill.daily_loss_limit(),
+        entries_today=kill.entries_today(),
     )
     storage.log_event("SIZER", data.get("symbol", settings.symbol), "calculate", "approved" if dd.approved else "rejected", dd.reason)
     storage.upsert_agent_status("SIZER", "ANALYZING" if dd.approved else "ERROR", current_activity=dd.reason, last_success=dd.approved, error_message="" if dd.approved else dd.reason)
@@ -973,21 +1003,32 @@ async def api_paper_execute(request: Request):
     kill_halted, _ = kill.is_halted()
     if kill_halted:
         return JSONResponse({"ok": False, "reason": "kill switch halted"}, status_code=400)
-    if storage.open_positions():
-        return JSONResponse({"ok": False, "reason": "position already open"}, status_code=400)
+    symbol = data.get("symbol", settings.symbol)
+    positions = storage.open_positions()
+    if any(p["symbol"] == symbol for p in positions):
+        return JSONResponse({"ok": False, "reason": "position already open for symbol"}, status_code=400)
+    if len(positions) >= settings.max_simultaneous_positions:
+        return JSONResponse({"ok": False, "reason": "max positions reached"}, status_code=400)
     sizer = Sizer()
+    equity_raw = data.get("available_equity", str(settings.simulated_starting_balance))
+    try:
+        kill.ensure_day_start_equity(Decimal(str(equity_raw)))
+    except Exception:
+        pass
     dd = sizer.calculate(
-        symbol=data.get("symbol", settings.symbol),
+        symbol=symbol,
         direction=data.get("direction", "LONG"),
         entry_price=data.get("entry_price", "0"),
         stop_loss_price=data.get("stop_loss_price", "0"),
         take_profit_price=data.get("take_profit_price", "0"),
-        available_equity=data.get("available_equity", str(settings.simulated_starting_balance)),
+        available_equity=equity_raw,
         rug_rating=data.get("rug_rating", "LOW"),
         kill_halted=kill_halted,
         daily_loss_used=kill.daily_loss_used(),
-        open_positions_count=len(storage.open_positions()),
+        open_positions_count=len(positions),
         exchange_info=None,
+        daily_loss_limit=kill.daily_loss_limit(),
+        entries_today=kill.entries_today(),
     )
     storage.log_event("SIZER", data.get("symbol", settings.symbol), "calculate", "approved" if dd.approved else "rejected", dd.reason)
     if not dd.approved:
@@ -996,7 +1037,7 @@ async def api_paper_execute(request: Request):
     storage.upsert_agent_status("SIZER", "ANALYZING", current_activity="approved", last_success=True)
     # build proposal dict
     proposal = {
-        "symbol": data.get("symbol", settings.symbol),
+        "symbol": symbol,
         "direction": data.get("direction", "LONG"),
         "entry_price": data.get("entry_price", "0"),
         "stop_loss": data.get("stop_loss_price", "0"),
@@ -1098,7 +1139,7 @@ async def api_auth_login(request: Request):
     if not ok:
         return JSONResponse({"error": "invalid credentials"}, status_code=401)
     response = JSONResponse({"ok": True, "must_change_password": must_change})
-    secure = os.getenv("COOKIE_SECURE", "").lower() in ("1", "true", "yes")
+    secure = _cookie_secure(request)
     response.set_cookie("session", token, httponly=True, samesite="lax", secure=secure, max_age=auth.session_ttl)
     auth.clear_failures(ip)
     storage.log_event("ADMIN", "", "auth", "login", f"user={username}")
@@ -1136,6 +1177,9 @@ async def api_auth_change_password(request: Request):
     if not user:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     data = await request.json()
+    current_pw = data.get("current_password", "")
+    if not auth.verify_user_password(user, current_pw):
+        return JSONResponse({"error": "current password incorrect"}, status_code=400)
     new_pw = data.get("new_password", "")
     if len(new_pw) < 8:
         return JSONResponse({"error": "password too short"}, status_code=400)

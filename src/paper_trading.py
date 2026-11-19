@@ -18,10 +18,12 @@ class PaperTrader:
             return None
 
     def open_position(self, client, trade_proposal, size_decision, signal) -> dict:
-        # prevent duplicate
-        if self.storage.open_positions():
-            return {"ok": False, "reason": "position already open"}
         symbol = trade_proposal["symbol"] if isinstance(trade_proposal, dict) else trade_proposal.symbol
+        open_positions = self.storage.open_positions()
+        if any(p["symbol"] == symbol for p in open_positions):
+            return {"ok": False, "reason": "position already open for symbol"}
+        if len(open_positions) >= settings.max_simultaneous_positions:
+            return {"ok": False, "reason": "max positions reached"}
         direction = trade_proposal["direction"] if isinstance(trade_proposal, dict) else trade_proposal.direction
         entry = Decimal(str(trade_proposal.get("entry_price") if isinstance(trade_proposal, dict) else trade_proposal.entry_price))
         # use market price if available
@@ -82,8 +84,10 @@ class PaperTrader:
             pnl = (exit_price - entry) * qty
         else:
             pnl = (entry - exit_price) * qty
+        # Slippage is already applied to entry/exit prices above, so it must
+        # not be added again inside the fee estimate.
         fees = fee_estimate(qty, entry, exit_price, settings.estimated_maker_fee,
-                            settings.estimated_taker_fee, settings.estimated_slippage)
+                            settings.estimated_taker_fee, Decimal("0"))
         realized = pnl - fees
         self.storage.close_trade(trade_id, str(realized), str(fees))
         self.kill.record_trade_result(realized)

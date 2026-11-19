@@ -221,6 +221,21 @@ class SettingsManager:
 
     def validate_and_set(self, data: dict):
         errors = []
+        # Reject malformed types before mutating any live settings.
+        for key in ("scan_interval_seconds", "max_concurrent_positions", "default_leverage"):
+            if key in data:
+                try:
+                    int(data[key])
+                except Exception:
+                    errors.append(f"{key} must be an integer")
+        for key in ("risk_per_trade_pct", "max_daily_loss_pct"):
+            if key in data:
+                try:
+                    Decimal(str(data[key]))
+                except Exception:
+                    errors.append(f"{key} must be numeric")
+        if errors:
+            return {"ok": False, "errors": errors}
         # trading mode: never allow live via dashboard
         if "trading_mode" in data:
             mode = str(data["trading_mode"]).lower()

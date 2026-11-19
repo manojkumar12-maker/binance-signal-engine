@@ -260,11 +260,16 @@ class Storage:
         self.conn.commit()
         return cur.lastrowid
 
-    def close_trade(self, trade_id: int, realized_pnl: str, fees: str):
+    def close_trade(self, trade_id: int, realized_pnl: str, fees: str, funding: str = "0"):
         cur = self.conn.cursor()
-        cur.execute("UPDATE trades SET status='CLOSED', closed_at=?, realized_pnl=?, fees=? WHERE id=?",
-                    (time.time(), realized_pnl, fees, trade_id))
+        cur.execute("UPDATE trades SET status='CLOSED', closed_at=?, realized_pnl=?, fees=?, funding=? WHERE id=?",
+                    (time.time(), realized_pnl, fees, funding, trade_id))
         self.conn.commit()
+
+    def count_trades_opened_since(self, since_ts: float) -> int:
+        cur = self.conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM trades WHERE opened_at >= ?", (float(since_ts),))
+        return int(cur.fetchone()[0] or 0)
 
     def open_positions(self) -> list[dict]:
         cur = self.conn.cursor()
@@ -815,6 +820,21 @@ class Storage:
         rows = cur.fetchall()
         cols = ["id","ts","equity","balance","realized_pnl","unrealized_pnl"]
         return [dict(zip(cols, r)) for r in rows]
+
+    # Retention
+    def prune_sessions(self, retention_days: int = 7):
+        cutoff = time.time() - retention_days * 86400
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM sessions WHERE expires_at < ? OR (revoked=1 AND created_at < ?)", (time.time(), cutoff))
+        self.conn.commit()
+        return cur.rowcount
+
+    def prune_seen_signals(self, keep: int = 200000):
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM seen_signals WHERE signal_id NOT IN "
+                    "(SELECT signal_id FROM seen_signals ORDER BY rowid DESC LIMIT ?)", (int(keep),))
+        self.conn.commit()
+        return cur.rowcount
 
     def close(self):
         self.conn.close()

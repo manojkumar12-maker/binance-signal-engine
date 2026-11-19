@@ -38,6 +38,15 @@ def has_open_position(client: BinanceClient) -> bool:
     return False
 
 
+def has_open_position_for_symbol(client: BinanceClient, symbol: str) -> bool:
+    for p in get_positions(client):
+        if p.get("symbol") != symbol:
+            continue
+        if Decimal(str(p.get("positionAmt", "0"))) != 0:
+            return True
+    return False
+
+
 def open_entry_orders(client: BinanceClient, symbol: str) -> list[dict]:
     orders = client.open_orders(symbol)
     return [o for o in orders if o.get("reduceOnly") is not True and o.get("type") in ("MARKET", "LIMIT")]

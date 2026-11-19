@@ -32,6 +32,7 @@ class Scanner:
         self.top_n = int(os.getenv("SCAN_TOP_N", "30"))
         self._discovered_at = 0.0
         self._discovered = None
+        self._last_pump_candle: dict[str, int] = {}
 
     def discover_symbols(self) -> list[str]:
         # Auto-discover the most liquid USDT-M perpetuals by 24h quote volume.
@@ -141,6 +142,9 @@ class Scanner:
             move_pct = abs(c - o) / o * 100
             if vol_ratio < Decimal(str(settings.pump_volume_ratio)) or move_pct < Decimal(str(settings.pump_min_move_pct)):
                 return None
+            if self._last_pump_candle.get(symbol) == last[0]:
+                return None
+            self._last_pump_candle[symbol] = last[0]
             direction = "long" if c > o else "short"
             info = {
                 "symbol": symbol, "direction": direction,
@@ -183,6 +187,22 @@ class Scanner:
             result["error"] = "insufficient candles"
             self.storage.log_event("SCANNER", symbol, "scan", "skipped", "insufficient data")
             return result
+
+        # Refuse to trade off a stale cache: the market-data refresher may be
+        # behind (API outage, slow VM), which would otherwise evaluate old
+        # candles and execute at today's price.
+        if self.market_data is not None:
+            try:
+                updated = float(self.market_data.updated_at(symbol, htf) or 0)
+            except Exception:
+                updated = 0.0
+            max_age = max(int(settings.max_candle_age_seconds),
+                          int(settings.market_data_refresh_seconds) * 2)
+            if updated <= 0 or (time.time() - updated) > max_age:
+                result["status"] = "stale_data"
+                result["error"] = "cached candles are stale"
+                self.storage.log_event("SCANNER", symbol, "scan", "skipped", "stale market data")
+                return result
 
         kl_ltf = None
         if ltf != htf:

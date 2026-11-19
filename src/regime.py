@@ -92,6 +92,11 @@ class RegimeClassifier:
             r.reasons.append(f"ATR% {atr_pct:.2f} above limit {self.atr_pct_high}")
             return r
 
+        if atr_pct is not None and self.atr_pct_low_liq > 0 and atr_pct < self.atr_pct_low_liq:
+            r.regime = "LOW_LIQUIDITY"
+            r.reasons.append(f"ATR% {atr_pct:.3f} below liquidity floor {self.atr_pct_low_liq}")
+            return r
+
         ema9 = ind.ema(closes, 9)
         bull_align = ema9[-1] > ema21[-1] > ema50[-1]
         bear_align = ema9[-1] < ema21[-1] < ema50[-1]

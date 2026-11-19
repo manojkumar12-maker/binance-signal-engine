@@ -3,7 +3,7 @@
 > **Paper-only** Binance USDT-M Futures signal engine and trading terminal.
 > Seven AI agents. Real market data. No fake trades. Live trading disabled by default.
 
-![Tests](https://img.shields.io/badge/tests-139%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-175%20passing-brightgreen)
 ![Mode](https://img.shields.io/badge/mode-PAPER-blue)
 ![Live Trading](https://img.shields.io/badge/live%20trading-disabled-red)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
@@ -99,7 +99,7 @@ Full list in the codebase.
 python -m pytest -q
 ```
 
-139 tests covering indicators, scanning, risk, paper trading, auth, equity, orchestration, and deployment safety.
+175 tests covering indicators, scanning, risk, paper trading, auth, equity, orchestration, and deployment safety.
 
 ## Documentation
 

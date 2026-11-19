@@ -98,6 +98,14 @@ class BinanceClient:
     def set_leverage(self, symbol: str, leverage: int) -> dict:
         return self._request("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": leverage}, signed=True)
 
+    def position_mode_dual(self) -> bool:
+        """True when the account is in Hedge Mode."""
+        data = self._request("GET", "/fapi/v1/positionSide/dual", signed=True)
+        value = data.get("dualSidePosition", False)
+        if isinstance(value, str):
+            return value.lower() == "true"
+        return bool(value)
+
     # Orders
     def place_order(self, **kwargs) -> dict:
         return self._request("POST", "/fapi/v1/order", kwargs, signed=True)

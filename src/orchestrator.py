@@ -53,7 +53,6 @@ class Orchestrator:
         self.sizer = Sizer()
         self.paper = PaperTrader(storage)
         self.execution = ExecutionEngine(client, storage, exchange_info or {})
-        self.max_positions = int(settings.max_simultaneous_positions)
         self.logger = Logger(storage)
         self.equity = EquityAgent(storage)
         self.recon = ReconciliationService(client, storage)
@@ -178,6 +177,16 @@ class Orchestrator:
                     except Exception:
                         current_equity = settings.simulated_starting_balance
                 try:
+                    day_equity = current_equity
+                    if use_exchange:
+                        day_equity = account_snapshot(self.client).get("equity", current_equity)
+                    self.kill.ensure_day_start_equity(day_equity)
+                except Exception:
+                    pass
+                exchange_info = self.execution.exchange_info
+                if not (exchange_info or {}).get("symbols"):
+                    exchange_info = None
+                try:
                     dd = self.sizer.calculate(
                         symbol=symbol,
                         direction=sig["direction"],
@@ -189,7 +198,9 @@ class Orchestrator:
                         kill_halted=self.kill.is_halted()[0],
                         daily_loss_used=self.kill.daily_loss_used(),
                         open_positions_count=len(self.storage.open_positions()),
-                        exchange_info=self.execution.exchange_info if use_exchange else None,
+                        exchange_info=exchange_info,
+                        daily_loss_limit=self.kill.daily_loss_limit(),
+                        entries_today=self.kill.entries_today(),
                     )
                 except Exception as e:
                     dd = None
@@ -209,9 +220,10 @@ class Orchestrator:
                 self.storage.log_event("SIZER", symbol, "size", "approved", f"qty={dd.quantity}")
                 self.storage.upsert_agent_status("SIZER", "IDLE", current_activity=f"approved {symbol}", last_success=True)
 
-                # prevent duplicate execution beyond the position cap
-                if len(self.storage.open_positions()) >= self.max_positions:
-                    self.logger.info("EXECUTER", "skip", f"max positions ({self.max_positions}) reached")
+                # prevent duplicate execution beyond the (live) position cap
+                max_positions = int(settings.max_simultaneous_positions)
+                if len(self.storage.open_positions()) >= max_positions:
+                    self.logger.info("EXECUTER", "skip", f"max positions ({max_positions}) reached")
                     continue
 
                 # execution-level idempotency (separate namespace from scanner's seen-signal marks)

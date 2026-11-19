@@ -123,7 +123,12 @@ class SignalEngine:
         self._load_cooldown_state()
         self.weights = dict(DEFAULT_WEIGHTS)
         self.cfg = cfg  # optional settings-like object; falls back to defaults
-        self.regime_clf = RegimeClassifier()
+        self.regime_clf = RegimeClassifier(
+            adx_trend=Decimal(str(self._c("adx_trend_min", Decimal("25")))),
+            adx_strong=Decimal(str(self._c("adx_strong_min", Decimal("30")))),
+            atr_pct_high=Decimal(str(self._c("atr_pct_max", Decimal("5.0")))),
+            atr_pct_low_liq=Decimal(str(self._c("atr_pct_low_liquidity", Decimal("0.05")))),
+        )
 
     def _load_cooldown_state(self):
         # Restore per-symbol signal timestamps across restarts when a
@@ -137,6 +142,13 @@ class SignalEngine:
                 self._last_signal_ts.update({k: int(v) for k, v in json.loads(raw).items()})
         except Exception:
             pass
+
+    def _remember_seen(self, signal_id: str) -> None:
+        self._seen_ids.add(signal_id)
+        # Scanner dedup is persisted in SQLite; this in-memory set is only a
+        # fast path, so cap it to avoid unbounded growth over long runs.
+        if len(self._seen_ids) > 50000:
+            self._seen_ids.clear()
 
     def _save_cooldown_state(self):
         if self._cooldown_store is None:
@@ -203,7 +215,7 @@ class SignalEngine:
                      candle_close_time=candle_close_time or int(time.time()))
         if sig.signal_id in self._seen_ids:
             return None
-        self._seen_ids.add(sig.signal_id)
+        self._remember_seen(sig.signal_id)
         self._last_signal_ts[symbol] = now
         self._save_cooldown_state()
         return sig
@@ -268,7 +280,7 @@ class SignalEngine:
                      score=score, explanation="; ".join(reasons), candle_close_time=cct)
         if sig.signal_id in self._seen_ids:
             return None
-        self._seen_ids.add(sig.signal_id)
+        self._remember_seen(sig.signal_id)
         self._last_signal_ts[symbol] = now
         self._save_cooldown_state()
         return sig
@@ -296,14 +308,17 @@ class SignalEngine:
         return f["bearish"] or (f["upper_wick"] > abs(f["body"]) and f["upper_wick"] > atr_val * Decimal("0.3"))
 
     def evaluate_v2(self, symbol: str, htf_klines: list, ltf_klines: Optional[list] = None,
-                    htf: str = "15m", ltf: str = "5m") -> tuple[Optional[Signal], SignalDiagnostic]:
+                    htf: str = "15m", ltf: str = "5m", now: float | None = None
+                    ) -> tuple[Optional[Signal], SignalDiagnostic]:
         """Multi-timeframe V2 evaluation.
 
         htf_klines: trend/regime timeframe (15m). ltf_klines: entry timeframe (5m).
         If ltf_klines is None or insufficient, htf is used for entry as fallback.
+        `now` overrides the evaluation clock (used by the backtester so the
+        cooldown advances with historical candle time instead of wall clock).
         Returns (signal_or_None, diagnostic).
         """
-        now = time.time()
+        now = time.time() if now is None else now
         entry_tf = ltf if ltf_klines else htf
 
         def reject_all(regime_r, long_ev, short_ev, reason):
@@ -524,7 +539,7 @@ class SignalEngine:
             best.decision, best.reason = "REJECTED", "duplicate signal"
             return None, SignalDiagnostic(symbol, now, regime_r.regime, regime_r.to_dict(),
                                           self._ev_dict(long_ev), self._ev_dict(short_ev), "NO_TRADE", "duplicate signal", sig.signal_id)
-        self._seen_ids.add(sig.signal_id)
+        self._remember_seen(sig.signal_id)
         self._last_signal_ts[symbol] = now_i
         self._save_cooldown_state()
         best.decision, best.reason = "ACCEPTED", ""

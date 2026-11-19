@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     market_data_universe_refresh_seconds: int = Field(default=3600)
     persist_all_diagnostics: bool = Field(default=False)
     max_spread_pct: Decimal = Field(default=Decimal("0.05"))
+    max_candle_age_seconds: int = Field(default=1800)
     min_signal_score: Decimal = Field(default=Decimal("75"))
     pump_volume_ratio: float = Field(default=3.0)
     pump_min_move_pct: float = Field(default=1.5)

@@ -1,25 +1,17 @@
 """Main worker loop: monitor -> signal -> risk -> execute (demo by default)."""
 import time
 import logging
-import json
 import threading
-from decimal import Decimal
 from .config import settings
 from .binance_client import BinanceClient
-from .signal_engine import SignalEngine
-from .scanner import Scanner
 from .orchestrator import Orchestrator
 from .storage import Storage
 from .settings_manager import SettingsManager
-from .kill_switch import KillSwitch
 from .worker_lock import WorkerLock
-from .reconciliation import ReconciliationService
 from .market_data import MarketDataService
 
 logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO))
 log = logging.getLogger("worker")
-
-INTERVAL_MS = {"1m": 60000, "3m": 180000, "5m": 300000, "15m": 900000, "30m": 1800000, "1h": 3600000}
 
 
 def build_client() -> BinanceClient:
@@ -31,28 +23,6 @@ def build_client() -> BinanceClient:
     except Exception as e:
         log.warning("time sync failed: %s", e)
     return c
-
-
-def validate_candles(kl: list) -> tuple[bool, str]:
-    if not kl or len(kl) < 50:
-        return False, "insufficient candles"
-    times = [k[0] for k in kl]
-    if times != sorted(times):
-        return False, "candles out of order"
-    interval = INTERVAL_MS.get(settings.timeframe, 900000)
-    last_open = kl[-1][0]
-    close_time = last_open + interval
-    now_ms = int(time.time() * 1000)
-    if now_ms - close_time > interval * 2:
-        return False, "stale candles"
-    for k in kl:
-        try:
-            o, h, l, c = Decimal(str(k[1])), Decimal(str(k[2])), Decimal(str(k[3])), Decimal(str(k[4]))
-            if h < l or c <= 0:
-                return False, "invalid candle values"
-        except Exception:
-            return False, "malformed candle"
-    return True, "ok"
 
 
 def main():
@@ -119,8 +89,18 @@ def main():
     storage.upsert_agent_status("SCANNER", "RUNNING", current_activity="started")
     storage.upsert_agent_status("EXECUTER", "IDLE", current_activity="ready")
 
+    last_prune = 0.0
     while True:
         try:
+            if time.time() - last_prune > 86400:
+                try:
+                    storage.prune_sessions()
+                    storage.prune_seen_signals()
+                    storage.prune_diagnostics(keep=10000)
+                    storage.prune_logs(retention_days=30)
+                except Exception:
+                    log.exception("retention prune failed")
+                last_prune = time.time()
             stage_ts["t"] = time.time()
             stage_ts["status"] = "running"
             storage.update_heartbeat("running")
