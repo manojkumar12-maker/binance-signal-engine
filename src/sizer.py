@@ -53,7 +53,7 @@ class Sizer:
         stop_distance = abs(entry - stop)
         max_qty_by_risk = risk_budget / stop_distance
 
-        leverage = min(settings.max_leverage, settings.max_leverage)
+        leverage = settings.max_leverage
         if leverage < 1:
             leverage = 1
         max_qty_by_margin = (equity * Decimal(leverage)) / entry
@@ -80,7 +80,7 @@ class Sizer:
         reward = abs(tp - entry) * qty
         net_reward = reward - fees
         rr = (net_reward / total_loss) if total_loss > 0 else Decimal(0)
-        if total_loss > 0 and rr < settings.min_reward_to_risk:
+        if total_loss > 0 and rr < settings.min_net_reward_to_risk:
             return SizeDecision(False, "reward-to-risk below minimum", quantity=qty, estimated_loss=total_loss,
                                 estimated_fees=fees, reward_to_risk=rr)
 
@@ -99,10 +99,7 @@ class Sizer:
                 rounded = round_quantity(qty, step)
                 if rounded < min_qty:
                     return SizeDecision(False, f"quantity below min {min_qty}", quantity=rounded)
-                if rounded > qty:
-                    # rounding up not allowed
-                    rounded = round_quantity(qty, step)
-                qty = rounded
+                qty = round_quantity(qty, step)
                 okf, freason = validate_order(exchange_info, symbol, qty, entry)
                 if not okf:
                     # if notional below min, reject (no risk increase)

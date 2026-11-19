@@ -48,12 +48,15 @@ def test_grok_disabled_by_default():
     assert g.available() is False
     assert g.explain_signal({"symbol": "BTCUSDT"}) is None
 
-def test_concurrent_worker_lock():
+def test_concurrent_worker_lock(tmp_path):
+    # Use an isolated lock file so the test does not collide with a live
+    # worker process holding data/worker.lock.
+    lock_path = str(tmp_path / "worker.lock")
     from src.worker_lock import WorkerLock
-    lock = WorkerLock()
+    lock = WorkerLock(path=lock_path)
     assert lock.acquire() is True
     # second acquire fails
-    lock2 = WorkerLock()
+    lock2 = WorkerLock(path=lock_path)
     assert lock2.acquire() is False
     lock.release()
 

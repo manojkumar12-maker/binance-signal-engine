@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     estimated_taker_fee: Decimal = Field(default=Decimal("0.0005"))
     estimated_slippage: Decimal = Field(default=Decimal("0.0005"))
     min_reward_to_risk: Decimal = Field(default=Decimal("2.0"))
+    min_net_reward_to_risk: Decimal = Field(default=Decimal("0.7"))
 
     symbol: str = Field(default="BTCUSDT")
     symbols: str = Field(default="BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT")

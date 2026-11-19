@@ -53,6 +53,7 @@ class Orchestrator:
         self.sizer = Sizer()
         self.paper = PaperTrader(storage)
         self.execution = ExecutionEngine(client, storage, exchange_info or {})
+        self.max_positions = int(settings.max_simultaneous_positions)
         self.logger = Logger(storage)
         self.equity = EquityAgent(storage)
         self.recon = ReconciliationService(client, storage)
@@ -208,9 +209,9 @@ class Orchestrator:
                 self.storage.log_event("SIZER", symbol, "size", "approved", f"qty={dd.quantity}")
                 self.storage.upsert_agent_status("SIZER", "IDLE", current_activity=f"approved {symbol}", last_success=True)
 
-                # prevent duplicate execution
-                if self.storage.open_positions():
-                    self.logger.info("EXECUTER", "skip", "position already open")
+                # prevent duplicate execution beyond the position cap
+                if len(self.storage.open_positions()) >= self.max_positions:
+                    self.logger.info("EXECUTER", "skip", f"max positions ({self.max_positions}) reached")
                     continue
 
                 # execution-level idempotency (separate namespace from scanner's seen-signal marks)

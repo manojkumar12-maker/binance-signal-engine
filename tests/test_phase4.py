@@ -21,6 +21,31 @@ def test_sizer_approved_short():
     assert d.approved is True
     assert d.quantity > 0
 
+def test_sizer_net_rr_above_minimum():
+    # The sizer must still approve after fees as long as net R:R is at or
+    # above settings.min_net_reward_to_risk (default 0.7: fees/slippage may
+    # consume at most ~65% of the planned reward).
+    atr = Decimal("100")
+    entry = Decimal("50000")
+    stop = entry - atr * Decimal("1.5")   # 49850
+    tp = entry + atr * Decimal("3.0")     # 50300
+    s = Sizer()
+    d = s.calculate("BTCUSDT", "LONG", entry, stop, tp, "5", rug_rating="LOW")
+    assert d.approved is True, f"reason={d.reason} rr={d.reward_to_risk}"
+    assert d.reward_to_risk >= Decimal("0.7")
+
+def test_sizer_net_rr_below_minimum_rejected():
+    # Fees must still be able to sink a trade: with a very tight stop the fee
+    # drag consumes far more than the ~65% ceiling and the sizer has to reject.
+    atr = Decimal("5")
+    entry = Decimal("50000")
+    stop = entry - atr * Decimal("1.5")   # 49992.5
+    tp = entry + atr * Decimal("3.0")     # 50015
+    s = Sizer()
+    d = s.calculate("BTCUSDT", "LONG", entry, stop, tp, "5", rug_rating="LOW")
+    assert d.approved is False
+    assert "reward-to-risk" in d.reason
+
 def test_sizer_invalid_stop():
     s = Sizer()
     d = s.calculate("BTCUSDT", "LONG", "50000", "50000", "53000", "5", rug_rating="LOW")

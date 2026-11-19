@@ -115,13 +115,37 @@ DEFAULT_WEIGHTS = {
 
 
 class SignalEngine:
-    def __init__(self, cooldown_seconds: int = 3600, cfg=None):
+    def __init__(self, cooldown_seconds: int = 3600, cfg=None, cooldown_store=None):
         self.cooldown_seconds = cooldown_seconds
         self._last_signal_ts: dict = {}
         self._seen_ids: set = set()
+        self._cooldown_store = cooldown_store
+        self._load_cooldown_state()
         self.weights = dict(DEFAULT_WEIGHTS)
         self.cfg = cfg  # optional settings-like object; falls back to defaults
         self.regime_clf = RegimeClassifier()
+
+    def _load_cooldown_state(self):
+        # Restore per-symbol signal timestamps across restarts when a
+        # persistent store is wired in (settings table in production).
+        if self._cooldown_store is None:
+            return
+        try:
+            import json
+            raw = self._cooldown_store("signal_cooldown_ts", None)
+            if raw:
+                self._last_signal_ts.update({k: int(v) for k, v in json.loads(raw).items()})
+        except Exception:
+            pass
+
+    def _save_cooldown_state(self):
+        if self._cooldown_store is None:
+            return
+        try:
+            import json
+            self._cooldown_store("signal_cooldown_ts", json.dumps(self._last_signal_ts))
+        except Exception:
+            pass
 
     # -- config accessors with safe defaults (avoid importing settings at module load for tests)
     def _c(self, name, default):
@@ -181,6 +205,7 @@ class SignalEngine:
             return None
         self._seen_ids.add(sig.signal_id)
         self._last_signal_ts[symbol] = now
+        self._save_cooldown_state()
         return sig
 
     def evaluate_klines(self, symbol: str, timeframe: str, klines: list, candle_close_time: int = 0) -> Optional[Signal]:
@@ -245,6 +270,7 @@ class SignalEngine:
             return None
         self._seen_ids.add(sig.signal_id)
         self._last_signal_ts[symbol] = now
+        self._save_cooldown_state()
         return sig
 
     # ---------- V2 ----------
@@ -500,6 +526,7 @@ class SignalEngine:
                                           self._ev_dict(long_ev), self._ev_dict(short_ev), "NO_TRADE", "duplicate signal", sig.signal_id)
         self._seen_ids.add(sig.signal_id)
         self._last_signal_ts[symbol] = now_i
+        self._save_cooldown_state()
         best.decision, best.reason = "ACCEPTED", ""
         loser = short_ev if direction == "LONG" else long_ev
         if loser.decision != "REJECTED":

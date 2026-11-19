@@ -23,7 +23,10 @@ class Scanner:
         self.market_data = market_data
         self._manual_symbols = symbols is not None
         self.symbols = symbols or (market_data.get_universe() if market_data else None) or settings.symbol_list
-        self.sig_engine = SignalEngine(cooldown_seconds=settings.signal_cooldown_seconds, cfg=settings)
+        self.sig_engine = SignalEngine(cooldown_seconds=settings.signal_cooldown_seconds, cfg=settings,
+                                       cooldown_store=lambda key, value=None: (
+                                           self.storage.set_setting(key, value) if value is not None
+                                           else self.storage.get_setting(key)))
         self.rug = RugChecker()
         self.engine_version = getattr(settings, "signal_engine_version", "v2")
         self.top_n = int(os.getenv("SCAN_TOP_N", "30"))
