@@ -7,10 +7,11 @@ last close price.
 """
 import time
 from decimal import Decimal
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .signal_engine import SignalEngine
 from .risk_engine import fee_estimate
+from .exchange_filters import get_lot_size_filter, get_min_notional_filter, round_quantity
 
 
 @dataclass
@@ -27,6 +28,16 @@ class BacktestConfig:
     htf: str = "15m"
     ltf: str = "5m"
     min_history: int = 60  # candles needed before evaluating
+    # Cap the rolling window handed to the engine (0 = full history). Indicators
+    # only look back a few hundred candles, so this keeps long backtests fast
+    # without introducing look-ahead.
+    max_lookback: int = 0
+    # When set, apply real exchange LOT_SIZE / MIN_NOTIONAL filters to sizing
+    # and count how many otherwise-valid signals cannot be traded at this size.
+    exchange_info: dict | None = None
+    # Only evaluate signals at/after this candle-open timestamp (ms). Earlier
+    # candles act purely as indicator warmup for walk-forward splits.
+    eval_start_ts: int = 0
 
 
 @dataclass
@@ -87,6 +98,8 @@ class Backtester:
         trades: list[BTTrade] = []
         equity_curve = []
         last_signal_ts: dict = {}
+        rejected = 0
+        reject_reasons: dict = {}
 
         total = len(entry_kl)
         for i in range(cfg.min_history + 1, total):
@@ -94,6 +107,9 @@ class Backtester:
             ts = int(candle[0])
             o, h = Decimal(str(candle[1])), Decimal(str(candle[2]))
             l, c = Decimal(str(candle[3])), Decimal(str(candle[4]))
+
+            if cfg.eval_start_ts and ts < cfg.eval_start_ts:
+                continue
 
             day = time.strftime("%Y-%m-%d", time.gmtime(ts / 1000))
             if day != current_day:
@@ -156,8 +172,12 @@ class Backtester:
                 equity_curve.append((ts, equity))
                 continue
 
-            sig, diag = eng.evaluate_v2(symbol, htf_slice, ltf_slice if ltf_klines else None,
-                                        htf=cfg.htf, ltf=cfg.ltf)
+            htf_eval = htf_slice[-cfg.max_lookback:] if cfg.max_lookback else htf_slice
+            ltf_eval = ltf_slice
+            if cfg.max_lookback:
+                ltf_eval = ltf_slice[-cfg.max_lookback:]
+            sig, diag = eng.evaluate_v2(symbol, htf_eval, ltf_eval if ltf_klines else None,
+                                        htf=cfg.htf, ltf=cfg.ltf, now=ts / 1000)
             if sig is None or sig.score < cfg.min_score:
                 continue
             # position sizing: risk pct of equity / stop distance
@@ -171,6 +191,30 @@ class Backtester:
                 qty = equity / sig.entry_price
                 if qty <= 0:
                     continue
+            # apply real exchange filters when supplied (small-account realism)
+            if cfg.exchange_info is not None:
+                lot = get_lot_size_filter(cfg.exchange_info, symbol)
+                filtered_qty = qty
+                if lot:
+                    step = Decimal(str(lot["stepSize"]))
+                    min_qty = Decimal(str(lot["minQty"]))
+                    filtered_qty = round_quantity(qty, step)
+                    if filtered_qty < min_qty:
+                        rejected += 1
+                        reject_reasons["quantity_below_min"] = reject_reasons.get("quantity_below_min", 0) + 1
+                        last_signal_ts[symbol] = ts / 1000
+                        equity_curve.append((ts, equity))
+                        continue
+                mn = get_min_notional_filter(cfg.exchange_info, symbol)
+                if mn is not None:
+                    min_notional = Decimal(str(mn.get("notional", mn.get("minNotional", "0"))))
+                    if filtered_qty * sig.entry_price < min_notional:
+                        rejected += 1
+                        reject_reasons["notional_below_min"] = reject_reasons.get("notional_below_min", 0) + 1
+                        last_signal_ts[symbol] = ts / 1000
+                        equity_curve.append((ts, equity))
+                        continue
+                qty = filtered_qty
             # entry fills at next candle open + slippage (no intra-candle fill assumption)
             if i + 1 >= total:
                 break
@@ -204,9 +248,10 @@ class Backtester:
             position.exit_reason = "end_of_data"
             trades.append(position)
 
-        return self._report(symbol, trades, equity, equity_curve)
+        return self._report(symbol, trades, equity, equity_curve, rejected, reject_reasons)
 
-    def _report(self, symbol: str, trades: list[BTTrade], final_equity: Decimal, curve) -> dict:
+    def _report(self, symbol: str, trades: list[BTTrade], final_equity: Decimal, curve,
+                rejected: int = 0, reject_reasons: dict | None = None) -> dict:
         cfg = self.cfg
         wins = [t for t in trades if t.pnl > 0]
         losses = [t for t in trades if t.pnl <= 0]
@@ -269,6 +314,8 @@ class Backtester:
             "max_drawdown_pct": str(((max_dd / cfg.starting_balance) * 100).quantize(Decimal("0.01"))) if cfg.starting_balance else "0",
             "sharpe_per_trade": round(sharpe, 3),
             "final_equity": str(final_equity.quantize(Decimal("0.01"))),
+            "rejected_signals": rejected,
+            "rejections_by_reason": reject_reasons or {},
             "long": agg(by_dir_l),
             "short": agg(by_dir_s),
             "by_strategy": {s: agg([t for t in trades if t.strategy == s]) for s in strat_names},
@@ -283,23 +330,34 @@ class Backtester:
 
 def walk_forward(symbol: str, htf_klines: list, ltf_klines: list | None, n_splits: int = 3,
                  cfg: BacktestConfig | None = None) -> dict:
-    """Chronological walk-forward: split data into n equal slices, test each out-of-sample slice."""
+    """Rolling walk-forward with disjoint out-of-sample test windows.
+
+    For each split, earlier candles are used only as indicator warmup and the
+    engine may open trades only inside that split's own test window, so no
+    split reports trades from another split.
+    """
     total = len(htf_klines)
     if total < 200 or n_splits < 2:
         bt = Backtester(cfg)
         return {"splits": [bt.run(symbol, htf_klines, ltf_klines)], "mode": "single"}
     step = total // n_splits
+    base = cfg or BacktestConfig()
     splits = []
     ltf_total = len(ltf_klines) if ltf_klines else 0
-    for s in range(1, n_splits):
-        h_end = (s + 1) * step
-        h_slice = htf_klines[:h_end]
+    for s in range(n_splits):
+        start = s * step
+        end = total if s == n_splits - 1 else (s + 1) * step
+        if end - start < base.min_history:
+            continue
+        eval_start_ts = int(htf_klines[start][0]) if start else 0
+        h_slice = htf_klines[:end]
         l_slice = None
         if ltf_klines and ltf_total:
-            cutoff = htf_klines[h_end - 1][0]
+            cutoff = htf_klines[end - 1][0]
             l_slice = [k for k in ltf_klines if k[0] <= cutoff]
-        bt = Backtester(cfg)
+        bt = Backtester(replace(base, eval_start_ts=eval_start_ts))
         rep = bt.run(symbol, h_slice, l_slice)
-        rep["split"] = f"0..{h_end}"
+        rep["split"] = f"{start}..{end}"
+        rep["eval_start_ts"] = eval_start_ts
         splits.append(rep)
     return {"splits": splits, "mode": "walk_forward"}
