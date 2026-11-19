@@ -3,11 +3,13 @@ from decimal import Decimal
 from .storage import Storage
 from .config import settings
 from .risk_engine import fee_estimate
+from .kill_switch import KillSwitch
 
 
 class PaperTrader:
     def __init__(self, storage: Storage):
         self.storage = storage
+        self.kill = KillSwitch(storage)
 
     def _current_price(self, client, symbol):
         try:
@@ -84,6 +86,7 @@ class PaperTrader:
                             settings.estimated_taker_fee, settings.estimated_slippage)
         realized = pnl - fees
         self.storage.close_trade(trade_id, str(realized), str(fees))
+        self.kill.record_trade_result(realized)
         self.storage.log_event("EXECUTER", symbol, "paper_close", reason, f"pnl={realized} fees={fees}")
         self.storage.upsert_agent_status("EXECUTER", "MONITORING", current_activity=f"closed {symbol}")
         return {"ok": True, "trade_id": trade_id, "realized_pnl": str(realized), "fees": str(fees), "exit_price": str(exit_price)}

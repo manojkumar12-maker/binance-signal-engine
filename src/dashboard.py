@@ -239,6 +239,7 @@ def status():
         "halt_reason": reason,
         "worker_heartbeat": hb,
         "worker_healthy": worker_healthy,
+        "ticker": _prices_for_positions(),
     }
 
 

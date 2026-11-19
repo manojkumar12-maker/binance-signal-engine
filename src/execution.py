@@ -16,6 +16,7 @@ from .exchange_filters import (
 )
 from .account import has_open_position, get_available_equity, open_entry_orders
 from .storage import Storage
+from .kill_switch import KillSwitch
 
 LIVE_MARKER = os.path.join("data", "LIVE_ACTIVATED")
 
@@ -238,6 +239,7 @@ class ExecutionEngine:
             if amounts.get(t["symbol"], Decimal("0")) == 0:
                 pnl, fees = self._realized_pnl(t)
                 self.storage.close_trade(t["id"], str(pnl), str(fees))
+                KillSwitch(self.storage).record_trade_result(pnl)
                 self.storage.log_event(
                     "EXECUTER", t["symbol"], "monitor", "closed",
                     f"closed on exchange pnl={pnl} fees={fees}",
