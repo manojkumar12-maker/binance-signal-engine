@@ -4,9 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Binance Signal Engine</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="/ui/fonts/fonts.css" rel="stylesheet">
 <script src="/ui/vendor/lightweight-charts.standalone.production.js"></script>
 <style>
 :root{
@@ -1085,14 +1083,15 @@ function renderHero(p){
     $('heroRailFill').style.width='0%';$('heroRailDot').style.left='0%';
     return;
   }
+  const fp=v=>Number(v).toPrecision(8).replace(/\.?0+$/,'');
   const entry=Number(p.entry_price),stop=Number(p.stop_loss),target=Number(p.take_profit);
   const dir=String(p.direction||'').toUpperCase();
   $('heroSymbol').textContent=p.symbol;
   $('heroDir').textContent=dir;
   $('heroDir').className='badge '+(dir==='LONG'?'b-good':'b-bad');
-  $('heroPrice').textContent='entry '+p.entry_price;
+  $('heroPrice').textContent='entry '+fp(entry);
   $('heroSub').textContent='qty '+Number(p.quantity).toPrecision(6)+' · '+dir.toLowerCase()+' in flight · trail live';
-  $('heroStop').textContent=p.stop_loss;$('heroTarget').textContent=p.take_profit;$('heroEntry').textContent=p.entry_price;
+  $('heroStop').textContent=fp(stop);$('heroTarget').textContent=fp(target);$('heroEntry').textContent=fp(entry);
   const span=Math.abs(target-stop)||1;
   const px=Math.min(Math.max(Number(lastStatus?.ticker?.[p.symbol]||entry),Math.min(stop,target)),Math.max(stop,target));
   const pct=Math.max(0,Math.min(100,((px-Math.min(stop,target))/span)*100));

@@ -1260,6 +1260,16 @@ def ui_vendor(filename: str):
     return FileResponse(path, media_type="application/javascript")
 
 
+@app.get("/ui/fonts/{filename}")
+def ui_fonts(filename: str):
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ui", "fonts")
+    path = os.path.join(base, os.path.basename(filename))
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="not found")
+    media = "text/css" if filename.endswith(".css") else "font/woff2"
+    return FileResponse(path, media_type=media)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     ui_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ui", "index.html")
