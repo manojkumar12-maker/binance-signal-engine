@@ -2,6 +2,7 @@
 import time
 import logging
 import json
+import threading
 from decimal import Decimal
 from .config import settings
 from .binance_client import BinanceClient
@@ -85,6 +86,31 @@ def main():
 
     orch = Orchestrator(client, storage, market_data=market_data, exchange_info=info)
 
+    # Heartbeat thread: beats every 30s while the pipeline shows progress
+    # (loop iteration or orchestrator stage change), so /api/health no longer
+    # reports degraded during scan cycles that legitimately run past the
+    # 300s freshness window on small VMs. If nothing progresses for 20
+    # minutes, the beats stop and the dashboard shows degraded.
+    stage_ts = {"t": time.time(), "status": "started"}
+
+    def _beat():
+        while True:
+            time.sleep(30)
+            try:
+                if time.time() - stage_ts["t"] < 1200:
+                    storage.update_heartbeat(stage_ts["status"])
+            except Exception:
+                log.exception("heartbeat thread error")
+
+    threading.Thread(target=_beat, daemon=True).start()
+    _orig_set_stage = orch.set_stage
+
+    def _set_stage(stage):
+        stage_ts["t"] = time.time()
+        _orig_set_stage(stage)
+
+    orch.set_stage = _set_stage
+
     symbols_desc = f"{len(market_data.get_universe())} USDT perpetuals" if market_data else settings.symbol_list
     log.info("Starting bot in mode=%s live_authorized=%s symbols=%s", settings.trading_mode, settings.live_authorized, symbols_desc)
     storage.update_heartbeat("started")
@@ -95,6 +121,8 @@ def main():
 
     while True:
         try:
+            stage_ts["t"] = time.time()
+            stage_ts["status"] = "running"
             storage.update_heartbeat("running")
             if orch.kill.is_halted()[0]:
                 log.warning("Halted: %s", orch.kill.is_halted()[1])
@@ -104,6 +132,8 @@ def main():
                 orch.run_cycle()
             except Exception as e:
                 log.error("cycle failed: %s", e)
+                stage_ts["t"] = time.time()
+                stage_ts["status"] = "cycle_failed"
                 storage.update_heartbeat("cycle_failed")
                 time.sleep(10)
                 continue
@@ -113,6 +143,8 @@ def main():
             break
         except Exception as e:
             log.error("loop error: %s", e)
+            stage_ts["t"] = time.time()
+            stage_ts["status"] = "error"
             storage.update_heartbeat("error")
             time.sleep(10)
 
