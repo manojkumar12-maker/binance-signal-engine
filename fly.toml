@@ -1,53 +1,49 @@
-# Fly.io deployment for the Binance Signal Engine.
+# fly.toml app configuration file generated for binance-signal-engine on 2026-11-19T15:33:43Z
 #
-# One-time setup (run from engine/):
-#   fly launch --no-deploy          # picks app name; do NOT create a second volume
-#   fly volumes create data --size 1 --region iad
-#   fly secrets set ADMIN_USERNAME=... ADMIN_PASSWORD=... SETTINGS_ENCRYPTION_KEY=<random-hex>
-#   fly deploy
+# See https://docs.fly.io/reference/configuration for information about how to use this file.
 #
-# The volume survives deploys/restarts; SQLite lives on it, so no data loss.
 
-app = "binance-signal-engine"
-primary_region = "iad"
+app = 'binance-signal-engine'
+primary_region = 'sin'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  TRADING_MODE = "paper"
-  BROKER_ENABLED = "false"
-  AUTO_TRADE = "false"
-  LIVE_TRADING_ENABLED = "false"
-  USE_TESTNET = "true"
-  RUN_WORKER = "true"
-  SCAN_TOP_N = "30"
-  COOKIE_SECURE = "true"
-  PORT = "8080"
-  DATABASE_URL = "sqlite:////data/bot.db"
+  AUTO_TRADE = 'false'
+  BROKER_ENABLED = 'false'
+  COOKIE_SECURE = 'true'
+  DATABASE_URL = 'sqlite:////data/bot.db'
+  LIVE_TRADING_ENABLED = 'false'
+  PORT = '8080'
+  RUN_WORKER = 'true'
+  SCAN_TOP_N = '30'
+  TRADING_MODE = 'paper'
+  USE_TESTNET = 'true'
+
+[[mounts]]
+  source = 'data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "off"   # keep the scanner loop always running
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
+
   [http_service.concurrency]
-    type = "requests"
-    soft_limit = 200
+    type = 'requests'
     hard_limit = 250
+    soft_limit = 200
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "30s"
-    method = "GET"
-    path = "/api/health"
-
-[mounts]
-  source = "data"
-  destination = "/data"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/api/health'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
