@@ -18,6 +18,10 @@ services:
         value: "30"
       - key: ADMIN_TOKEN
         generateValue: true
+      - key: ADMIN_USERNAME
+        syncValue: false
+      - key: ADMIN_PASSWORD
+        syncValue: false
       - key: SETTINGS_ENCRYPTION_KEY
         generateValue: true
       - key: RUN_WORKER

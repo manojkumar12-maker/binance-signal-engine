@@ -118,6 +118,49 @@ class Scanner:
         except Exception:
             return None
 
+    def _detect_pump(self, symbol: str, kl: list) -> dict | None:
+        """Detect a volume-and-price surge on the last closed candle.
+
+        A pump alone is not a trade signal — it is recorded as a market
+        event so the user can see unusual activity; it only matters when
+        a scored signal also fires on the same candle.
+        """
+        try:
+            if not kl or len(kl) < 25:
+                return None
+            closed = kl[:-1]
+            last = closed[-1]
+            vols = [Decimal(str(k[5])) for k in closed[-21:-1]]
+            avg_vol = sum(vols) / Decimal(len(vols))
+            if avg_vol <= 0:
+                return None
+            vol_ratio = Decimal(str(last[5])) / avg_vol
+            o, c = Decimal(str(last[1])), Decimal(str(last[4]))
+            if o <= 0:
+                return None
+            move_pct = abs(c - o) / o * 100
+            if vol_ratio < Decimal(str(settings.pump_volume_ratio)) or move_pct < Decimal(str(settings.pump_min_move_pct)):
+                return None
+            direction = "long" if c > o else "short"
+            info = {
+                "symbol": symbol, "direction": direction,
+                "volume_ratio": float(round(vol_ratio, 2)),
+                "move_pct": float(round(move_pct, 2)),
+                "candle_open_time": last[0],
+            }
+            self.storage.log_event(
+                "SCANNER", symbol, "pump_detected", direction,
+                f"volume x{info['volume_ratio']}, move {info['move_pct']}% on last closed candle")
+            try:
+                self.storage.save_pump_event(symbol, direction, info["volume_ratio"],
+                                             info["move_pct"], info["candle_open_time"])
+            except Exception:
+                pass
+            return info
+        except Exception as e:
+            log.debug("pump detection failed for %s: %s", symbol, e)
+            return None
+
     def scan_symbol(self, symbol: str) -> dict:
         result = {"symbol": symbol, "status": "ok", "signal": None, "risk": None, "error": None, "diagnostic": None}
         best_score = 0.0
@@ -146,6 +189,9 @@ class Scanner:
             kl_ltf = self._get_klines(symbol, ltf, 250)
             if kl_ltf is not None and len(kl_ltf) < 61:
                 kl_ltf = None  # fallback to HTF-only
+
+        # ---- pump detection (recorded as a market event, not a trade signal) ----
+        result["pump"] = self._detect_pump(symbol, kl_htf)
 
         # ---- signal evaluation ----
         sig, diag = None, None

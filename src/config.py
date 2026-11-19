@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     persist_all_diagnostics: bool = Field(default=False)
     max_spread_pct: Decimal = Field(default=Decimal("0.05"))
     min_signal_score: Decimal = Field(default=Decimal("75"))
+    pump_volume_ratio: float = Field(default=3.0)
+    pump_min_move_pct: float = Field(default=1.5)
     strong_signal_score: Decimal = Field(default=Decimal("85"))
     volume_ratio_min: Decimal = Field(default=Decimal("1.2"))
     adx_trend_min: Decimal = Field(default=Decimal("25"))

@@ -38,6 +38,21 @@ class SettingsManager:
                 settings.symbols = syms
         except Exception:
             pass
+        try:
+            if self.storage.get_setting("scan_interval_seconds") is not None:
+                settings.scan_interval_seconds = int(self.storage.get_setting("scan_interval_seconds"))
+        except Exception:
+            pass
+        try:
+            if self.storage.get_setting("max_concurrent_positions") is not None:
+                settings.max_simultaneous_positions = int(self.storage.get_setting("max_concurrent_positions"))
+        except Exception:
+            pass
+        try:
+            if self.storage.get_setting("default_leverage") is not None:
+                settings.max_leverage = int(self.storage.get_setting("default_leverage"))
+        except Exception:
+            pass
         # decrypt persisted binance credentials into the running config
         for network, (key_name, secret_name) in CREDENTIAL_KEYS.items():
             api_key = self._read_secret(key_name)
@@ -199,8 +214,9 @@ class SettingsManager:
             "estimated_maker_fee": str(settings.estimated_maker_fee),
             "estimated_taker_fee": str(settings.estimated_taker_fee),
             "estimated_slippage": str(settings.estimated_slippage),
-            "log_retention_days": 30,
-            "equity_snapshot_interval": 300,
+            "entry_timeframe": settings.entry_timeframe,
+            "min_signal_score": str(settings.min_signal_score),
+            "signal_cooldown_seconds": settings.signal_cooldown_seconds,
         }
 
     def validate_and_set(self, data: dict):
@@ -236,6 +252,7 @@ class SettingsManager:
                 errors.append("scan_interval_seconds out of range")
             else:
                 settings.scan_interval_seconds = v
+                self.storage.set_setting("scan_interval_seconds", v)
 
         if "risk_per_trade_pct" in data:
             v = Decimal(str(data["risk_per_trade_pct"]))
@@ -259,6 +276,7 @@ class SettingsManager:
                 errors.append("max_concurrent_positions out of range")
             else:
                 settings.max_simultaneous_positions = v
+                self.storage.set_setting("max_concurrent_positions", v)
 
         if "default_leverage" in data:
             v = int(data["default_leverage"])
@@ -266,6 +284,7 @@ class SettingsManager:
                 errors.append("default_leverage out of range")
             else:
                 settings.max_leverage = v
+                self.storage.set_setting("default_leverage", v)
 
         if errors:
             return {"ok": False, "errors": errors}

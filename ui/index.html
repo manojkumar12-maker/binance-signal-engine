@@ -544,6 +544,16 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
         <div id="scannerTable"></div>
       </div>
       <div class="card mt">
+        <h3>Pump Watch</h3>
+        <div class="hint">Unusual volume + price surges on the last closed candle. A pump is a market event, not an automatic trade — signals still go through scoring, risk and the sizer first.</div>
+        <div id="pumpTable" style="margin-top:10px"></div>
+      </div>
+      <div class="card mt">
+        <h3>System Transparency</h3>
+        <div class="hint">Where your data actually lives, and whether it survives a restart. On Render, the database must be on an attached disk or everything is wiped on each deploy.</div>
+        <div id="diagBox" style="margin-top:10px"></div>
+      </div>
+      <div class="card mt">
         <h3>Market Chart</h3>
         <div class="chiprow">
           <select id="symSelect" class="btn ghost sel"></select>
@@ -651,8 +661,18 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
     <!-- SETTINGS -->
     <section class="view" id="view-settings">
       <div class="card">
-        <h3>Settings</h3>
-        <div class="hint">Runtime configuration reported by the backend. Change values via environment variables and redeploy.</div>
+        <h3>Runtime Settings</h3>
+        <div class="hint">These values are read live from the engine. Saving writes them to the database — they survive restarts on Render as long as the database sits on an attached disk.</div>
+        <div id="runtimeSettings" style="margin-top:10px"><div class="skl" style="width:70%"></div></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn" onclick="saveRuntimeSettings()">Save Settings</button>
+          <button class="btn ghost" onclick="loadRuntimeSettings()">Reload</button>
+        </div>
+        <div class="hint" id="settingsSaveMsg" style="margin-top:8px"></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Engine Status (read-only)</h3>
+        <div class="hint">Reported by the backend. Mode flags like live trading are env-locked on Render by design.</div>
         <div id="settingsInfo"></div>
       </div>
       <div class="card" style="margin-top:14px">
@@ -735,6 +755,44 @@ async function apiSend(path, method, body){
   let data = {};
   try{ data = await r.json(); }catch(e){}
   return {status:r.status, data};
+}
+
+/* ---------- runtime settings editor ---------- */
+const RS_FIELDS = [
+  ['scanner_symbols','Scanner Symbols (comma-separated)','text'],
+  ['scan_interval_seconds','Scan Interval (seconds)','number'],
+  ['risk_per_trade_pct','Risk per Trade (0.001 = 0.1%)','number'],
+  ['max_daily_loss_pct','Max Daily Loss (0.02 = 2%)','number'],
+  ['max_concurrent_positions','Max Concurrent Positions','number'],
+  ['default_leverage','Max Leverage (x)','number'],
+];
+async function loadRuntimeSettings(){
+  const box=$('runtimeSettings'); if(!box) return;
+  try{
+    const s=await api('/api/admin/settings');
+    if(s.error){ box.innerHTML=`<div class="bad">Settings need admin sign-in: ${esc(s.error)}</div>`; return; }
+    box.innerHTML=RS_FIELDS.map(([k,label,type])=>{
+      const val=Array.isArray(s[k])?s[k].join(', '):s[k]??'';
+      return `<div class="field"><label>${esc(label)}</label><input class="inp" id="rs_${k}" type="${type}" value="${esc(val)}" step="any"></div>`;
+    }).join('')+
+    `<div class="field"><label>Entry Timeframe</label><input class="inp" value="${esc(s.entry_timeframe||'5m')}" disabled><div class="hint">Entries are judged on completed ${esc(s.entry_timeframe||'5m')} candles; positions run until stop or target hits — there is no 5-minute auto-close.</div></div>`;
+  }catch(e){ box.innerHTML='<div class="bad">Failed to load settings.</div>'; }
+}
+async function saveRuntimeSettings(){
+  const msg=$('settingsSaveMsg'); if(!msg) return;
+  const payload={};
+  for(const [k,,type] of RS_FIELDS){
+    const el=$('rs_'+k); if(!el) continue;
+    let v=el.value;
+    if(type==='number') v=Number(v);
+    else if(k==='scanner_symbols') v=v.split(',').map(x=>x.trim()).filter(Boolean);
+    payload[k]=v;
+  }
+  try{
+    const {status,data}=await apiSend('/api/admin/settings','PUT',payload);
+    if(status===200&&data.ok!==false){ msg.innerHTML='<span class="pos">Saved — values are live in the engine and persisted.</span>'; loadRuntimeSettings(); }
+    else msg.innerHTML=`<span class="neg">${esc((data.errors||[]).join(', ')||data.error||'Save failed')}</span>`;
+  }catch(e){ msg.innerHTML='<span class="neg">Save failed — connection error.</span>'; }
 }
 
 /* ---------- binance execution credentials ---------- */
@@ -879,7 +937,7 @@ function showView(v){
   $('sidebar').classList.remove('open');
   if(v==='scanner'){ loadChartSymbols().then(()=>{ loadChart(); startChartAuto(); }); }
   if(v==='equity') loadEquityChart();
-  if(v==='settings') loadBinanceStatus();
+  if(v==='settings'){ loadBinanceStatus(); loadRuntimeSettings(); }
 }
 function toggleAdmin(){showView('admin')}
 
@@ -1034,6 +1092,36 @@ async function loadSignals(){
       if(!$('scannerTable').innerHTML) emptyState($('scannerTable'),'No signals yet — the scanner is hunting for setups.');
       emptyState($('rugTable'),'No risk data yet.');
     }
+    // pump watch + transparency
+    try{
+      const pd=await api('/api/scanner/pumps?limit=15');
+      const pe=pd.events||[];
+      if(pe.length){
+        let ph='<div class="tblwrap"><table><thead><tr><th>Time</th><th>Symbol</th><th>Dir</th><th>Volume ×avg</th><th>Move %</th></tr></thead><tbody>';
+        for(const p of pe){
+          const dir=String(p.direction||'').toUpperCase();
+          const t=new Date((p.candle_time||p.ts*1000)).toLocaleTimeString();
+          ph+=`<tr><td>${esc(t)}</td><td><b>${esc(p.symbol)}</b></td><td><span class="badge ${dir==='LONG'?'b-good':'b-bad'}">${esc(dir)}</span></td><td>${esc(p.volume_ratio)}</td><td>${esc(p.move_pct)}</td></tr>`;
+        }
+        ph+='</tbody></table></div>';
+        $('pumpTable').innerHTML=ph;
+      }else{
+        emptyState($('pumpTable'),'No pump activity detected yet.');
+      }
+    }catch(e){ emptyState($('pumpTable'),'Pump watch unavailable.'); }
+    try{
+      const dg=await api('/api/diagnostics');
+      const db=dg.database||{};
+      const rows=Object.entries(db.counts||{}).map(([k,v])=>`<div class="hrow"><span class="k">${esc(k)}</span><span class="v">${v===null?'n/a':esc(v)}</span></div>`).join('');
+      const pers=db.persistent
+        ? '<span class="badge b-good">persistent — survives restarts</span>'
+        : '<span class="badge b-warn2">NOT persistent — data is lost on every restart/deploy</span>';
+      $('diagBox').innerHTML=`
+        <div class="hrow"><span class="k">Database path</span><span class="v" style="white-space:normal">${esc(db.path||'unknown')}</span></div>
+        <div class="hrow"><span class="k">Persistence</span>${pers}</div>
+        ${rows}
+        <div class="hint" style="margin-top:8px">${esc(dg.note_render||'')}</div>`;
+    }catch(e){ emptyState($('diagBox'),'Diagnostics unavailable.'); }
     const syms=[...new Set(rows.map(r=>r.symbol))];
     if(syms.length){
       const sel=$('symSelect'); const cur=sel.value;

@@ -457,6 +457,34 @@ def api_account():
     }
 
 
+@app.get("/api/diagnostics")
+@api_error_handler
+def api_diagnostics():
+    cur = storage.conn.cursor()
+    counts = {}
+    for table in ["trades", "signals", "scanner_results", "signal_diagnostics", "pump_events", "events", "settings", "app_secrets", "equity_snapshots", "users"]:
+        try:
+            cur.execute(f"SELECT COUNT(*) FROM {table}")
+            counts[table] = cur.fetchone()[0]
+        except Exception:
+            counts[table] = None
+    import os
+    db_path = storage.path if hasattr(storage, "path") else "unknown"
+    return {
+        "database": {
+            "path": db_path,
+            "persistent": not db_path.startswith(":memory") and "tmp" not in db_path,
+            "counts": counts,
+        },
+        "note_render": ("If this path is inside the container filesystem (e.g. /app/data), all rows are lost on every "
+                        "deploy or restart. On Render, attach a Disk and set DATABASE_URL to a sqlite:/// path on the "
+                        "mounted disk, e.g. sqlite:////var/data/engine.db."),
+        "scan_interval_seconds": settings.scan_interval_seconds,
+        "entry_timeframe": settings.entry_timeframe,
+        "trading_mode": settings.normalized_mode,
+        "broker_enabled": settings.broker_enabled,
+    }
+
 @app.get("/api/market")
 @api_error_handler
 def api_market():
@@ -498,12 +526,22 @@ def api_market_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: int
 
 @app.get("/api/signals")
 @api_error_handler
-def api_signals():
+def api_signals(limit: int = 50):
+    limit = max(10, min(int(limit), 200))
+    scanned = storage.recent_scanner_results(limit=limit)
     cur = storage.conn.cursor()
-    cur.execute("SELECT symbol,direction,timestamp,entry_price,stop_loss,take_profit,accepted,rejection_reason FROM signals ORDER BY id DESC LIMIT 50")
+    cur.execute("SELECT symbol,direction,timestamp,entry_price,stop_loss,take_profit,accepted,rejection_reason FROM signals ORDER BY id DESC LIMIT ?", (limit,))
     rows = cur.fetchall()
     cols = ["symbol", "direction", "timestamp", "entry_price", "stop_loss", "take_profit", "accepted", "rejection_reason"]
-    return {"signals": [dict(zip(cols, r)) for r in rows]}
+    executed = [dict(zip(cols, r)) for r in rows]
+    return {
+        "scanner": scanned,
+        "executed": executed,
+        "signals": executed,
+        "entry_timeframe": settings.entry_timeframe,
+        "hold_model": "positions are held until stop-loss or take-profit is hit; entry signals are evaluated on completed "
+                      f"{settings.entry_timeframe} candles, not closed after 5 minutes",
+    }
 
 
 @app.get("/api/positions")
@@ -719,6 +757,12 @@ async def api_scanner_symbols_set(request: Request):
 @api_error_handler
 def api_scanner_results(limit: int = 50, symbol: str = ""):
     return {"results": storage.recent_scanner_results(limit=limit, symbol=symbol)}
+
+
+@app.get("/api/scanner/pumps")
+@api_error_handler
+def api_scanner_pumps(limit: int = 30):
+    return {"events": storage.recent_pump_events(limit=min(max(limit, 1), 100))}
 
 
 @app.get("/api/diagnostics")

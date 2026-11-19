@@ -160,6 +160,15 @@ class Storage:
             explanation TEXT,
             candle_time INTEGER
         );
+        CREATE TABLE IF NOT EXISTS pump_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL,
+            symbol TEXT,
+            direction TEXT,
+            volume_ratio REAL,
+            move_pct REAL,
+            candle_time INTEGER
+        );
         CREATE TABLE IF NOT EXISTS risk_assessments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL,
@@ -613,6 +622,21 @@ class Storage:
                     (time.time(), symbol, direction, str(entry_price), str(stop_loss), str(take_profit), float(score), json.dumps(indicators), explanation, int(candle_time)))
         self.conn.commit()
         return cur.lastrowid
+
+    def save_pump_event(self, symbol, direction, volume_ratio, move_pct, candle_time):
+        cur = self.conn.cursor()
+        cur.execute("""INSERT INTO pump_events (ts,symbol,direction,volume_ratio,move_pct,candle_time)
+                       VALUES (?,?,?,?,?,?)""",
+                    (time.time(), symbol, direction, float(volume_ratio), float(move_pct), int(candle_time)))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def recent_pump_events(self, limit=30):
+        cur = self.conn.cursor()
+        cur.execute("SELECT id,ts,symbol,direction,volume_ratio,move_pct,candle_time FROM pump_events ORDER BY id DESC LIMIT ?", (limit,))
+        rows = cur.fetchall()
+        cols = ["id", "ts", "symbol", "direction", "volume_ratio", "move_pct", "candle_time"]
+        return [dict(zip(cols, r)) for r in rows]
 
     def recent_scanner_results(self, limit=50, symbol=""):
         import json
