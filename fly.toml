@@ -1,0 +1,53 @@
+# Fly.io deployment for the Binance Signal Engine.
+#
+# One-time setup (run from engine/):
+#   fly launch --no-deploy          # picks app name; do NOT create a second volume
+#   fly volumes create data --size 1 --region iad
+#   fly secrets set ADMIN_USERNAME=... ADMIN_PASSWORD=... SETTINGS_ENCRYPTION_KEY=<random-hex>
+#   fly deploy
+#
+# The volume survives deploys/restarts; SQLite lives on it, so no data loss.
+
+app = "binance-signal-engine"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  TRADING_MODE = "paper"
+  BROKER_ENABLED = "false"
+  AUTO_TRADE = "false"
+  LIVE_TRADING_ENABLED = "false"
+  USE_TESTNET = "true"
+  RUN_WORKER = "true"
+  SCAN_TOP_N = "30"
+  COOKIE_SECURE = "true"
+  PORT = "8080"
+  DATABASE_URL = "sqlite:////data/bot.db"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"   # keep the scanner loop always running
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/api/health"
+
+[mounts]
+  source = "data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

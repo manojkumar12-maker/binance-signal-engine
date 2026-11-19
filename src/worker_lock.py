@@ -1,6 +1,6 @@
 """Process-level worker lock.
 
-Uses an OS advisory lock on POSIX (Render/Linux) so a live owner always keeps
+Uses an OS advisory lock on POSIX (Fly.io/Linux) so a live owner always keeps
 exclusive ownership. The file descriptor stays open for the worker lifetime.
 """
 import os

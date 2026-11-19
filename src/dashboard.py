@@ -477,7 +477,7 @@ def api_diagnostics():
             "counts": counts,
         },
         "note_render": ("If this path is inside the container filesystem (e.g. /app/data), all rows are lost on every "
-                        "deploy or restart. On Render, attach a Disk and set DATABASE_URL to a sqlite:/// path on the "
+                        "deploy or restart. On Fly.io, use the persistent volume and set DATABASE_URL to a sqlite:/// path on the "
                         "mounted disk, e.g. sqlite:////var/data/engine.db."),
         "scan_interval_seconds": settings.scan_interval_seconds,
         "entry_timeframe": settings.entry_timeframe,

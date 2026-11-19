@@ -550,7 +550,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
       </div>
       <div class="card mt">
         <h3>System Transparency</h3>
-        <div class="hint">Where your data actually lives, and whether it survives a restart. On Render, the database must be on an attached disk or everything is wiped on each deploy.</div>
+        <div class="hint">Where your data actually lives, and whether it survives a restart. On Fly.io, the database sits on the persistent volume so it survives deploys.</div>
         <div id="diagBox" style="margin-top:10px"></div>
       </div>
       <div class="card mt">
@@ -662,7 +662,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
     <section class="view" id="view-settings">
       <div class="card">
         <h3>Runtime Settings</h3>
-        <div class="hint">These values are read live from the engine. Saving writes them to the database — they survive restarts on Render as long as the database sits on an attached disk.</div>
+        <div class="hint">These values are read live from the engine. Saving writes them to the database — they survive restarts on Fly.io because the database sits on the persistent volume.</div>
         <div id="runtimeSettings" style="margin-top:10px"><div class="skl" style="width:70%"></div></div>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="btn" onclick="saveRuntimeSettings()">Save Settings</button>
@@ -672,7 +672,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
       </div>
       <div class="card" style="margin-top:14px">
         <h3>Engine Status (read-only)</h3>
-        <div class="hint">Reported by the backend. Mode flags like live trading are env-locked on Render by design.</div>
+        <div class="hint">Reported by the backend. Mode flags like live trading are env-locked by design.</div>
         <div id="settingsInfo"></div>
       </div>
       <div class="card" style="margin-top:14px">

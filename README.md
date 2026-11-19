@@ -18,7 +18,7 @@
 - Executes **paper trades only** with realistic fees, slippage, SL/TP monitoring.
 - Tracks equity, P&L, drawdown, win rate, and performance analytics.
 - Provides a futuristic dark dashboard with a seven-agent command center.
-- Ships with auth, admin controls, settings, logging, and Render deployment config.
+- Ships with auth, admin controls, settings, logging, and Fly.io deployment config.
 
 ## Seven Agents
 
@@ -84,10 +84,12 @@ main.py -> FastAPI (src/dashboard.py) + worker thread
 
 Full list in the codebase.
 
-## Deployment (Render)
+## Deployment (Fly.io)
 
-- Single web service, persistent disk at `/var/data`.
-- Start command: `python main.py`
+- Single machine with a persistent volume mounted at `/data` (see `fly.toml`).
+- First deploy: `fly launch --no-deploy`, then `fly volumes create data --size 1 --region iad`,
+  `fly secrets set ADMIN_USERNAME=... ADMIN_PASSWORD=... SETTINGS_ENCRYPTION_KEY=<random-hex>`, then `fly deploy`.
+- Keep `SETTINGS_ENCRYPTION_KEY` fixed forever — saved Binance keys are encrypted with it.
 - Health check: `/api/health`
 - See `docs/deployment.md`, `docs/operations.md`, `docs/security.md`, `docs/paper-validation.md`.
 

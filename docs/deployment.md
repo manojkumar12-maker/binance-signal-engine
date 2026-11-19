@@ -21,7 +21,13 @@
 - Ensure the database directory is on a persistent volume.
 - Do not use ephemeral container filesystems for SQLite.
 
-## Render
-- Use provided `render.yaml`.
-- Attach a 1GB disk at `/app/data`.
-- Set secrets in Render dashboard, not in Git.
+## Fly.io
+- Config in `fly.toml`: one machine, persistent volume `data` mounted at `/data`,
+  `DATABASE_URL=sqlite:////data/bot.db`, health check `/api/health`.
+- Setup (from `engine/`):
+  1. `fly launch --no-deploy` (choose the app name; decline creating a second volume).
+  2. `fly volumes create data --size 1 --region iad`
+  3. `fly secrets set ADMIN_USERNAME=... ADMIN_PASSWORD=... SETTINGS_ENCRYPTION_KEY=<random-hex>`
+  4. `fly deploy`
+- Keep `SETTINGS_ENCRYPTION_KEY` fixed forever — saved keys are encrypted with it.
+- The volume persists across deploys/restarts, so trades, signals and settings are never wiped.
