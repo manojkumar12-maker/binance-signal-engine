@@ -71,7 +71,10 @@ class Settings(BaseSettings):
     atr_pct_low_liquidity: Decimal = Field(default=Decimal("0.05"))
     max_extended_candle_atr: Decimal = Field(default=Decimal("2.0"))
     sl_atr_mult: Decimal = Field(default=Decimal("1.5"))
-    tp_atr_mult: Decimal = Field(default=Decimal("3.0"))
+    # 4.5x ATR target vs 1.5x ATR stop = 3.0 gross R:R, which clears the
+    # 2.5 net reward-to-risk gate after fees/slippage (3.0x target = 2.0
+    # gross can never pass a 2.5 net gate).
+    tp_atr_mult: Decimal = Field(default=Decimal("4.5"))
     pullback_tolerance_atr: Decimal = Field(default=Decimal("0.5"))
     breakout_lookback: int = Field(default=20)
 
