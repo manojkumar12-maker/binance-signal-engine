@@ -26,8 +26,8 @@ def test_daily_loss_triggers_halt():
     db = os.path.join(d, "t.db")
     s = Storage(path=db)
     k = KillSwitch(s)
-    # max daily loss 0.10; record 0.10
-    k.record_trade_result(Decimal("-0.10"))
+    # record the full 3% daily budget (0.03 of the 30 USDT starting balance)
+    k.record_trade_result(Decimal("-0.90"))
     assert k.is_halted()[0] is True
 
 

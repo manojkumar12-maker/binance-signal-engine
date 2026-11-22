@@ -13,7 +13,8 @@ def test_sizer_approved_long():
     d = s.calculate("BTCUSDT", "LONG", "50000", "49000", "53000", "5", rug_rating="LOW")
     assert d.approved is True
     assert d.quantity > 0
-    assert d.estimated_loss <= Decimal("0.025") + Decimal("0.001")
+    # Phase 1: risk is percentage-based (1% of the $5 test equity ≈ $0.05).
+    assert d.estimated_loss <= Decimal("0.05") + Decimal("0.01")
 
 def test_sizer_approved_short():
     s = Sizer()
@@ -74,8 +75,9 @@ def test_sizer_kill_switch():
     assert d.approved is False
 
 def test_sizer_daily_loss_limit():
+    # 0.15 equals the 3% daily budget on the $5 test equity.
     s = Sizer()
-    d = s.calculate("BTCUSDT", "LONG", "50000", "49000", "53000", "5", daily_loss_used=Decimal("0.10"))
+    d = s.calculate("BTCUSDT", "LONG", "50000", "49000", "53000", "5", daily_loss_used=Decimal("0.15"))
     assert d.approved is False
 
 def test_sizer_concurrent_position():

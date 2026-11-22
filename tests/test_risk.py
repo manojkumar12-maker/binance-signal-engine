@@ -11,7 +11,8 @@ def test_fee_aware_sizing():
     d = size_position(p, Decimal("5"))
     assert d.approved is True
     assert d.quantity > 0
-    assert d.estimated_loss <= settings.max_planned_loss_per_trade
+    # Phase 1: risk is percentage-based; the absolute cap now defaults to 0 (disabled).
+    assert d.estimated_loss <= Decimal("5") * settings.risk_per_trade_pct + Decimal("0.001")
 
 
 def test_insufficient_margin_rejected():

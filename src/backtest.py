@@ -17,9 +17,9 @@ from .exchange_filters import get_lot_size_filter, get_min_notional_filter, roun
 @dataclass
 class BacktestConfig:
     starting_balance: Decimal = Decimal("1000")
-    risk_per_trade_pct: Decimal = Decimal("0.005")
+    risk_per_trade_pct: Decimal = Decimal("0.01")
     max_positions: int = 1
-    max_daily_loss_pct: Decimal = Decimal("0.01")
+    max_daily_loss_pct: Decimal = Decimal("0.03")
     min_score: float = 75.0
     cooldown_seconds: int = 3600
     taker_fee: Decimal = Decimal("0.0005")

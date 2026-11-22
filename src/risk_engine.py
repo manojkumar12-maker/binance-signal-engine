@@ -50,7 +50,13 @@ def size_position(proposal: TradeProposal, available_equity: Decimal) -> RiskDec
     if leverage < 1:
         leverage = 1
 
-    risk_budget = settings.max_planned_loss_per_trade
+    risk_budget = available_equity * settings.risk_per_trade_pct
+    # Absolute per-trade cap (0 disables it; the percentage budget governs).
+    max_planned = settings.max_planned_loss_per_trade
+    if max_planned > 0:
+        risk_budget = min(risk_budget, max_planned)
+    if risk_budget <= 0:
+        return RiskDecision(False, "no risk budget")
     # iterative: try to find qty such that total estimated loss <= budget
     # Start from a conservative notional cap.
     stop_distance = abs(proposal.entry_price - proposal.stop_loss_price)
@@ -81,7 +87,7 @@ def size_position(proposal: TradeProposal, available_equity: Decimal) -> RiskDec
         gross_risk = compute_stop_loss_risk(qty, proposal.entry_price, proposal.stop_loss_price)
         total_loss = gross_risk + fees
 
-    if total_loss > risk_budget:
+    if total_loss > risk_budget + Decimal("0.000001"):
         return RiskDecision(False, "cannot satisfy risk budget", quantity=qty, estimated_loss=total_loss, estimated_fees=fees)
 
     # reward-to-risk check
