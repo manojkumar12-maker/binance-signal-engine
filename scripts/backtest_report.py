@@ -86,6 +86,9 @@ def main():
     p.add_argument("--taker-fee", type=float, default=0.0005)
     p.add_argument("--maker-fee", type=float, default=0.0002)
     p.add_argument("--slippage", type=float, default=0.0005)
+    p.add_argument("--data-file", default="",
+                   help="JSON file of klines (from scripts/fetch_klines.py) instead of live fetching; "
+                        "single symbol only")
     p.add_argument("--json", dest="json_out", default="", help="write full results to JSON")
     args = p.parse_args()
 
@@ -95,11 +98,13 @@ def main():
 
     results = {}
     with httpx.Client() as client:
-        try:
-            info = fetch_json(client, "/fapi/v1/exchangeInfo")
-        except Exception as exc:  # noqa: BLE001
-            print(f"Failed to fetch exchangeInfo: {exc}")
-            sys.exit(1)
+        info = None
+        if not args.data_file:
+            try:
+                info = fetch_json(client, "/fapi/v1/exchangeInfo")
+            except Exception as exc:  # noqa: BLE001
+                print(f"Failed to fetch exchangeInfo: {exc}")
+                sys.exit(1)
 
         cfg = BacktestConfig(
             starting_balance=Decimal(str(args.balance)),
@@ -114,13 +119,25 @@ def main():
             exchange_info=info,
         )
 
-        for sym in symbols:
-            try:
-                kl = fetch_history(client, sym, args.interval, start_ms, now_ms)
-            except Exception as exc:  # noqa: BLE001
-                print(f"\n{sym}: kline fetch failed: {exc}")
-                continue
-            print(f"\n{sym}: fetched {len(kl)} {args.interval} candles over ~{args.days} days")
+        if args.data_file:
+            with open(args.data_file, encoding="utf-8") as f:
+                cached = json.load(f)
+            if len(symbols) != 1:
+                print("--data-file takes exactly one --symbols entry")
+                sys.exit(1)
+            sym = symbols[0]
+            print(f"{sym}: loaded {len(cached)} {args.interval} candles from {args.data_file}")
+            klines_by_symbol = {sym: cached}
+        else:
+            klines_by_symbol = {}
+            for sym in symbols:
+                try:
+                    klines_by_symbol[sym] = fetch_history(client, sym, args.interval, start_ms, now_ms)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"\n{sym}: kline fetch failed: {exc}")
+        for sym, kl in klines_by_symbol.items():
+            if not args.data_file:
+                print(f"\n{sym}: fetched {len(kl)} {args.interval} candles over ~{args.days} days")
             if len(kl) < 200:
                 print(f"  not enough history ({len(kl)}), skipping")
                 continue
