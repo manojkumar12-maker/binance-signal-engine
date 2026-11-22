@@ -157,3 +157,35 @@ def test_rug_check_missing_data_unknown():
     rc = RugChecker()
     res = rc.assess("X", [])
     assert res["risk_rating"] == "UNKNOWN"
+# 15-minute volume-change filter: only the top-N hottest symbols get scanned
+def test_volume_change_top_n_filter():
+    from tests.mock_exchange import MockBinanceClient
+    from src.storage import Storage
+    from src.scanner import Scanner
+    from src.config import settings
+    import types
+
+    d = tempfile.mkdtemp()
+    storage = Storage(path=os.path.join(d, "s.db"))
+
+    class VolClient(MockBinanceClient):
+        # BTC trades 10x its baseline in the last 15 min; ETH is flat
+        def klines(self, symbol, interval, limit=200):
+            kl = super().klines(symbol, interval, limit)
+            out = list(kl)
+            for k in out[-15:]:
+                if symbol == "BTCUSDT":
+                    k[5] = str(float(k[5]) * 10)
+            return out
+
+    client = VolClient()
+    scanner = Scanner(client, storage, ["BTCUSDT", "ETHUSDT"])
+    settings.scan_volume_change_top_n = 1
+    settings.scan_volume_change_window_min = 15
+    try:
+        kept = scanner._volume_change_rank(["BTCUSDT", "ETHUSDT"])
+        assert kept == ["BTCUSDT"], f"expected only BTC, got {kept}"
+        results = scanner.scan_once()
+        assert [r["symbol"] for r in results] == ["BTCUSDT"]
+    finally:
+        settings.scan_volume_change_top_n = 0  # 0 disables the filter for other tests

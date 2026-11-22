@@ -282,8 +282,53 @@ class Scanner:
 
         return result
 
+    def _volume_change_rank(self, symbols: list[str]) -> list[str]:
+        """Rank symbols by 15-minute volume acceleration and keep the top N.
+
+        Volume change = volume traded in the last `scan_volume_change_window_min`
+        minutes divided by the baseline per-candle volume before that window.
+        Reads 1m klines from the client, or the shared market-data cache when
+        one is wired (using its smallest cached interval: 3x5m or 1x15m candles
+        cover the window). Values > 1 mean trading is accelerating right now;
+        when `scan_volume_change_top_n` > 0 only the top N are scanned.
+        """
+        window = max(1, settings.scan_volume_change_window_min)
+        interval = "1m"
+        if self.market_data is not None:
+            cached = [i for i in self.market_data.intervals if i.endswith("m")]
+            if cached:
+                interval = min(cached, key=lambda i: int(i[:-1]))
+        minutes = int(interval[:-1])
+        n_recent = max(1, window // minutes)
+        ranked: list[tuple[float, str]] = []
+        for sym in symbols:
+            try:
+                if self.market_data is not None:
+                    kl = self.market_data.get_klines(sym, interval)
+                else:
+                    kl = self.client.klines(sym, interval, limit=1440)
+                if not kl or len(kl) <= n_recent:
+                    continue
+                recent = [Decimal(str(k[5])) for k in kl[-n_recent:]]
+                base_kl = kl[:-n_recent] or kl
+                base = sum(Decimal(str(k[5])) for k in base_kl) / Decimal(len(base_kl))
+                if base <= 0:
+                    continue
+                ranked.append((float(sum(recent) / Decimal(len(recent)) / base), sym))
+            except Exception as e:
+                log.debug("volume-change rank failed for %s: %s", sym, e)
+        ranked.sort(reverse=True)
+        top = settings.scan_volume_change_top_n
+        kept = [s for _, s in ranked[:top]] if top > 0 else [s for _, s in ranked]
+        self.storage.log_event("SCANNER", "", "vol-rank", "ok",
+                               f"interval={interval} kept={len(kept)}/{len(symbols)} " +
+                               " ".join(f"{s}:{r:.1f}x" for r, s in ranked[:5]))
+        return kept
+
     def scan_once(self) -> list[dict]:
         symbols = self._resolve_symbols()
+        if settings.scan_volume_change_top_n > 0:
+            symbols = self._volume_change_rank(symbols)
         self.storage.upsert_agent_status("SCANNER", "SCANNING", current_activity=f"scanning {len(symbols)} symbols")
         self.storage.log_event("SCANNER", "", "scan", "started", f"symbols={len(symbols)}")
         results = []

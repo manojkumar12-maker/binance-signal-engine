@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # "market" (default) or "maker": post-only limit entry at the signal price
     # (halves the entry fee); falls back to a market order when it does not fill.
     entry_order_type: str = Field(default="market")
+    # Only scan the top-N symbols ranked by 15-minute volume change (last
+    # 3x1m candles vs the 1h baseline). 0 disables the filter.
+    scan_volume_change_top_n: int = Field(default=10)
+    scan_volume_change_window_min: int = Field(default=15)
 
     symbol: str = Field(default="BTCUSDT")
     symbols: str = Field(default="BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT")
