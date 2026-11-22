@@ -9,7 +9,8 @@ import time
 from decimal import Decimal
 from dataclasses import dataclass, field, replace
 
-from .signal_engine import SignalEngine
+from .signal_engine import SignalEngine, Signal
+from .indicators import atr
 from .risk_engine import fee_estimate
 from .exchange_filters import get_lot_size_filter, get_min_notional_filter, round_quantity
 
@@ -25,6 +26,14 @@ class BacktestConfig:
     # Fee-aware entry gate: net reward over total loss (stop-side) must clear
     # this ratio, matching settings.min_net_reward_to_risk in live sizing.
     min_net_reward_to_risk: Decimal = Decimal("2.5")
+    # "trend" = evaluate_v2 signals; "early_pump" = surge-onset detector below.
+    strategy: str = "trend"
+    # ---- early-pump detector ----
+    ep_vol_mult: Decimal = Decimal("3")     # candle volume vs 20-candle average
+    ep_breakout_lookback: int = 24          # close must break the N-candle high/low
+    ep_max_squeeze_pct: Decimal = Decimal("6")   # prior N-candle range % of price
+    ep_sl_atr_mult: Decimal = Decimal("1.0")
+    ep_tp_atr_mult: Decimal = Decimal("4.0")
     taker_fee: Decimal = Decimal("0.0005")
     maker_fee: Decimal = Decimal("0.0002")
     slippage: Decimal = Decimal("0.0005")
@@ -61,6 +70,61 @@ class BTTrade:
     fees: Decimal = Decimal(0)
     r_multiple: Decimal = Decimal(0)
     exit_reason: str = ""
+
+
+def _early_pump_signal(symbol: str, kl: list, i: int, cfg: "BacktestConfig", ts: int):
+    """Surge-onset detector: enter a pump as it starts, not after it ended.
+
+    Fires on the closed candle that (1) expands volume by ep_vol_mult over the
+    20-candle average, (2) closes beyond the ep_breakout_lookback-candle
+    high/low, and (3) follows a compressed range (the quiet before the move).
+    Stop and target are ATR-based; sizing and the fee gate are applied by the
+    common entry path, so the setup must still clear min_net_reward_to_risk.
+    """
+    if i < cfg.ep_breakout_lookback + 20:
+        return None
+    n = cfg.ep_breakout_lookback
+    window = kl[i - n:i]
+    highs = [Decimal(str(k[2])) for k in window]
+    lows = [Decimal(str(k[3])) for k in window]
+    o = Decimal(str(kl[i][1]))
+    c = Decimal(str(kl[i][4]))
+    if o <= 0:
+        return None
+    prior_range = max(highs) - min(lows)
+    if prior_range / c * 100 > cfg.ep_max_squeeze_pct:
+        return None
+    vols = [Decimal(str(k[5])) for k in kl[i - 20:i]]
+    avg_vol = sum(vols) / Decimal(len(vols))
+    if avg_vol <= 0 or Decimal(str(kl[i][5])) < cfg.ep_vol_mult * avg_vol:
+        return None
+    if c > o and c > max(highs):
+        direction = "LONG"
+    elif c < o and c < min(lows):
+        direction = "SHORT"
+    else:
+        return None
+    prev = kl[i - 1:i]
+    ph = [Decimal(str(k[2])) for k in kl[max(0, i - 14):i + 1]]
+    pl = [Decimal(str(k[3])) for k in kl[max(0, i - 14):i + 1]]
+    pc = [Decimal(str(k[4])) for k in kl[max(0, i - 14):i + 1]]
+    a = atr(ph, pl, pc, period=14)
+    if a is None or a <= 0:
+        return None
+    if direction == "LONG":
+        entry = c
+        stop = entry - cfg.ep_sl_atr_mult * a
+        take = entry + cfg.ep_tp_atr_mult * a
+    else:
+        entry = c
+        stop = entry + cfg.ep_sl_atr_mult * a
+        take = entry - cfg.ep_tp_atr_mult * a
+    return Signal(symbol=symbol, direction=direction, timestamp=ts, timeframe="",
+                  entry_price=entry, stop_loss=stop, take_profit=take,
+                  confidence=1.0, gross_rr=cfg.ep_tp_atr_mult / cfg.ep_sl_atr_mult,
+                  volume_ratio=Decimal(str(kl[i][5])) / avg_vol,
+                  atr=a, score=100.0, candle_close_time=ts,
+                  strategy="early_pump", regime="pump_onset")
 
 
 class Backtester:
@@ -179,8 +243,11 @@ class Backtester:
             ltf_eval = ltf_slice
             if cfg.max_lookback:
                 ltf_eval = ltf_slice[-cfg.max_lookback:]
-            sig, diag = eng.evaluate_v2(symbol, htf_eval, ltf_eval if ltf_klines else None,
-                                        htf=cfg.htf, ltf=cfg.ltf, now=ts / 1000)
+            if cfg.strategy == "early_pump":
+                sig = _early_pump_signal(symbol, entry_kl, i, cfg, ts)
+            else:
+                sig, _diag = eng.evaluate_v2(symbol, htf_eval, ltf_eval if ltf_klines else None,
+                                             htf=cfg.htf, ltf=cfg.ltf, now=ts / 1000)
             if sig is None or sig.score < cfg.min_score:
                 continue
             # position sizing: risk pct of equity / stop distance
