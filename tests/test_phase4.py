@@ -24,16 +24,17 @@ def test_sizer_approved_short():
 
 def test_sizer_net_rr_above_minimum():
     # The sizer must still approve after fees as long as net R:R is at or
-    # above settings.min_net_reward_to_risk (default 0.7: fees/slippage may
-    # consume at most ~65% of the planned reward).
+    # above settings.min_net_reward_to_risk (default 2.5). With round-trip
+    # taker fees + slippage near 0.2% of notional, a 0.4% stop needs a TP
+    # well past 3:1 gross to clear the gate.
     atr = Decimal("100")
     entry = Decimal("50000")
-    stop = entry - atr * Decimal("1.5")   # 49850
-    tp = entry + atr * Decimal("3.0")     # 50300
+    stop = entry - atr * Decimal("2.0")   # 49800
+    tp = entry + atr * Decimal("9.0")     # 50900
     s = Sizer()
     d = s.calculate("BTCUSDT", "LONG", entry, stop, tp, "5", rug_rating="LOW")
     assert d.approved is True, f"reason={d.reason} rr={d.reward_to_risk}"
-    assert d.reward_to_risk >= Decimal("0.7")
+    assert d.reward_to_risk >= Decimal("2.5")
 
 def test_sizer_net_rr_below_minimum_rejected():
     # Fees must still be able to sink a trade: with a very tight stop the fee

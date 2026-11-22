@@ -32,8 +32,11 @@ class Settings(BaseSettings):
     estimated_maker_fee: Decimal = Field(default=Decimal("0.0002"))
     estimated_taker_fee: Decimal = Field(default=Decimal("0.0005"))
     estimated_slippage: Decimal = Field(default=Decimal("0.0005"))
-    min_reward_to_risk: Decimal = Field(default=Decimal("2.0"))
-    min_net_reward_to_risk: Decimal = Field(default=Decimal("0.7"))
+    min_reward_to_risk: Decimal = Field(default=Decimal("2.5"))
+    min_net_reward_to_risk: Decimal = Field(default=Decimal("2.5"))
+    # "market" (default) or "maker": post-only limit entry at the signal price
+    # (halves the entry fee); falls back to a market order when it does not fill.
+    entry_order_type: str = Field(default="market")
 
     symbol: str = Field(default="BTCUSDT")
     symbols: str = Field(default="BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT")

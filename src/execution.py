@@ -112,6 +112,43 @@ class ExecutionEngine:
             **self._side_params(direction),
         )
 
+    def _place_maker_entry(self, symbol: str, entry_kwargs: dict, limit_price) -> dict | None:
+        """Post-only (GTX) limit entry at the signal price — half the taker fee.
+
+        Returns the exchange/fill response when it filled; None when the order
+        was rejected or did not fill immediately, in which case the caller
+        falls back to a market order.
+        """
+        kwargs = {**entry_kwargs, "type": "LIMIT", "price": str(limit_price), "timeInForce": "GTX"}
+        try:
+            resp = self.client.place_order(**kwargs)
+        except Exception as e:
+            # post-only orders are rejected when they would cross the book
+            self.storage.log_event("EXECUTER", symbol, "entry", "maker rejected", str(e))
+            return None
+        order_id = resp.get("orderId")
+        if not order_id:
+            return None
+        try:
+            q = self.client.query_order(symbol, order_id)
+        except Exception:
+            q = {}
+        if Decimal(str(q.get("executedQty") or "0")) > 0:
+            return q
+        try:
+            self.client.cancel_order(symbol, order_id)
+        except Exception:
+            # may have filled in-flight; the queried state is the truth
+            try:
+                q = self.client.query_order(symbol, order_id)
+            except Exception:
+                q = {}
+            if Decimal(str(q.get("executedQty") or "0")) > 0:
+                return q
+            return None
+        self.storage.log_event("EXECUTER", symbol, "entry", "maker unfilled", "cancelled; market fallback")
+        return None
+
     def execute_signal(self, signal, symbol: str, size_decision=None) -> tuple[bool, str]:
         if not self._acquire_lock():
             return False, "execution lock held"
@@ -176,7 +213,12 @@ class ExecutionEngine:
                 entry_kwargs["positionSide"] = signal.direction
             else:
                 entry_kwargs["reduceOnly"] = False
-            entry_resp = self.client.place_order(**entry_kwargs)
+
+            entry_resp = None
+            if settings.entry_order_type == "maker":
+                entry_resp = self._place_maker_entry(symbol, entry_kwargs, signal.entry_price)
+            if entry_resp is None:
+                entry_resp = self.client.place_order(**entry_kwargs)
             order_id = entry_resp.get("orderId")
             filled_qty = Decimal(str(entry_resp.get("executedQty") or "0"))
             avg_price = Decimal(str(entry_resp.get("avgPrice") or "0"))

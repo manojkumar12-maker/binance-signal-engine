@@ -22,7 +22,7 @@ import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.backtest import Backtester, BacktestConfig
+from src.backtest import Backtester, BacktestConfig, walk_forward
 
 BASE = "https://fapi.binance.com"
 
@@ -78,9 +78,11 @@ def main():
     p.add_argument("--interval", default="1h", help="timeframe (1h, 4h, 15m ...)")
     p.add_argument("--days", type=int, default=180, help="lookback in days")
     p.add_argument("--balance", type=float, default=100.0, help="starting equity USDT")
-    p.add_argument("--risk-pct", type=float, default=0.005, help="risk per trade fraction (0.005 = 0.5%%)")
+    p.add_argument("--risk-pct", type=float, default=0.01, help="risk per trade fraction (0.01 = 1%%)")
     p.add_argument("--min-score", type=float, default=75.0, help="minimum signal score")
     p.add_argument("--lookback", type=int, default=400, help="rolling candles passed to engine (0 = full; 400 = fast)")
+    p.add_argument("--walk-forward", type=int, default=0, metavar="N",
+                   help="run N disjoint out-of-sample splits instead of a single full-window backtest")
     p.add_argument("--taker-fee", type=float, default=0.0005)
     p.add_argument("--maker-fee", type=float, default=0.0002)
     p.add_argument("--slippage", type=float, default=0.0005)
@@ -121,6 +123,26 @@ def main():
             print(f"\n{sym}: fetched {len(kl)} {args.interval} candles over ~{args.days} days")
             if len(kl) < 200:
                 print(f"  not enough history ({len(kl)}), skipping")
+                continue
+            if args.walk_forward > 0:
+                wf = walk_forward(sym, kl, None, n_splits=args.walk_forward, cfg=cfg)
+                oos = wf["splits"]
+                tot = sum(r["total_trades"] for r in oos)
+                wins = sum(r["wins"] for r in oos)
+                net = sum(Decimal(str(r["net_pnl"])) for r in oos)
+                fees = sum(Decimal(str(r["total_fees"])) for r in oos)
+                wr = round(wins / tot * 100, 2) if tot else 0.0
+                for n, rep in enumerate(oos, 1):
+                    print_report(rep, f"{sym} OOS split {n}/{len(oos)} ({rep.get('split', '')})")
+                print(f"\n=== {sym} WALK-FORWARD (out-of-sample, all {len(oos)} splits) ===")
+                print(f"  trades            : {tot}")
+                print(f"  win rate          : {wr}%")
+                print(f"  net P&L           : {net} USDT")
+                print(f"  total fees        : {fees} USDT")
+                print(f"  EXPECTANCY        : {'POSITIVE' if net > 0 else 'NEGATIVE/FLAT'}")
+                results[sym] = oos[-1]
+                results[sym + "_wf"] = {"total_trades": tot, "wins": wins, "win_rate_pct": wr,
+                                        "net_pnl": str(net), "total_fees": str(fees)}
                 continue
             bt = Backtester(cfg)
             rep = bt.run(sym, kl, None)

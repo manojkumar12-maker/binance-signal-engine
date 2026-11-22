@@ -22,6 +22,9 @@ class BacktestConfig:
     max_daily_loss_pct: Decimal = Decimal("0.03")
     min_score: float = 75.0
     cooldown_seconds: int = 3600
+    # Fee-aware entry gate: net reward over total loss (stop-side) must clear
+    # this ratio, matching settings.min_net_reward_to_risk in live sizing.
+    min_net_reward_to_risk: Decimal = Decimal("2.5")
     taker_fee: Decimal = Decimal("0.0005")
     maker_fee: Decimal = Decimal("0.0002")
     slippage: Decimal = Decimal("0.0005")
@@ -216,6 +219,16 @@ class Backtester:
                         continue
                 qty = filtered_qty
             # entry fills at next candle open + slippage (no intra-candle fill assumption)
+            fees_to_stop = fee_estimate(qty, sig.entry_price, sig.stop_loss,
+                                        cfg.maker_fee, cfg.taker_fee, cfg.slippage)
+            total_loss = qty * stop_dist + fees_to_stop
+            net_reward = abs(sig.take_profit - sig.entry_price) * qty - fees_to_stop
+            if total_loss > 0 and net_reward / total_loss < cfg.min_net_reward_to_risk:
+                rejected += 1
+                reject_reasons["reward_to_risk_below_min"] = reject_reasons.get("reward_to_risk_below_min", 0) + 1
+                last_signal_ts[symbol] = ts / 1000
+                equity_curve.append((ts, equity))
+                continue
             if i + 1 >= total:
                 break
             nxt = entry_kl[i + 1]
