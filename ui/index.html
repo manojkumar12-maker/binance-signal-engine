@@ -62,7 +62,7 @@ h1,h2,h3,.gro{font-family:'Space Grotesk','Inter',sans-serif}
 @keyframes shake{20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
 
 /* ---------- aurora hero + vitality ---------- */
-.eyebrow{font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:var(--violet);font-weight:600;margin-bottom:6px}
+.eyebrow{font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:var(--violet);font-weight:600;margin-bottom:6px;position:relative;z-index:1;white-space:nowrap}
 .hero-pos{display:flex;align-items:center;justify-content:space-between;gap:32px;padding:22px 26px;border:1px solid rgba(0,229,160,.28);background:linear-gradient(150deg,rgba(35,28,80,.55),rgba(13,18,38,.85));box-shadow:var(--shadow),0 0 40px rgba(0,229,160,.12);position:relative;overflow:hidden}
 .hero-pos::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,229,160,.7),transparent)}
 .hero-eyebrow{font-size:9.5px;letter-spacing:2.2px;color:var(--muted);text-transform:uppercase;margin-bottom:7px}
@@ -141,7 +141,8 @@ h1,h2,h3,.gro{font-family:'Space Grotesk','Inter',sans-serif}
 .sidefoot b{color:var(--text)}
 
 .main{padding:22px 24px 40px;overflow:auto;min-width:0}
-.viewhead{margin-bottom:18px;animation:rise .5s var(--ease) both}
+.viewhead{margin-bottom:18px;animation:rise .5s var(--ease) both;padding-top:6px}
+.viewhead .eyebrow{line-height:1.6}
 .viewhead h1{margin:0;font-size:21px;font-weight:700;letter-spacing:.3px}
 .viewhead p{margin:5px 0 0;color:var(--muted);font-size:12.5px}
 .view{display:none}
