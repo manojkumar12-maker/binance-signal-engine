@@ -49,3 +49,22 @@ Persistent record per the research standard. Failed experiments are kept, never 
 - At $30 with 1% risk ($0.30/trade), a 0.2% round-trip cost is ~10% of the risk budget on a 0.4%-stop trade — the 2.5:1 net gate exists because of this; maker entries (0.02% fee) are implemented as mitigation
 - Binance futures min notional ~5 USDT and lot-size steps are enforced by `exchange_filters.py`
 - Timeline math at measured edge (0.067 USDT/trade on $30, ~0.7 trades/day): if it held, ~100× takes years, not weeks. Not guaranteed; the edge itself is not yet proven to persist.
+
+## Cycle 3 kickoff — live worker validation (2026-11-23)
+
+Full production stack run (worker + dashboard, paper mode, no exchange keys):
+- Market universe: 528 USDT perpetuals discovered and cached
+- First pipeline cycle completed end-to-end: scanner → regime classification
+  (e.g. CUSDT STRONG_UPTREND, ADX 36.6) → sizer (fee gate rejecting) →
+  executer monitoring; WORKER heartbeat ok, /api/health = "ok"
+- 177 tests passed on this state (commit 7bf2979)
+
+Config for the accumulation run (needs the user's testnet keys only):
+TRADING_MODE=paper, USE_TESTNET=true, BINANCE_TESTNET_API_KEY/SECRET set,
+ADMIN_USERNAME/ADMIN_PASSWORD set. Execution then routes through the
+ExecutionEngine on Binance Demo automatically (exchange_execution_authorized
+returns true when testnet_execution_ready); until then paper fills are
+simulated internally. Kill switch, 1% risk, 3% daily halt unchanged.
+
+Decision point stays: 100+ closed paper trades, expectancy >= 0.05 USDT/trade
+on $30, surviving a chop regime -> revisit the optimistic growth path.
