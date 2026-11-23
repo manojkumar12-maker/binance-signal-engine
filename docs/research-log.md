@@ -20,6 +20,15 @@ Persistent record per the research standard. Failed experiments are kept, never 
 - **Status:** CONTINUE PAPER TRADING (BTC only)
 - **Next actions:** testnet live-paper ≥ 50 trades; benchmark vs buy-and-hold BTC; add 2026 bull/chop regimes to the test set
 
+### Cycle 2 (2026-11-22): extended OOS + benchmark — edge thinner than Cycle 1 suggested
+
+- **Tooling:** added `scripts/fetch_klines.py` (data.binance.vision monthly zips → JSON) and `--data-file` offline mode for `scripts/backtest_report.py`; data dir `data/*.json` holds Jan–Oct 2026 1h klines (7,296 candles/symbol, 13 symbols). Commit `03cab45`.
+- **Extended walk-forward (BTC, 6 disjoint OOS splits, 10 months Jan–Oct 2026, $30, 1% risk):** 65 trades, 36.9% WR, net **+0.22 USDT**, fees 1.96, PF 0.92–1.0 band across splits; split 1 (Jan–Feb) net +0.60 / DD 11.8%, weakest splits negative (one split −0.44, PF 0.92).
+- **Verdict on sample size:** the 50-trade requirement is now met, and the measured edge is much smaller than Cycle 1's 3-split estimate (+1.41 on 21 trades). Cycle 1 result was single-period luck-weighted; full-year expectancy is ≈ +0.003 USDT/trade on $30 — essentially breakeven after fees.
+- **Benchmark (buy-and-hold BTC, same windows, 1× notional):** −11.51% over 10 months (−3.45 USDT on $30); sum of split returns −7.36%. Strategy +0.22 vs benchmark −3.45 → the edge is **regime-defensive** (loses little in downtrends/chop, doesn't capture bull moves) rather than absolute alpha.
+- **Monte Carlo (2,000 shuffles of the 71-trade OOS sample, seed 42):** median max DD 3.98, 95th pct 6.14, worst 8.09 USDT; **P(DD > 20% of $30) = 5.8%** — materially worse than the Cycle-1 21-trade estimate (0%), as expected with more data.
+- **Decision impact:** S-001 remains paper-only. The optimistic growth path ($30→$450 in 12 months) requires expectancy ≥ 0.05 USDT/trade; the 65-trade OOS estimate is ~0.003. The path is NOT supported by current evidence; revisit after testnet paper trades accumulate and a chop-regime retest.
+
 ## S-002: Early-pump surge-onset detector — REJECTED
 
 - **Hypothesis:** entering volume-surge breakouts from compression (3× volume, 24-candle breakout, ≤6% squeeze; 1×ATR SL / 4×ATR TP, 2.5 net gate) catches pumps early
