@@ -402,7 +402,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
   <div class="logincard" id="loginCard">
     <div class="logologo">
       <div class="logomark">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8B7CFF" stroke-width="1.8" stroke-linecap="round"><path d="M3 17l5-6 4 3 6-9"/><path d="M18 5h3v3"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5A0" stroke-width="1.8" stroke-linecap="round"><path d="M3 17l5-6 4 3 6-9"/><path d="M18 5h3v3"/></svg>
       </div>
       <div>
         <div class="t1">BINANCE <span>SIGNAL</span> ENGINE</div>
@@ -422,7 +422,7 @@ select.inp,.btn.ghost.sel{padding:8px 34px 8px 12px;appearance:none;background-i
     <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
   </button>
   <div class="brand">
-    <div class="mk"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8B7CFF" stroke-width="1.8" stroke-linecap="round"><path d="M3 17l5-6 4 3 6-9"/><path d="M18 5h3v3"/></svg></div>
+    <div class="mk"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#00E5A0" stroke-width="1.8" stroke-linecap="round"><path d="M3 17l5-6 4 3 6-9"/><path d="M18 5h3v3"/></svg></div>
     <span>BINANCE <em>SIGNAL</em> ENGINE</span>
   </div>
   <div class="topstats">
@@ -1439,7 +1439,7 @@ async function loadEquityChart(){
     for(const r of rows.slice().reverse()){cum+=Number(r.realized_pnl||0); pts.push({time:Math.floor(r.ts),value:+cum.toFixed(6)});}
     if(!equityChart){
       equityChart=LightweightCharts.createChart($('equityChart'),{...chartOpts(380),width:$('equityChart').clientWidth});
-      equitySeries=equityChart.addAreaSeries({lineColor:'#8B7CFF',lineWidth:2,topColor:'rgba(0,229,160,.35)',bottomColor:'rgba(0,229,160,.02)',crosshairMarkerBackgroundColor:'#8B7CFF'});
+      equitySeries=equityChart.addAreaSeries({lineColor:'#00E5A0',lineWidth:2,topColor:'rgba(0,229,160,.35)',bottomColor:'rgba(0,229,160,.02)',crosshairMarkerBackgroundColor:'#00E5A0'});
       equitySeries.setData(pts);
     }else equitySeries.setData(pts);
     equityChart.timeScale().fitContent();
@@ -1491,7 +1491,7 @@ function connectWS(){
       }
     }catch(e){}
   };
-  ws.onclose=()=>{setWs('reconnecting'); setTimeout(connectWS,3000)};
+  ws.onclose=()=>{setWs('reconnecting'); if(liveStarted) setTimeout(connectWS,3000)};
   ws.onerror=()=>setWs('error');
 }
 
@@ -1499,13 +1499,25 @@ function connectWS(){
 async function checkAuth(){
   try{
     const s=await api('/api/auth/status');
-    if(s.authenticated){ $('loginOverlay').style.display='none'; }
-    else{
+    if(s.authenticated){
+      $('loginOverlay').style.display='none';
+      startLive();
+    }else{
       $('loginOverlay').style.display='flex';
       const m=$('loginMsg');
       if(s.setup_required){ m.textContent='Setup required: set ADMIN_USERNAME / ADMIN_PASSWORD env vars, then redeploy.'; m.classList.add('warn'); }
     }
   }catch(e){}
+}
+
+/* Polling and the WebSocket start only once authenticated, so a logged-out
+   browser doesn't hammer the API with 401s every 5 seconds. */
+let liveStarted=false;
+function startLive(){
+  if(liveStarted) return; liveStarted=true;
+  connectWS();
+  refreshAll();
+  setInterval(refreshAll,5000);
 }
 async function doLogin(){
   const username=$('loginUser').value, password=$('loginPass').value;
@@ -1515,7 +1527,7 @@ async function doLogin(){
   if(r.ok){
     $('loginOverlay').style.display='none';
     toast('Welcome back, '+username,'ok');
-    refreshAll();
+    startLive();
   }else{
     m.textContent=d.error||'Login failed';
     const c=$('loginCard'); c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
@@ -1537,9 +1549,6 @@ try{
   }
 }catch(e){}
 checkAuth();
-connectWS();
-refreshAll();
-setInterval(refreshAll,5000);
 </script>
 </body>
 </html>

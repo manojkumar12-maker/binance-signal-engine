@@ -13,9 +13,10 @@ class EquityAgent:
         self.storage = storage
 
     def trades(self):
-        cur = self.storage.conn.cursor()
-        cur.execute("SELECT id,symbol,direction,entry_price,quantity,status,realized_pnl,fees,opened_at,closed_at FROM trades")
-        rows = cur.fetchall()
+        with self.storage.write_lock:
+            cur = self.storage.conn.cursor()
+            cur.execute("SELECT id,symbol,direction,entry_price,quantity,status,realized_pnl,fees,opened_at,closed_at FROM trades")
+            rows = cur.fetchall()
         cols = ["id","symbol","direction","entry_price","quantity","status","realized_pnl","fees","opened_at","closed_at"]
         return [dict(zip(cols, r)) for r in rows]
 
@@ -106,9 +107,10 @@ class EquityAgent:
         snaps = self.storage.get_equity_snapshots() if hasattr(self.storage, "get_equity_snapshots") else []
         # if method not exists, fetch manually
         if not snaps:
-            cur = self.storage.conn.cursor()
-            cur.execute("SELECT ts,equity FROM equity_snapshots ORDER BY ts ASC")
-            snaps = [{"ts": r[0], "equity": r[1]} for r in cur.fetchall()]
+            with self.storage.write_lock:
+                cur = self.storage.conn.cursor()
+                cur.execute("SELECT ts,equity FROM equity_snapshots ORDER BY ts ASC")
+                snaps = [{"ts": r[0], "equity": r[1]} for r in cur.fetchall()]
 
         peak = None
         max_dd = Decimal("0")

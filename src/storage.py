@@ -21,6 +21,11 @@ class Storage:
         self.conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=30000")
+        # One shared connection is used from several threads (worker, FastAPI,
+        # heartbeat); concurrent use of a single cursor interleaves rows and
+        # yields corrupt results (KeyError on fetched columns).
+        import threading
+        self.write_lock = threading.Lock()
         self._init_schema()
         self._migrate()
 
@@ -599,10 +604,11 @@ class Storage:
 
     # Equity snapshots
     def add_equity_snapshot(self, equity, balance, realized_pnl, unrealized_pnl=0):
-        cur = self.conn.cursor()
-        cur.execute("INSERT INTO equity_snapshots (ts,equity,balance,realized_pnl,unrealized_pnl) VALUES (?,?,?,?,?)",
-                    (time.time(), str(equity), str(balance), str(realized_pnl), str(unrealized_pnl)))
-        self.conn.commit()
+        with self.write_lock:
+            cur = self.conn.cursor()
+            cur.execute("INSERT INTO equity_snapshots (ts,equity,balance,realized_pnl,unrealized_pnl) VALUES (?,?,?,?,?)",
+                        (time.time(), str(equity), str(balance), str(realized_pnl), str(unrealized_pnl)))
+            self.conn.commit()
 
     # Orders
     def add_order(self, symbol, side, otype, quantity, price=None, status="NEW", order_id=None):
@@ -815,9 +821,10 @@ class Storage:
         self.conn.commit()
 
     def get_equity_snapshots(self, limit=500):
-        cur = self.conn.cursor()
-        cur.execute("SELECT id,ts,equity,balance,realized_pnl,unrealized_pnl FROM equity_snapshots ORDER BY id DESC LIMIT ?", (limit,))
-        rows = cur.fetchall()
+        with self.write_lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT id,ts,equity,balance,realized_pnl,unrealized_pnl FROM equity_snapshots ORDER BY id DESC LIMIT ?", (limit,))
+            rows = cur.fetchall()
         cols = ["id","ts","equity","balance","realized_pnl","unrealized_pnl"]
         return [dict(zip(cols, r)) for r in rows]
 
