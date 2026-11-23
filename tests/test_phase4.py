@@ -118,13 +118,16 @@ def test_paper_stop_loss():
     d = tempfile.mkdtemp()
     storage = Storage(path=os.path.join(d, "p.db"))
     client = MockBinanceClient()
-    # set price low to trigger SL
-    client.ticker_price = lambda s: Decimal("48000")
+    # open at a price inside the planned SL/TP band, then drop below the stop
+    price = {"p": Decimal("49500")}
+    client.ticker_price = lambda s: price["p"]
     pt = PaperTrader(storage)
     proposal = {"symbol": "BTCUSDT", "direction": "LONG", "entry_price": "50000", "stop_loss": "49000", "take_profit": "53000"}
     from src.sizer import Sizer
     sd = Sizer().calculate("BTCUSDT", "LONG", "50000", "49000", "53000", "5", rug_rating="LOW")
-    pt.open_position(client, proposal, sd, None)
+    res = pt.open_position(client, proposal, sd, None)
+    assert res["ok"] is True
+    price["p"] = Decimal("48000")
     actions = pt.monitor(client)
     assert len(actions) >= 1
     assert actions[0]["action"] == "stop_loss"
@@ -133,12 +136,16 @@ def test_paper_take_profit():
     d = tempfile.mkdtemp()
     storage = Storage(path=os.path.join(d, "p.db"))
     client = MockBinanceClient()
-    client.ticker_price = lambda s: Decimal("54000")
+    # open at a price inside the planned SL/TP band, then rise above the target
+    price = {"p": Decimal("50000")}
+    client.ticker_price = lambda s: price["p"]
     pt = PaperTrader(storage)
     proposal = {"symbol": "BTCUSDT", "direction": "LONG", "entry_price": "50000", "stop_loss": "49000", "take_profit": "53000"}
     from src.sizer import Sizer
     sd = Sizer().calculate("BTCUSDT", "LONG", "50000", "49000", "53000", "5", rug_rating="LOW")
-    pt.open_position(client, proposal, sd, None)
+    res = pt.open_position(client, proposal, sd, None)
+    assert res["ok"] is True
+    price["p"] = Decimal("54000")
     actions = pt.monitor(client)
     assert len(actions) >= 1
     assert actions[0]["action"] == "take_profit"
@@ -220,7 +227,12 @@ def test_paper_trades_endpoint():
     assert r.status_code == 200
     assert "trades" in r.json()
 
-def test_paper_execute_endpoint():
+def test_paper_execute_endpoint(monkeypatch):
+    # pin the market price the dashboard's client would fetch: with live
+    # internet the real BTC price sits outside the test's SL/TP band and the
+    # (correct) phantom-fill guard would reject the open
+    from src.binance_client import BinanceClient
+    monkeypatch.setattr(BinanceClient, "ticker_price", lambda self, s: Decimal("50000"))
     api_client.post("/resume")
     # close any leftover open positions
     for p in api_client.get("/api/paper/positions").json().get("positions", []):

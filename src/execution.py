@@ -360,7 +360,9 @@ class ExecutionEngine:
         except Exception:
             pass
         try:
-            if has_open_position(self.client):
+            # verify this symbol's position is gone; another symbol's open
+            # position must not mask a failed emergency close
+            if has_open_position_for_symbol(self.client, symbol):
                 self.storage.set_halted(True, "emergency close unverified")
         except Exception:
             self.storage.set_halted(True, "emergency close verification failed")
@@ -375,5 +377,17 @@ class ExecutionEngine:
         for t in self.storage.open_positions():
             amt = ex_map.get(t["symbol"], Decimal("0"))
             if amt == 0:
-                # position closed on exchange; mark closed
-                self.storage.close_trade(t["id"], "0", "0")
+                # position closed on exchange; record realized PnL so the
+                # daily loss budget sees it (mirrors monitor())
+                pnl, fees, funding, ok = self._realized_pnl(t)
+                self.storage.close_trade(t["id"], str(pnl), str(fees), str(funding))
+                net = pnl + funding - fees
+                if ok:
+                    KillSwitch(self.storage).record_trade_result(net)
+                else:
+                    self.storage.log_event(
+                        "EXECUTER", t["symbol"], "reconcile", "warning",
+                        "income unavailable; daily loss not updated for this trade")
+                self.storage.log_event(
+                    "EXECUTER", t["symbol"], "reconcile", "closed",
+                    f"closed on exchange pnl={pnl} fees={fees} funding={funding} net={net}")

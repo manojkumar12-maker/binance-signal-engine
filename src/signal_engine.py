@@ -123,6 +123,7 @@ class SignalEngine:
         self._load_cooldown_state()
         self.weights = dict(DEFAULT_WEIGHTS)
         self.cfg = cfg  # optional settings-like object; falls back to defaults
+        self.use_fib_targets = bool(getattr(cfg, "use_fib_targets", False)) if cfg else False
         self.regime_clf = RegimeClassifier(
             adx_trend=Decimal(str(self._c("adx_trend_min", Decimal("25")))),
             adx_strong=Decimal(str(self._c("adx_strong_min", Decimal("30")))),
@@ -319,7 +320,11 @@ class SignalEngine:
         Returns (signal_or_None, diagnostic).
         """
         now = time.time() if now is None else now
-        entry_tf = ltf if ltf_klines else htf
+        # entry uses LTF only when it actually has enough history; keep
+        # entry_tf in sync with the fallback so candle_close_time uses the
+        # interval of the candles that really produced the signal
+        use_ltf = bool(ltf_klines and len(ltf_klines) >= 61)
+        entry_tf = ltf if use_ltf else htf
 
         def reject_all(regime_r, long_ev, short_ev, reason):
             long_ev.decision, long_ev.reason = "REJECTED", reason
@@ -340,7 +345,7 @@ class SignalEngine:
         h_lows = [Decimal(str(k[3])) for k in htf_c]
         h_vols = [Decimal(str(k[5])) for k in htf_c]
 
-        ltf_src = ltf_klines[:-1] if (ltf_klines and len(ltf_klines) >= 61) else htf_c
+        ltf_src = ltf_klines[:-1] if use_ltf else htf_c
         e_closes = [Decimal(str(k[4])) for k in ltf_src]
         e_highs = [Decimal(str(k[2])) for k in ltf_src]
         e_lows = [Decimal(str(k[3])) for k in ltf_src]
@@ -505,15 +510,24 @@ class SignalEngine:
             return None, SignalDiagnostic(symbol, now, regime_r.regime, regime_r.to_dict(),
                                           self._ev_dict(long_ev), self._ev_dict(short_ev), "NO_TRADE", "cooldown active")
 
-        # --- build signal with ATR stops ---
+        # --- build signal with ATR stops and Fibonacci extension target ---
         direction = best.direction
         entry = price
         if direction == "LONG":
             stop = entry - atr_val * sl_mult
-            tp = entry + atr_val * tp_mult
         else:
             stop = entry + atr_val * sl_mult
-            tp = entry - atr_val * tp_mult
+        tp = None
+        if getattr(self, "use_fib_targets", False):
+            from . import fibonacci as fib
+            f_highs = [Decimal(str(k[2])) for k in ltf_src[-56:]]
+            f_lows = [Decimal(str(k[3])) for k in ltf_src[-56:]]
+            sw_hi, sw_lo, _, _ = fib.swing(f_highs, f_lows, lookback=55)
+            ft = fib.fib_target(direction, entry, stop, sw_hi, sw_lo)
+            if ft is not None:
+                tp = ft
+        if tp is None:
+            tp = entry + atr_val * tp_mult if direction == "LONG" else entry - atr_val * tp_mult
         if stop <= 0 or abs(entry - stop) == 0:
             best.decision, best.reason = "REJECTED", "invalid stop-loss"
             return None, SignalDiagnostic(symbol, now, regime_r.regime, regime_r.to_dict(),
@@ -551,7 +565,9 @@ class SignalEngine:
 
     def _interval_ms(self, tf: str) -> int:
         return {"1m": 60000, "3m": 180000, "5m": 300000, "15m": 900000,
-                "30m": 1800000, "1h": 3600000, "4h": 14400000}.get(tf, 900000)
+                "30m": 1800000, "1h": 3600000, "2h": 7200000, "4h": 14400000,
+                "6h": 21600000, "8h": 28800000, "12h": 43200000,
+                "1d": 86400000, "3d": 259200000, "1w": 604800000}.get(tf, 900000)
 
     def _ev_dict(self, ev: DirectionEval) -> dict:
         return {"direction": ev.direction, "score": round(ev.score, 1),

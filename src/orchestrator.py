@@ -173,7 +173,20 @@ class Orchestrator:
                 else:
                     try:
                         eq = self.storage.equity_summary()
-                        current_equity = settings.simulated_starting_balance + Decimal(str(eq.get("realized_pnl", 0)))
+                        realized = Decimal(str(eq.get("realized_pnl", 0)))
+                        # include unrealized so open losses shrink the sizing
+                        # budget instead of being counted only on close
+                        unrealized = Decimal("0")
+                        for p in self.storage.open_positions():
+                            try:
+                                price = Decimal(str(self.client.ticker_price(p["symbol"])))
+                                qty = Decimal(str(p["quantity"]))
+                                entry = Decimal(str(p["entry_price"]))
+                                unrealized += (price - entry) * qty if p["direction"] == "LONG" \
+                                    else (entry - price) * qty
+                            except Exception:
+                                pass
+                        current_equity = settings.simulated_starting_balance + realized + unrealized
                     except Exception:
                         current_equity = settings.simulated_starting_balance
                 try:
@@ -234,7 +247,6 @@ class Orchestrator:
                 if self.storage.is_signal_seen(exec_id):
                     self.logger.info("EXECUTER", "duplicate", sid)
                     continue
-                self.storage.mark_signal_seen(exec_id)
 
                 # Executer: Binance Demo/live order, or internal simulator
                 self.set_stage("executing")
@@ -270,6 +282,7 @@ class Orchestrator:
                         res = {"ok": False, "reason": str(e)}
 
                 if res.get("ok"):
+                    self.storage.mark_signal_seen(exec_id)
                     tr = TaskResult("EXECUTER", self._make_task_id("EXECUTER", symbol, signal_id), symbol, signal_id, True,
                                     output=res, timestamp=time.time())
                     results.append(tr)
@@ -284,6 +297,15 @@ class Orchestrator:
                         self.logger.error("EQUITY", "snapshot", str(e))
                     self.storage.upsert_agent_status("EQUITY", "IDLE", current_activity="updated", last_success=True)
                 else:
+                    reason = res.get("reason", "execution failed")
+                    # Mark deterministic rejections so they are not retried;
+                    # transient failures (entry not filled, exchange errors,
+                    # lock held) stay unmarked and are retried next cycle.
+                    transient = reason.startswith("execution error") or reason in (
+                        "entry not filled", "execution lock held",
+                    )
+                    if not transient:
+                        self.storage.mark_signal_seen(exec_id)
                     tr = TaskResult("EXECUTER", self._make_task_id("EXECUTER", symbol, signal_id), symbol, signal_id, False,
                                     rejection_reason=res.get("reason", "execution failed"), timestamp=time.time())
                     results.append(tr)

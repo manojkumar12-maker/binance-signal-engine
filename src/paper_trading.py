@@ -41,6 +41,42 @@ class PaperTrader:
         sl = Decimal(str(trade_proposal.get("stop_loss") if isinstance(trade_proposal, dict) else trade_proposal.stop_loss))
         tp = Decimal(str(trade_proposal.get("take_profit") if isinstance(trade_proposal, dict) else trade_proposal.take_profit))
 
+        # The live price may have drifted from the signal's candle close. A
+        # price already at or beyond the planned stop/target would be closed
+        # immediately by monitor(), so the trade is not opened at all.
+        if direction == "LONG":
+            beyond_levels = entry <= sl or entry >= tp
+            stop_distance = entry - sl
+        else:
+            beyond_levels = entry >= sl or entry <= tp
+            stop_distance = sl - entry
+        if beyond_levels:
+            self.storage.log_event("EXECUTER", symbol, "paper_open", "rejected",
+                                   f"live price {entry} beyond planned SL {sl} / TP {tp}")
+            return {"ok": False, "reason": "live price beyond planned stop/target"}
+
+        # Re-scale the quantity so the planned loss at the live stop distance
+        # (plus taker fees both sides) stays within the approved risk budget.
+        if isinstance(size_decision, dict):
+            risk_amount = size_decision.get("risk_amount", Decimal("0"))
+        else:
+            risk_amount = getattr(size_decision, "risk_amount", Decimal("0"))
+        fee_per_unit = fee_estimate(Decimal("1"), entry, sl, settings.estimated_taker_fee,
+                                    settings.estimated_taker_fee, Decimal("0"))
+        denom = stop_distance + fee_per_unit
+        if risk_amount > 0 and denom > 0 and qty * denom > risk_amount:
+            rescaled = (risk_amount / denom)
+            # keep the original quantity's precision; round down so risk never
+            # grows past the budget
+            rescaled = rescaled.quantize(qty, rounding="ROUND_DOWN")
+            if rescaled <= 0:
+                self.storage.log_event("EXECUTER", symbol, "paper_open", "rejected",
+                                       "rescaled quantity below minimum step")
+                return {"ok": False, "reason": "risk budget too small for live stop distance"}
+            self.storage.log_event("EXECUTER", symbol, "paper_open", "rescaled",
+                                   f"qty {qty} -> {rescaled} for live stop distance {stop_distance}")
+            qty = rescaled
+
         trade = {
             "symbol": symbol,
             "direction": direction,
