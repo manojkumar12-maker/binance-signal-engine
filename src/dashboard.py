@@ -277,8 +277,15 @@ def _auth(request: Request):
 def health():
     hb = storage.get_heartbeat()
     last = hb.get("last_beat")
+    hb = storage.get_heartbeat()
+    last = hb.get("last_beat")
     healthy = last is not None and (time.time() - (last or 0)) < 300
-    return {"status": "ok" if healthy else "degraded", "mode": settings.trading_mode,
+    # pipeline progress: set_stage upserts agent_status('WORKER') each stage change
+    worker_row = next((a for a in storage.get_agent_statuses() if a.get("name") == "WORKER"), None)
+    last_cycle = worker_row.get("last_activity") if worker_row else None
+    progressing = last_cycle is not None and (time.time() - float(last_cycle or 0)) < 1800
+    status = "ok" if (healthy and progressing) else ("running" if healthy else "degraded")
+    return {"status": status, "mode": settings.trading_mode,
             "live_authorized": settings.live_authorized, "worker_healthy": healthy}
 
 
@@ -431,9 +438,21 @@ def resume(request: Request):
 def api_health():
     hb = storage.get_heartbeat()
     last = hb.get("last_beat")
-    healthy = last is not None and (time.time() - (last or 0)) < 300
-    return {"status": "ok" if healthy else "degraded", "mode": settings.normalized_mode,
-            "live_authorized": settings.live_authorized, "worker_healthy": healthy}
+    # process alive: heartbeat beat within 300s (the thread beats unconditionally)
+    worker_alive = last is not None and (time.time() - (last or 0)) < 300
+    # pipeline progress: set_stage upserts agent_status('WORKER') each stage change
+    cycle = storage.get_agent_statuses()
+    worker_row = next((a for a in cycle if a.get("name") == "WORKER"), None)
+    last_cycle = worker_row.get("last_activity") if worker_row else None
+    progressing = last_cycle is not None and (time.time() - float(last_cycle or 0)) < 1800
+    if worker_alive and progressing:
+        status = "ok"
+    elif worker_alive:
+        status = "running"  # alive but current cycle is long; not degraded
+    else:
+        status = "degraded"
+    return {"status": status, "mode": settings.normalized_mode,
+            "live_authorized": settings.live_authorized, "worker_healthy": worker_alive}
 
 
 @app.get("/api/status")

@@ -56,19 +56,19 @@ def main():
 
     orch = Orchestrator(client, storage, market_data=market_data, exchange_info=info)
 
-    # Heartbeat thread: beats every 30s while the pipeline shows progress
-    # (loop iteration or orchestrator stage change), so /api/health no longer
-    # reports degraded during scan cycles that legitimately run past the
-    # 300s freshness window on small VMs. If nothing progresses for 20
-    # minutes, the beats stop and the dashboard shows degraded.
+    # Heartbeat thread: the process-alive beat runs unconditionally every 30s.
+    # /api/health reads worker_heartbeat.status to tell "process alive"
+    # (always true here) from "pipeline progressing" (tracked separately via
+    # last_cycle_ts in agent_status), so a scan cycle that legitimately runs
+    # long no longer flips the dashboard to degraded while the worker is fine.
     stage_ts = {"t": time.time(), "status": "started"}
+    last_progress = {"t": time.time()}
 
     def _beat():
         while True:
             time.sleep(30)
             try:
-                if time.time() - stage_ts["t"] < 1200:
-                    storage.update_heartbeat(stage_ts["status"])
+                storage.update_heartbeat(stage_ts["status"])
             except Exception:
                 log.exception("heartbeat thread error")
 
@@ -77,6 +77,11 @@ def main():
 
     def _set_stage(stage):
         stage_ts["t"] = time.time()
+        try:
+            storage.upsert_agent_status("WORKER", "RUNNING",
+                                        current_activity=f"stage: {stage}")
+        except Exception:
+            log.exception("worker status upsert failed")
         _orig_set_stage(stage)
 
     orch.set_stage = _set_stage

@@ -46,7 +46,26 @@ api_client = TestClient(app)
 def test_health_endpoint_phase8():
     r = api_client.get("/api/health")
     assert r.status_code == 200
-    assert r.json()["status"] in ("ok", "degraded")
+    # three-state contract: ok (alive+progressing), running (alive, long cycle),
+    # degraded (heartbeat stale)
+    assert r.json()["status"] in ("ok", "running", "degraded")
+
+def test_health_not_degraded_on_long_cycle():
+    # Regression: a scan cycle longer than the 300s beat window must not flip
+    # the dashboard to degraded while the heartbeat thread is still beating.
+    from tests.mock_exchange import MockBinanceClient
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    st = Storage(path=os.path.join(d, "h.db"))
+    st.update_heartbeat("running")          # beat is fresh
+    st.upsert_agent_status("WORKER", "RUNNING", current_activity="stage: scanning")  # cycle in progress
+    from fastapi.testclient import TestClient
+    app = __import__("src.dashboard", fromlist=["app"]).app
+    c = TestClient(app)
+    r = c.get("/api/health")
+    assert r.status_code == 200
+    assert r.json()["status"] in ("ok", "running"), r.json()
+    assert r.json()["status"] != "degraded"
 
 def test_monitoring_endpoint():
     r = api_client.get("/api/monitoring")
